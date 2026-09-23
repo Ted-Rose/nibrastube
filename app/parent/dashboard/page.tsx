@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { MagnifyingGlass, PushPin, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
+import { Baby, MagnifyingGlass, PushPin, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
 import { logoutAction } from "@/app/actions/auth";
@@ -69,6 +69,9 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
         <div className="flex gap-2">
            <Link href="/parent/profiles">
             <Button variant="outline"><Users className="mr-2" /> Manage Kids</Button>
+          </Link>
+          <Link href="/kids">
+            <Button variant="outline"><Baby className="mr-2" /> Kids Corner</Button>
           </Link>
           <form action={logoutAction}>
             <Button variant="ghost" type="submit">Logout</Button>

@@ -148,15 +148,22 @@ export function WatchExperience({
     }
 
     // Embedded Shorts loop internally and never emit ENDED, so also
-    // poll playback position and advance when the video is nearly over.
+    // poll playback position: advance when the video is nearly over or
+    // when the playhead wraps back to the start after a loop (a 500ms
+    // poll can straddle the 0.4s end-of-video window and miss it).
+    let lastTime = 0;
     const tick = window.setInterval(() => {
       const p = playerRef.current;
       if (!p) return;
       const duration = p.getDuration();
+      const time = p.getCurrentTime();
+      const wrapped =
+        duration > 0 && lastTime >= duration - 1 && time < 1;
+      lastTime = time;
       if (
         duration > 0 &&
         p.getPlayerState() === window.YT?.PlayerState.PLAYING &&
-        p.getCurrentTime() >= duration - 0.4
+        (time >= duration - 0.4 || wrapped)
       ) {
         advance();
       }

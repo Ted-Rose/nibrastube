@@ -7,12 +7,17 @@ import { cn } from "@/lib/utils";
 export function FullscreenPlayer({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  // Once the user deliberately leaves fullscreen, stop auto-requesting it —
+  // otherwise every subsequent tap re-enters fullscreen and traps them.
+  const userExitedRef = useRef(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el || document.fullscreenElement) return;
 
     const requestFs = () => {
+      if (userExitedRef.current) return;
       // iOS/Safari PWA doesn't support fullscreen on arbitrary elements —
       // fall back to a CSS overlay that fills the viewport.
       if (!el.requestFullscreen) {
@@ -33,7 +38,13 @@ export function FullscreenPlayer({ children }: { children: React.ReactNode }) {
     };
 
     const onFsChange = () => {
-      if (document.fullscreenElement) setPseudoFullscreen(false);
+      if (document.fullscreenElement) {
+        setIsFullscreen(true);
+        setPseudoFullscreen(false);
+      } else {
+        setIsFullscreen(false);
+        userExitedRef.current = true;
+      }
     };
 
     window.addEventListener("pointerdown", onInteract);
@@ -69,9 +80,13 @@ export function FullscreenPlayer({ children }: { children: React.ReactNode }) {
       )}
     >
       {children}
-      {pseudoFullscreen && (
+      {(pseudoFullscreen || isFullscreen) && (
         <button
-          onClick={() => setPseudoFullscreen(false)}
+          onClick={() => {
+            userExitedRef.current = true;
+            setPseudoFullscreen(false);
+            if (document.fullscreenElement) document.exitFullscreen();
+          }}
           aria-label="Exit fullscreen"
           className="absolute top-3 left-3 z-50 w-11 h-11 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
         >

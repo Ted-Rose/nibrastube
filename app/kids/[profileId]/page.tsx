@@ -117,12 +117,12 @@ export default async function KidsPortalPage({
                 correctPin={session?.user?.parentPin || "0000"}
                 target="/kids"
                 trigger={
-                  <div className="p-2 hover:bg-slate-100 rounded-full transition-colors cursor-pointer">
+                  <div className="p-2 hover:bg-slate-100 rounded-full transition-colors cursor-pointer text-slate-900">
                     <House size={32} weight="bold" />
                   </div>
                 }
              />
-             <span className="text-xl font-black hidden md:block">NibrasTube</span>
+             <span className="text-xl font-black text-slate-900 hidden md:block">NibrasTube</span>
           </div>
 
           <div className="flex-1 max-w-2xl relative">
@@ -148,7 +148,7 @@ export default async function KidsPortalPage({
                     ? `Search ${profile.name}'s channels...`
                     : `Search ${profile.name}'s videos...`
                 }
-                className="pl-14 h-14 text-xl rounded-full border-4 border-slate-50 bg-slate-50 focus:bg-white transition-all shadow-inner"
+                className="pl-14 h-14 text-xl rounded-full border-4 border-slate-50 bg-slate-50 text-slate-900 focus:bg-white transition-all shadow-inner"
               />
             </form>
           </div>
@@ -240,7 +240,7 @@ export default async function KidsPortalPage({
                         </div>
                       )}
                       <div>
-                        <h3 className="text-xl font-bold line-clamp-2 leading-tight group-hover:underline">
+                        <h3 className="text-xl font-bold line-clamp-2 leading-tight text-slate-900 group-hover:underline">
                           {c.title}
                         </h3>
                         <p className="text-slate-500 mt-2 font-medium">

@@ -40,7 +40,7 @@ export function VideoCard({ href, video, progress }: VideoCardProps) {
           </div>
         </div>
         <CardContent className="p-6">
-          <h3 className="text-xl font-bold line-clamp-2 leading-tight group-hover:underline">
+          <h3 className="text-xl font-bold line-clamp-2 leading-tight text-slate-900 group-hover:underline">
             {video.title}
           </h3>
           <p className="text-slate-500 mt-2 font-medium">{video.channelTitle}</p>

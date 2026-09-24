@@ -23,7 +23,7 @@ export default async function KidsPage() {
       <div className="max-w-5xl w-full">
         {allProfiles.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-xl text-muted-foreground">No kids found. Go to the parent portal to add one!</p>
+            <p className="text-xl text-slate-500">No kids found. Go to the parent portal to add one!</p>
             <Link href="/parent/profiles" className="mt-4 inline-block text-primary font-bold hover:underline">
               Manage Kids
             </Link>

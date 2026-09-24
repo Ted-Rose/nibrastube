@@ -9,6 +9,7 @@ export interface YouTubeVideo {
   thumbnail: string;
   channelTitle: string;
   channelId?: string;
+  publishedAt: Date | null;
   durationSeconds: number | null;
 }
 
@@ -36,6 +37,7 @@ interface YTSnippet {
   title: string;
   channelTitle?: string;
   channelId?: string;
+  publishedAt?: string;
   thumbnails?: { medium?: { url: string }; default?: { url: string } };
   resourceId?: { videoId?: string };
 }
@@ -82,6 +84,9 @@ export async function searchYouTube(query: string): Promise<YouTubeVideo[]> {
     title: item.snippet.title,
     thumbnail: item.snippet.thumbnails?.medium?.url,
     channelTitle: item.snippet.channelTitle,
+    publishedAt: item.snippet.publishedAt
+      ? new Date(item.snippet.publishedAt)
+      : null,
     durationSeconds: null, // search results don't include contentDetails
   }));
 }
@@ -104,6 +109,9 @@ export async function getVideoDetails(videoId: string): Promise<YouTubeVideo> {
     thumbnail: item.snippet.thumbnails?.medium?.url ?? "",
     channelTitle: item.snippet.channelTitle ?? "",
     channelId: item.snippet.channelId,
+    publishedAt: item.snippet.publishedAt
+      ? new Date(item.snippet.publishedAt)
+      : null,
     durationSeconds: parseIsoDuration(item.contentDetails?.duration),
   };
 }
@@ -201,6 +209,9 @@ export async function getVideosBatch(ids: string[]): Promise<FullVideoDetails[]>
         thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || "",
         channelTitle: item.snippet.channelTitle ?? "",
         channelId: item.snippet.channelId,
+        publishedAt: item.snippet.publishedAt
+          ? new Date(item.snippet.publishedAt)
+          : null,
         durationSeconds: parseIsoDuration(item.contentDetails?.duration),
         embeddable: true,
       });

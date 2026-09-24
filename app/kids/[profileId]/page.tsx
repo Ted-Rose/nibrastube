@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { profiles, whitelistedVideos, videos } from "@/lib/db/schema";
-import { eq, and, ilike, inArray } from "drizzle-orm";
+import { profiles, whitelistedVideos, videos, watchProgress } from "@/lib/db/schema";
+import { eq, and, ilike } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { MagnifyingGlass, Play, House } from "@phosphor-icons/react/dist/ssr";
@@ -35,21 +35,24 @@ export default async function KidsPortalPage({ params, searchParams }: KidsPorta
 
   if (!profile) notFound();
 
-  // Get pinned videos for this profile
-  const pinnedRelations = await db.query.whitelistedVideos.findMany({
-    where: eq(whitelistedVideos.profileId, profileId),
-  });
-
-  const pinnedVideoIds = pinnedRelations.map(r => r.videoId);
-
-  let approvedVideos: any[] = [];
-  if (pinnedVideoIds.length > 0) {
-    approvedVideos = await db.query.videos.findMany({
-      where: query 
-        ? and(inArray(videos.id, pinnedVideoIds), ilike(videos.title, `%${query}%`))
-        : inArray(videos.id, pinnedVideoIds),
-    });
-  }
+  // Pinned videos + watch progress in one joined round trip
+  const rows = await db
+    .select({ video: videos, progress: watchProgress })
+    .from(whitelistedVideos)
+    .innerJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .leftJoin(
+      watchProgress,
+      and(
+        eq(watchProgress.profileId, whitelistedVideos.profileId),
+        eq(watchProgress.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .where(
+      and(
+        eq(whitelistedVideos.profileId, profileId),
+        query ? ilike(videos.title, `%${query}%`) : undefined
+      )
+    );
 
   return (
     <div className="min-h-screen bg-[#F0F4FF] pb-20">
@@ -99,7 +102,7 @@ export default async function KidsPortalPage({ params, searchParams }: KidsPorta
            </h2>
         </div>
 
-        {approvedVideos.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
              <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
                  <Play size={48} weight="fill" />
@@ -110,12 +113,21 @@ export default async function KidsPortalPage({ params, searchParams }: KidsPorta
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {approvedVideos.map((video) => (
+            {rows.map(({ video, progress }) => {
+              const pct = !progress
+                ? 0
+                : progress.completed || !video.durationSeconds
+                  ? (progress.completed ? 100 : 0)
+                  : Math.min(100, Math.round((progress.positionSeconds / video.durationSeconds) * 100));
+              return (
               <Link key={video.id} href={`/kids/${profileId}/watch/${video.id}`} className="group">
                 <Card className="overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
                   <div className="relative aspect-video">
                     <img src={video.thumbnail} className="w-full h-full object-cover" alt={video.title} />
                     <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors" />
+                    {pct > 0 && (
+                      <div className="absolute bottom-0 left-0 h-1.5 bg-red-600" style={{ width: `${pct}%` }} />
+                    )}
                     <div className="absolute bottom-4 right-4 w-12 h-12 bg-primary rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                        <Play weight="fill" color="white" size={24} />
                     </div>
@@ -128,7 +140,8 @@ export default async function KidsPortalPage({ params, searchParams }: KidsPorta
                   </CardContent>
                 </Card>
               </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

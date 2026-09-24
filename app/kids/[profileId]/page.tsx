@@ -7,6 +7,7 @@ import { MagnifyingGlass, Play, House } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import PusherListener from "@/components/pusher-listener";
+import DailySyncPing from "@/components/daily-sync-ping";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
 import { getSession } from "@/lib/auth";
 
@@ -53,6 +54,7 @@ export default async function KidsPortalPage({ params, searchParams }: KidsPorta
   return (
     <div className="min-h-screen bg-[#F0F4FF] pb-20">
       <PusherListener profileId={profileId} />
+      <DailySyncPing />
       {/* Kids Header */}
       <header className="bg-white border-b-4 border-slate-100 px-6 py-4 sticky top-0 z-10 shadow-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">

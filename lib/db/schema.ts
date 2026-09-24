@@ -27,7 +27,17 @@ export const videos = pgTable("videos", {
   title: text("title").notNull(),
   thumbnail: text("thumbnail").notNull(),
   channelTitle: text("channel_title").notNull(),
+  channelId: text("channel_id"), // YouTube Channel ID (UC...)
   duration: text("duration"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// YouTube Channels Registry
+export const channels = pgTable("channels", {
+  id: text("id").primaryKey(), // YouTube Channel ID (UC...)
+  title: text("title").notNull(),
+  thumbnail: text("thumbnail"),
+  uploadsPlaylistId: text("uploads_playlist_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -41,12 +51,58 @@ export const whitelistedVideos = pgTable(
     videoId: text("video_id")
       .references(() => videos.id, { onDelete: "cascade" })
       .notNull(),
+    viaChannelId: text("via_channel_id"), // null = manually pinned; set = auto-added via approved channel
     pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.profileId, table.videoId] }),
   })
 );
+
+// Approved Channels for Profiles
+export const whitelistedChannels = pgTable(
+  "whitelisted_channels",
+  {
+    profileId: uuid("profile_id")
+      .references(() => profiles.id, { onDelete: "cascade" })
+      .notNull(),
+    channelId: text("channel_id")
+      .references(() => channels.id, { onDelete: "cascade" })
+      .notNull(),
+    approvedAt: timestamp("approved_at").defaultNow().notNull(),
+    backfillComplete: boolean("backfill_complete").default(false).notNull(),
+    backfillPageToken: text("backfill_page_token"), // resume cursor for large channels
+    lastSyncAt: timestamp("last_sync_at"),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.profileId, table.channelId] }),
+  })
+);
+
+// Tombstones: videos a parent explicitly unpinned from an approved channel,
+// so the sync does not re-add them
+export const channelVideoExclusions = pgTable(
+  "channel_video_exclusions",
+  {
+    profileId: uuid("profile_id")
+      .references(() => profiles.id, { onDelete: "cascade" })
+      .notNull(),
+    videoId: text("video_id")
+      .references(() => videos.id, { onDelete: "cascade" })
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.profileId, table.videoId] }),
+  })
+);
+
+// Daily sync dedup lock: one row per UTC day means the sync already ran
+export const dailySyncs = pgTable("daily_syncs", {
+  syncDate: text("sync_date").primaryKey(), // UTC date, YYYY-MM-DD
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  finishedAt: timestamp("finished_at"),
+  channelsSynced: integer("channels_synced"),
+});
 
 // Shared Access (Invite another parent to manage profiles)
 export const sharedAccess = pgTable(

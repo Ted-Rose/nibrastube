@@ -1,14 +1,20 @@
 import { db } from "@/lib/db";
-import { videos, profiles, whitelistedVideos, watchProgress } from "@/lib/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { profiles } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { WatchExperience } from "@/components/watch-experience";
+import {
+  getKidsVideos,
+  kidsFeedQuery,
+  parseKidsFeedParams,
+} from "@/lib/kids-feed";
 
 interface WatchPageProps {
   params: Promise<{ profileId: string; videoId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function WatchPage({ params }: WatchPageProps) {
+export default async function WatchPage({ params, searchParams }: WatchPageProps) {
   const { profileId, videoId } = await params;
 
   // 1. Verify profile and video approval
@@ -18,22 +24,23 @@ export default async function WatchPage({ params }: WatchPageProps) {
 
   if (!profile) notFound();
 
-  // Playlist + watch progress in one joined round trip
-  const rows = await db
-    .select({ video: videos, progress: watchProgress })
-    .from(whitelistedVideos)
-    .innerJoin(videos, eq(videos.id, whitelistedVideos.videoId))
-    .leftJoin(
-      watchProgress,
-      and(
-        eq(watchProgress.profileId, whitelistedVideos.profileId),
-        eq(watchProgress.videoId, whitelistedVideos.videoId)
-      )
-    )
-    .where(eq(whitelistedVideos.profileId, profileId))
-    .orderBy(asc(whitelistedVideos.pinnedAt));
+  // Autoplay playlist mirrors the grid the kid came from: same channel
+  // filter, search, and sort.
+  const feed = parseKidsFeedParams(await searchParams);
+  let rows = await getKidsVideos(profileId, {
+    q: feed.q,
+    channelId: feed.channel,
+    sort: feed.sort,
+    dir: feed.dir,
+  });
+  let currentIndex = rows.findIndex((r) => r.video.id === videoId);
 
-  const currentIndex = rows.findIndex((r) => r.video.id === videoId);
+  if (currentIndex === -1) {
+    // Stale link from a filtered view — fall back to the full list (still
+    // sorted) instead of bouncing the kid out.
+    rows = await getKidsVideos(profileId, { sort: feed.sort, dir: feed.dir });
+    currentIndex = rows.findIndex((r) => r.video.id === videoId);
+  }
 
   if (currentIndex === -1) {
     // If not approved, redirect back to the portal
@@ -59,6 +66,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
       profileAvatar={profile.avatar}
       playlist={playlist}
       startIndex={currentIndex}
+      returnQuery={kidsFeedQuery(feed)}
     />
   );
 }

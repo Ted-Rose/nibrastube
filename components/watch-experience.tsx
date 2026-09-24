@@ -59,6 +59,9 @@ interface WatchExperienceProps {
   profileAvatar: string | null;
   playlist: PlaylistVideo[];
   startIndex: number;
+  // Query string (incl. leading "?", or "") preserving the grid context —
+  // view/channel/sort/q — the kid arrived from.
+  returnQuery?: string;
 }
 
 export function WatchExperience({
@@ -67,8 +70,10 @@ export function WatchExperience({
   profileAvatar,
   playlist,
   startIndex,
+  returnQuery = "",
 }: WatchExperienceProps) {
   const router = useRouter();
+  const portalUrl = `/kids/${profileId}${returnQuery}`;
   const [index, setIndex] = useState(startIndex);
   const indexRef = useRef(startIndex);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -132,10 +137,10 @@ export function WatchExperience({
         window.history.replaceState(
           null,
           "",
-          `/kids/${profileId}/watch/${playlist[next].id}`
+          `/kids/${profileId}/watch/${playlist[next].id}${returnQuery}`
         );
       } else {
-        router.push(`/kids/${profileId}`);
+        router.push(portalUrl);
       }
     };
 
@@ -289,7 +294,7 @@ export function WatchExperience({
       playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, [profileId, playlist, router]);
+  }, [profileId, playlist, router, portalUrl, returnQuery]);
 
   const current = playlist[index];
 
@@ -297,7 +302,7 @@ export function WatchExperience({
     <div className="min-h-screen bg-black flex flex-col">
       {/* Player Header */}
       <div className="bg-slate-900/80 backdrop-blur px-6 py-4 flex items-center justify-between text-white border-b border-slate-800">
-        <Link href={`/kids/${profileId}`}>
+        <Link href={portalUrl}>
           <Button
             variant="ghost"
             className="text-white hover:bg-slate-800 gap-2"

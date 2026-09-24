@@ -75,6 +75,7 @@ async function upsertVideosAndWhitelist(
         thumbnail: v.thumbnail,
         channelTitle: v.channelTitle,
         channelId: v.channelId,
+        publishedAt: v.publishedAt,
         durationSeconds: v.durationSeconds,
       }))
     )
@@ -85,6 +86,7 @@ async function upsertVideosAndWhitelist(
         thumbnail: sql`excluded.thumbnail`,
         channelTitle: sql`excluded.channel_title`,
         channelId: sql`excluded.channel_id`,
+        publishedAt: sql`excluded.published_at`,
         durationSeconds: sql`excluded.duration_seconds`,
       },
     });

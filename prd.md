@@ -23,6 +23,7 @@ NibrasTube aims to provide a 100% safe, parent-curated video experience for chil
   - [x] Search global YouTube via the YouTube Data API.
   - [x] Preview videos before approving.
   - [x] Pin videos to one or more kids and assign them to specific playlists.
+  - [x] Approve entire YouTube channels — existing uploads are backfilled and new uploads sync daily.
 - [x] **Dashboard**: View what each kid is watching and manage the approved list.
 
 ### 3.2 Kids Portal

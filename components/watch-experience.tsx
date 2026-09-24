@@ -87,21 +87,45 @@ export function WatchExperience({
   const latestRef = useRef({ videoId: "", position: 0, duration: 0 });
   const lastSentRef = useRef(0);
   const lastSentPositionRef = useRef(0);
-  // Per-index watch status, updated in-session by advance() — the playlist
-  // prop is a page-load snapshot, but kids watch many videos without
-  // re-navigating.
-  const statusRef = useRef<WatchStatus[]>([]);
+  // Per-video watch status keyed by id, updated in-session by advance() —
+  // the playlist prop is a page-load snapshot, but kids watch many videos
+  // without re-navigating.
+  const statusRef = useRef(new Map<string, WatchStatus>());
+  // Videos finished during this session — their startSeconds prop is a
+  // stale page-load resume point, so replays must start at 0.
+  const completedRef = useRef(new Set<string>());
 
   useEffect(() => {
     let cancelled = false;
 
-    statusRef.current = playlist.map((v) => v.status);
-    // A Pusher refresh can shrink the playlist mid-session — keep the
-    // current index in bounds.
-    if (indexRef.current >= playlist.length) {
-      indexRef.current = Math.max(0, playlist.length - 1);
-      setIndex(indexRef.current);
+    // Status can only rise in-session (watched stays watched), so merge
+    // rather than replace — a refresh landing between a video finishing
+    // and its flush POST must not downgrade it back to "started".
+    for (const v of playlist) {
+      statusRef.current.set(
+        v.id,
+        Math.max(v.status, statusRef.current.get(v.id) ?? 0) as WatchStatus
+      );
     }
+
+    // A Pusher refresh can shrink or reorder the playlist mid-session —
+    // follow the still-playing video by id, else clamp the index in
+    // bounds. Without this the recreated player would load whichever
+    // video now happens to sit at the stale index.
+    const playingIdx = playlist.findIndex(
+      (v) => v.id === latestRef.current.videoId
+    );
+    if (playingIdx !== -1) {
+      indexRef.current = playingIdx;
+    } else if (indexRef.current >= playlist.length) {
+      indexRef.current = Math.max(0, playlist.length - 1);
+    }
+    setIndex(indexRef.current);
+
+    // Playlist emptied mid-session — nothing to play; the watch page
+    // redirects when the current video is unpinned, so this is a brief
+    // transitional state at most.
+    if (playlist.length === 0) return;
 
     // POST the current position to /api/watch-progress. Beacon for unload
     // paths (pagehide/unmount), throttled keepalive fetch otherwise.
@@ -142,31 +166,36 @@ export function WatchExperience({
       // video's position would otherwise be lost.
       flush();
       // Record the outgoing video's status from the latest sample so a
-      // video finished this session isn't re-picked as tier 1/2.
+      // video finished this session moves to tier 2 and isn't re-picked
+      // ahead of unwatched/started videos.
       const { videoId, position, duration } = latestRef.current;
       const cur = indexRef.current;
-      if (videoId === playlist[cur].id) {
+      const curId = playlist[cur]?.id;
+      if (curId && videoId === curId) {
         const status: WatchStatus =
           duration > 0 && position >= duration * 0.95
             ? 2
             : position > 0
               ? 1
               : 0;
-        statusRef.current[cur] = Math.max(
-          statusRef.current[cur],
-          status
-        ) as WatchStatus;
+        statusRef.current.set(
+          curId,
+          Math.max(statusRef.current.get(curId) ?? 0, status) as WatchStatus
+        );
+        if (status === 2) completedRef.current.add(curId);
       }
       const next = pickNextIndex(
         playlist.length,
         cur,
-        (i) => statusRef.current[i]
+        (i) => statusRef.current.get(playlist[i].id) ?? 0
       );
       indexRef.current = next;
       setIndex(next);
       playerRef.current?.loadVideoById({
         videoId: playlist[next].id,
-        startSeconds: playlist[next].startSeconds ?? 0,
+        startSeconds: completedRef.current.has(playlist[next].id)
+          ? 0
+          : (playlist[next].startSeconds ?? 0),
       });
       window.history.replaceState(
         null,
@@ -189,8 +218,9 @@ export function WatchExperience({
         mountRef.current = el;
       }
 
+      const currentVideo = playlist[indexRef.current];
       playerRef.current = new window.YT.Player(mountRef.current, {
-        videoId: playlist[indexRef.current].id,
+        videoId: currentVideo.id,
         width: "100%",
         height: "100%",
         playerVars: {
@@ -200,7 +230,14 @@ export function WatchExperience({
           iv_load_policy: 3,
           controls: 1,
           playsinline: 1,
-          start: Math.floor(playlist[indexRef.current].startSeconds ?? 0),
+          // When the player is recreated by a mid-session playlist
+          // refresh, resume the live position — not the stale page-load
+          // startSeconds snapshot.
+          start: Math.floor(
+            latestRef.current.videoId === currentVideo.id
+              ? latestRef.current.position
+              : (currentVideo.startSeconds ?? 0)
+          ),
         },
         events: {
           onStateChange: (event) => {
@@ -327,7 +364,11 @@ export function WatchExperience({
     };
   }, [profileId, playlist, router, portalUrl, returnQuery]);
 
-  const current = playlist[index];
+  // Clamp at render too: a Pusher refresh can shrink the playlist while
+  // `index` still points past the new end (the effect clamp runs only
+  // after this render).
+  const current = playlist[Math.min(index, playlist.length - 1)];
+  if (!current) return null;
 
   return (
     <div className="min-h-screen bg-black flex flex-col">

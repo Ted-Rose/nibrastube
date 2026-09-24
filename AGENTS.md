@@ -29,6 +29,9 @@ No test suite exists — verify with `typecheck` + `lint` + manual run.
 DB schema changes: edit `lib/db/schema.ts`, then `npm run db:generate`
 (commit the generated `drizzle/` files), `npm run db:migrate` to apply.
 Repo is configured for **squash-merge only** PRs (`.github/settings.yml`).
+Remotes: `origin` = my fork (`Ted-Rose/nibrastube`), `upstream` = source.
+All `gh` operations (issues, PRs, comments, reviews) go to the fork —
+pass `--repo Ted-Rose/nibrastube` when in doubt.
 
 ## Architecture
 

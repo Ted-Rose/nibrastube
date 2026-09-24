@@ -75,6 +75,7 @@ async function upsertVideosAndWhitelist(
         thumbnail: v.thumbnail,
         channelTitle: v.channelTitle,
         channelId: v.channelId,
+        durationSeconds: v.durationSeconds,
       }))
     )
     .onConflictDoUpdate({
@@ -84,6 +85,7 @@ async function upsertVideosAndWhitelist(
         thumbnail: sql`excluded.thumbnail`,
         channelTitle: sql`excluded.channel_title`,
         channelId: sql`excluded.channel_id`,
+        durationSeconds: sql`excluded.duration_seconds`,
       },
     });
 

@@ -1,5 +1,5 @@
 {
-  "id": "e73beff3-8a67-40e0-9b56-b33a72519068",
+  "id": "a135b462-190a-4154-aa73-de283454327c",
   "prevId": "3f4b734b-5a5c-411f-aadc-4e24950ca8a7",
   "version": "7",
   "dialect": "postgresql",
@@ -519,7 +519,7 @@
         },
         "watched_at": {
           "name": "watched_at",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"

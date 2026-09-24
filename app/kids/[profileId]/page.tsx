@@ -114,11 +114,11 @@ export default async function KidsPortalPage({ params, searchParams }: KidsPorta
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {rows.map(({ video, progress }) => {
-              const pct = !progress
-                ? 0
-                : progress.completed || !video.durationSeconds
-                  ? (progress.completed ? 100 : 0)
-                  : Math.min(100, Math.round((progress.positionSeconds / video.durationSeconds) * 100));
+              const pct = progress?.completed
+                ? 100
+                : progress && video.durationSeconds
+                  ? Math.min(100, Math.round((progress.positionSeconds / video.durationSeconds) * 100))
+                  : 0;
               return (
               <Link key={video.id} href={`/kids/${profileId}/watch/${video.id}`} className="group">
                 <Card className="overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">

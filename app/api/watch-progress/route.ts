@@ -44,6 +44,10 @@ export async function POST(request: NextRequest) {
   });
   if (!approved) return NextResponse.json({ ok: false }, { status: 403 });
 
+  // Clamp to server time: a far-future client clock must not poison the
+  // ordering guard below and permanently block newer updates.
+  const sentAt = new Date(Math.min(body.sentAt, Date.now()));
+
   // Lazily repair videos rows missing duration (pre-duration-fix pins)
   if (body.durationSeconds) {
     await db
@@ -59,7 +63,7 @@ export async function POST(request: NextRequest) {
       videoId: body.videoId,
       positionSeconds: body.positionSeconds,
       completed: body.completed,
-      watchedAt: new Date(body.sentAt),
+      watchedAt: sentAt,
     })
     .onConflictDoUpdate({
       target: [watchProgress.profileId, watchProgress.videoId],
@@ -70,7 +74,7 @@ export async function POST(request: NextRequest) {
       },
       // Drop late/out-of-order beacons (e.g. periodic fetch landing after
       // a pagehide beacon): only apply if the payload is newer.
-      setWhere: lt(watchProgress.watchedAt, new Date(body.sentAt)),
+      setWhere: lt(watchProgress.watchedAt, sentAt),
     });
 
   return NextResponse.json({ ok: true });

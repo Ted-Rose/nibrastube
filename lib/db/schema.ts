@@ -91,7 +91,9 @@ export const watchProgress = pgTable(
       .notNull(),
     positionSeconds: integer("position_seconds").default(0).notNull(),
     completed: boolean("completed").default(false).notNull(), // >= ~95% or ENDED
-    watchedAt: timestamp("watched_at").defaultNow().notNull(), // last flush time
+    watchedAt: timestamp("watched_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(), // last flush time
   },
   (table) => ({
     pk: primaryKey({ columns: [table.profileId, table.videoId] }),

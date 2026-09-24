@@ -3,7 +3,7 @@ CREATE TABLE "watch_progress" (
 	"video_id" text NOT NULL,
 	"position_seconds" integer DEFAULT 0 NOT NULL,
 	"completed" boolean DEFAULT false NOT NULL,
-	"watched_at" timestamp DEFAULT now() NOT NULL,
+	"watched_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "watch_progress_profile_id_video_id_pk" PRIMARY KEY("profile_id","video_id")
 );
 --> statement-breakpoint

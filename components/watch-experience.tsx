@@ -173,12 +173,11 @@ export function WatchExperience({
             }
             if (event.data === window.YT?.PlayerState.PAUSED) flush();
             if (event.data === window.YT?.PlayerState.ENDED) {
-              // Position = duration so the flush marks it completed.
+              // Position = duration so advance()'s flush marks it completed.
               latestRef.current = {
                 ...latestRef.current,
                 position: latestRef.current.duration,
               };
-              flush();
               advance();
             }
           },
@@ -215,42 +214,59 @@ export function WatchExperience({
     const approvedIds = new Set(playlist.map((v) => v.id));
 
     let lastTime = 0;
+    let lastLoadedId: string | undefined;
     const tick = window.setInterval(() => {
       const p = playerRef.current;
       if (!p) return;
       const loadedId = p.getVideoData()?.video_id;
       const currentId = playlist[indexRef.current].id;
+      if (loadedId !== lastLoadedId) {
+        // A different video is cueing — playhead history from the
+        // previous video must not feed the wrap check below.
+        lastLoadedId = loadedId;
+        lastTime = 0;
+      }
       if (loadedId && !approvedIds.has(loadedId)) {
-        // Rogue video — flush the approved video's last position first.
+        // Rogue video — flush the approved video's last position first,
+        // then snap back to where it left off.
         flush();
-        p.loadVideoById(currentId);
+        const resume = latestRef.current;
+        const startSeconds =
+          resume.videoId === currentId &&
+          resume.duration > 0 &&
+          resume.position < resume.duration - 10
+            ? resume.position
+            : 0;
+        p.loadVideoById({ videoId: currentId, startSeconds });
         return;
       }
       const duration = p.getDuration();
       const time = p.getCurrentTime();
-      // Only sample when the loaded video is the expected playlist entry —
-      // a rogue "More videos" embed must not overwrite its position.
-      if (loadedId === currentId) {
+      // Only act when the loaded video is the expected playlist entry —
+      // a rogue "More videos" embed must not overwrite its position or
+      // feed the end-of-video checks.
+      const isExpected = loadedId === currentId;
+      if (isExpected) {
         latestRef.current = { videoId: currentId, position: time, duration };
       }
       const wrapped =
         duration > 0 && lastTime >= duration - 1 && time < 1;
       lastTime = time;
-      const state = p.getPlayerState();
+      if (
+        !isExpected ||
+        p.getPlayerState() !== window.YT?.PlayerState.PLAYING
+      ) {
+        return;
+      }
       // Periodic flush covers swipe-kill / crash where no lifecycle
       // event fires (common on mobile PWA).
       if (
-        state === window.YT?.PlayerState.PLAYING &&
         Date.now() - lastSentRef.current > 10_000 &&
         Math.abs(time - lastSentPositionRef.current) > 2
       ) {
         flush();
       }
-      if (
-        duration > 0 &&
-        state === window.YT?.PlayerState.PLAYING &&
-        (time >= duration - 0.4 || wrapped)
-      ) {
+      if (duration > 0 && (time >= duration - 0.4 || wrapped)) {
         advance();
       }
     }, 500);

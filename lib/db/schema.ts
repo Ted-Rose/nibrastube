@@ -28,7 +28,7 @@ export const videos = pgTable("videos", {
   thumbnail: text("thumbnail").notNull(),
   channelTitle: text("channel_title").notNull(),
   channelId: text("channel_id"), // YouTube Channel ID (UC...)
-  duration: text("duration"),
+  durationSeconds: integer("duration_seconds"), // total length; null if API didn't return it
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

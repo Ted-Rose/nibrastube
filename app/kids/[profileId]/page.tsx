@@ -1,6 +1,10 @@
 import { db } from "@/lib/db";
-import { channels, profiles } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  channels,
+  profiles,
+  whitelistedChannels,
+} from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import {
@@ -76,6 +80,7 @@ export default async function KidsPortalPage({
       : [];
 
   let channelTitle: string | null = null;
+  let channelApproved = false;
   if (drilledIn) {
     channelTitle =
       rows[0]?.video.channelTitle ??
@@ -85,6 +90,14 @@ export default async function KidsPortalPage({
         })
       )?.title ??
       "Channel";
+    if (rows.length === 0) {
+      channelApproved = !!(await db.query.whitelistedChannels.findFirst({
+        where: and(
+          eq(whitelistedChannels.profileId, profileId),
+          eq(whitelistedChannels.channelId, channel)
+        ),
+      }));
+    }
   }
 
   const tabBase =
@@ -130,7 +143,11 @@ export default async function KidsPortalPage({
               <Input
                 name="q"
                 defaultValue={query}
-                placeholder={`Search ${profile.name}'s videos...`}
+                placeholder={
+                  view === "channels" && !drilledIn
+                    ? `Search ${profile.name}'s channels...`
+                    : `Search ${profile.name}'s videos...`
+                }
                 className="pl-14 h-14 text-xl rounded-full border-4 border-slate-50 bg-slate-50 focus:bg-white transition-all shadow-inner"
               />
             </form>
@@ -242,7 +259,11 @@ export default async function KidsPortalPage({
                  <Play size={48} weight="fill" />
              </div>
              <p className="text-2xl font-bold text-slate-400">
-               {query ? "No videos found!" : "Ask Mom or Dad to pick some videos!"}
+               {query
+                 ? "No videos found!"
+                 : channelApproved
+                   ? "Videos are on the way!"
+                   : "Ask Mom or Dad to pick some videos!"}
              </p>
           </div>
         ) : (

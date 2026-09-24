@@ -118,7 +118,9 @@ export async function getKidsChannels(
   const grouped = await db
     .select({
       channelId: videos.channelId,
-      channelTitle: videos.channelTitle,
+      // Titles can drift across cached rows after a channel rename — group by
+      // id only and take any title, or one channel would yield several cards.
+      channelTitle: sql<string>`max(${videos.channelTitle})`,
       videoCount: count(videos.id),
     })
     .from(whitelistedVideos)
@@ -126,22 +128,16 @@ export async function getKidsChannels(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
-        isNotNull(videos.channelId),
-        q ? ilike(videos.channelTitle, `%${q}%`) : undefined
+        isNotNull(videos.channelId)
       )
     )
-    .groupBy(videos.channelId, videos.channelTitle);
+    .groupBy(videos.channelId);
 
   const approved = await db
     .select({ channel: channels })
     .from(whitelistedChannels)
     .innerJoin(channels, eq(whitelistedChannels.channelId, channels.id))
-    .where(
-      and(
-        eq(whitelistedChannels.profileId, profileId),
-        q ? ilike(channels.title, `%${q}%`) : undefined
-      )
-    );
+    .where(eq(whitelistedChannels.profileId, profileId));
 
   const ids = [
     ...new Set([
@@ -178,5 +174,11 @@ export async function getKidsChannels(
     }
   }
 
-  return [...result.values()].sort((a, b) => a.title.localeCompare(b.title));
+  // Filter after merging so q matches the displayed title regardless of
+  // which source (videos.channelTitle vs channels.title) it came from.
+  const needle = q?.toLowerCase();
+  const all = [...result.values()].filter(
+    (c) => !needle || c.title.toLowerCase().includes(needle)
+  );
+  return all.sort((a, b) => a.title.localeCompare(b.title));
 }

@@ -37,6 +37,17 @@ export async function pinVideo(profileId: string, videoId: string) {
       publishedAt: details.publishedAt,
       durationSeconds: details.durationSeconds,
     });
+  } else if (!existingVideo.publishedAt || !existingVideo.durationSeconds) {
+    // Self-heal rows cached before published_at/duration_seconds existed
+    const details = await getVideoDetails(videoId);
+    await db
+      .update(videos)
+      .set({
+        publishedAt: existingVideo.publishedAt ?? details.publishedAt,
+        durationSeconds:
+          existingVideo.durationSeconds ?? details.durationSeconds,
+      })
+      .where(eq(videos.id, videoId));
   }
 
   // 2. Pin the video to the profile (manual pin: viaChannelId stays null)

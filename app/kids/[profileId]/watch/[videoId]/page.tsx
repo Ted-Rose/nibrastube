@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { videos, profiles, whitelistedVideos } from "@/lib/db/schema";
-import { eq, asc, inArray } from "drizzle-orm";
+import { videos, profiles, whitelistedVideos, watchProgress } from "@/lib/db/schema";
+import { eq, and, asc } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { WatchExperience } from "@/components/watch-experience";
 
@@ -18,30 +18,39 @@ export default async function WatchPage({ params }: WatchPageProps) {
 
   if (!profile) notFound();
 
-  const approved = await db.query.whitelistedVideos.findMany({
-    where: eq(whitelistedVideos.profileId, profileId),
-    orderBy: asc(whitelistedVideos.pinnedAt),
-  });
+  // Playlist + watch progress in one joined round trip
+  const rows = await db
+    .select({ video: videos, progress: watchProgress })
+    .from(whitelistedVideos)
+    .innerJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .leftJoin(
+      watchProgress,
+      and(
+        eq(watchProgress.profileId, whitelistedVideos.profileId),
+        eq(watchProgress.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .where(eq(whitelistedVideos.profileId, profileId))
+    .orderBy(asc(whitelistedVideos.pinnedAt));
 
-  const currentIndex = approved.findIndex((r) => r.videoId === videoId);
+  const currentIndex = rows.findIndex((r) => r.video.id === videoId);
 
   if (currentIndex === -1) {
     // If not approved, redirect back to the portal
     redirect(`/kids/${profileId}`);
   }
 
-  const videoRows = await db.query.videos.findMany({
-    where: inArray(
-      videos.id,
-      approved.map((r) => r.videoId)
-    ),
+  const playlist = rows.map(({ video, progress }) => {
+    const duration = video.durationSeconds ?? 0;
+    const startSeconds =
+      progress &&
+      !progress.completed &&
+      duration > 0 &&
+      progress.positionSeconds < duration - 10
+        ? progress.positionSeconds
+        : 0; // completed or nearly-done videos restart at 0, like YouTube
+    return { id: video.id, title: video.title, startSeconds };
   });
-  const titleById = new Map(videoRows.map((v) => [v.id, v.title]));
-
-  const playlist = approved.map((r) => ({
-    id: r.videoId,
-    title: titleById.get(r.videoId) ?? "",
-  }));
 
   return (
     <WatchExperience

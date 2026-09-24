@@ -79,6 +79,27 @@ export const whitelistedChannels = pgTable(
   })
 );
 
+// Watch progress per (profile, video): latest position wins, one row upserted
+export const watchProgress = pgTable(
+  "watch_progress",
+  {
+    profileId: uuid("profile_id")
+      .references(() => profiles.id, { onDelete: "cascade" })
+      .notNull(),
+    videoId: text("video_id")
+      .references(() => videos.id, { onDelete: "cascade" })
+      .notNull(),
+    positionSeconds: integer("position_seconds").default(0).notNull(),
+    completed: boolean("completed").default(false).notNull(), // >= ~95% or ENDED
+    watchedAt: timestamp("watched_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(), // last flush time
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.profileId, table.videoId] }),
+  })
+);
+
 // Tombstones: videos a parent explicitly unpinned from an approved channel,
 // so the sync does not re-add them
 export const channelVideoExclusions = pgTable(

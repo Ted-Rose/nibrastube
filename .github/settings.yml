@@ -1,0 +1,10 @@
+# Repository settings managed via the Probot Settings app
+# (https://probot.github.io/apps/settings/). These take effect only if the
+# app is installed on this repository; otherwise this file documents the
+# intended configuration.
+
+repository:
+  # Only allow squash merging pull requests
+  allow_squash_merge: true
+  allow_merge_commit: false
+  allow_rebase_merge: false

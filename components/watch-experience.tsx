@@ -17,6 +17,7 @@ interface YTPlayer {
   getCurrentTime(): number;
   getDuration(): number;
   getPlayerState(): number;
+  getVideoData(): { video_id?: string } | undefined;
 }
 
 interface YTNamespace {
@@ -151,10 +152,20 @@ export function WatchExperience({
     // poll playback position: advance when the video is nearly over or
     // when the playhead wraps back to the start after a loop (a 500ms
     // poll can straddle the 0.4s end-of-video window and miss it).
+    // Tapping a "More videos" suggestion loads a different video inside
+    // the same embed — never navigates away — so Screen Time can't help.
+    // Enforce the whitelist ourselves: snap back to approved content.
+    const approvedIds = new Set(playlist.map((v) => v.id));
+
     let lastTime = 0;
     const tick = window.setInterval(() => {
       const p = playerRef.current;
       if (!p) return;
+      const loadedId = p.getVideoData()?.video_id;
+      if (loadedId && !approvedIds.has(loadedId)) {
+        p.loadVideoById(playlist[indexRef.current].id);
+        return;
+      }
       const duration = p.getDuration();
       const time = p.getCurrentTime();
       const wrapped =

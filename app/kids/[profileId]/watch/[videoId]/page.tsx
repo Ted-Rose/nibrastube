@@ -7,6 +7,7 @@ import {
   getKidsVideos,
   kidsFeedQuery,
   parseKidsFeedParams,
+  watchStatus,
 } from "@/lib/kids-feed";
 
 interface WatchPageProps {
@@ -56,7 +57,12 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
       progress.positionSeconds < duration - 10
         ? progress.positionSeconds
         : 0; // completed or nearly-done videos restart at 0, like YouTube
-    return { id: video.id, title: video.title, startSeconds };
+    return {
+      id: video.id,
+      title: video.title,
+      startSeconds,
+      status: watchStatus(progress),
+    };
   });
 
   return (

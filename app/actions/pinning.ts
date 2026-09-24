@@ -34,6 +34,7 @@ export async function pinVideo(profileId: string, videoId: string) {
       thumbnail: details.thumbnail,
       channelTitle: details.channelTitle,
       channelId: details.channelId,
+      durationSeconds: details.durationSeconds,
     });
   }
 

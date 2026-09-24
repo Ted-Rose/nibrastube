@@ -9,6 +9,7 @@ export interface YouTubeVideo {
   thumbnail: string;
   channelTitle: string;
   channelId?: string;
+  durationSeconds: number | null;
 }
 
 export interface YouTubeChannel {
@@ -49,6 +50,20 @@ interface YTPlaylistItem {
   snippet?: YTSnippet;
 }
 
+interface YTVideoItem {
+  id: string;
+  snippet: YTSnippet;
+  contentDetails?: { duration?: string };
+  status?: { embeddable?: boolean };
+}
+
+// YouTube returns ISO 8601 durations: PT1H2M3S / PT10M / PT45S
+export function parseIsoDuration(iso?: string): number | null {
+  const m = iso ? /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso) : null;
+  if (!m) return null;
+  return +(m[1] ?? 0) * 3600 + +(m[2] ?? 0) * 60 + +(m[3] ?? 0);
+}
+
 export async function searchYouTube(query: string): Promise<YouTubeVideo[]> {
   if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
 
@@ -67,6 +82,7 @@ export async function searchYouTube(query: string): Promise<YouTubeVideo[]> {
     title: item.snippet.title,
     thumbnail: item.snippet.thumbnails?.medium?.url,
     channelTitle: item.snippet.channelTitle,
+    durationSeconds: null, // search results don't include contentDetails
   }));
 }
 
@@ -75,19 +91,20 @@ export async function getVideoDetails(videoId: string): Promise<YouTubeVideo> {
 
   const response = await axios.get(`${BASE_URL}/videos`, {
     params: {
-      part: "snippet",
+      part: "snippet,contentDetails",
       id: videoId,
       key: API_KEY,
     },
   });
 
-  const item = response.data.items[0];
+  const item: YTVideoItem = response.data.items[0];
   return {
     id: item.id,
     title: item.snippet.title,
-    thumbnail: item.snippet.thumbnails.medium.url,
-    channelTitle: item.snippet.channelTitle,
+    thumbnail: item.snippet.thumbnails?.medium?.url ?? "",
+    channelTitle: item.snippet.channelTitle ?? "",
     channelId: item.snippet.channelId,
+    durationSeconds: parseIsoDuration(item.contentDetails?.duration),
   };
 }
 
@@ -169,21 +186,22 @@ export async function getVideosBatch(ids: string[]): Promise<FullVideoDetails[]>
   for (let i = 0; i < ids.length; i += 50) {
     const response = await axios.get(`${BASE_URL}/videos`, {
       params: {
-        part: "snippet,status",
+        part: "snippet,status,contentDetails",
         id: ids.slice(i, i + 50).join(","),
         key: API_KEY,
       },
     });
 
-    for (const item of response.data.items || []) {
+    for (const item of (response.data.items || []) as YTVideoItem[]) {
       // Only embeddable videos can play in the IFrame embed
       if (item.status?.embeddable !== true) continue;
       results.push({
         id: item.id,
         title: item.snippet.title,
-        thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
-        channelTitle: item.snippet.channelTitle,
+        thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || "",
+        channelTitle: item.snippet.channelTitle ?? "",
         channelId: item.snippet.channelId,
+        durationSeconds: parseIsoDuration(item.contentDetails?.duration),
         embeddable: true,
       });
     }

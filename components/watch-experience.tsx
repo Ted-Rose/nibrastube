@@ -6,6 +6,8 @@ import Link from "next/link";
 import { ArrowLeft, House } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
+import { pickNextIndex } from "@/lib/autoplay";
+import type { WatchStatus } from "@/lib/kids-feed";
 
 interface YTPlayerEvent {
   data: number;
@@ -51,6 +53,7 @@ interface PlaylistVideo {
   id: string;
   title: string;
   startSeconds?: number;
+  status: WatchStatus;
 }
 
 interface WatchExperienceProps {
@@ -84,9 +87,21 @@ export function WatchExperience({
   const latestRef = useRef({ videoId: "", position: 0, duration: 0 });
   const lastSentRef = useRef(0);
   const lastSentPositionRef = useRef(0);
+  // Per-index watch status, updated in-session by advance() — the playlist
+  // prop is a page-load snapshot, but kids watch many videos without
+  // re-navigating.
+  const statusRef = useRef<WatchStatus[]>([]);
 
   useEffect(() => {
     let cancelled = false;
+
+    statusRef.current = playlist.map((v) => v.status);
+    // A Pusher refresh can shrink the playlist mid-session — keep the
+    // current index in bounds.
+    if (indexRef.current >= playlist.length) {
+      indexRef.current = Math.max(0, playlist.length - 1);
+      setIndex(indexRef.current);
+    }
 
     // POST the current position to /api/watch-progress. Beacon for unload
     // paths (pagehide/unmount), throttled keepalive fetch otherwise.
@@ -126,22 +141,38 @@ export function WatchExperience({
       // Flush BEFORE loadVideoById — the player is reused, so the old
       // video's position would otherwise be lost.
       flush();
-      const next = indexRef.current + 1;
-      if (next < playlist.length) {
-        indexRef.current = next;
-        setIndex(next);
-        playerRef.current?.loadVideoById({
-          videoId: playlist[next].id,
-          startSeconds: playlist[next].startSeconds ?? 0,
-        });
-        window.history.replaceState(
-          null,
-          "",
-          `/kids/${profileId}/watch/${playlist[next].id}${returnQuery}`
-        );
-      } else {
-        router.push(portalUrl);
+      // Record the outgoing video's status from the latest sample so a
+      // video finished this session isn't re-picked as tier 1/2.
+      const { videoId, position, duration } = latestRef.current;
+      const cur = indexRef.current;
+      if (videoId === playlist[cur].id) {
+        const status: WatchStatus =
+          duration > 0 && position >= duration * 0.95
+            ? 2
+            : position > 0
+              ? 1
+              : 0;
+        statusRef.current[cur] = Math.max(
+          statusRef.current[cur],
+          status
+        ) as WatchStatus;
       }
+      const next = pickNextIndex(
+        playlist.length,
+        cur,
+        (i) => statusRef.current[i]
+      );
+      indexRef.current = next;
+      setIndex(next);
+      playerRef.current?.loadVideoById({
+        videoId: playlist[next].id,
+        startSeconds: playlist[next].startSeconds ?? 0,
+      });
+      window.history.replaceState(
+        null,
+        "",
+        `/kids/${profileId}/watch/${playlist[next].id}${returnQuery}`
+      );
     };
 
     const createPlayer = () => {

@@ -54,6 +54,18 @@ export function kidsFeedQuery(
   return qs ? `?${qs}` : "";
 }
 
+export type WatchStatus = 0 | 1 | 2; // 0 new, 1 started, 2 watched
+
+// JS mirror of the statusRank CASE below — same tiers, so autoplay picks
+// match what the sort=status grid shows.
+export function watchStatus(
+  progress: { positionSeconds: number; completed: boolean } | null
+): WatchStatus {
+  if (progress?.completed) return 2;
+  if (progress && progress.positionSeconds > 0) return 1;
+  return 0;
+}
+
 // Whitelisted videos + watch progress for a profile, optionally filtered by
 // title (q) and/or publishing channel, ordered per sort/dir.
 export async function getKidsVideos(

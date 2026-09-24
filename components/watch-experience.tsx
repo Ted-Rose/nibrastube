@@ -14,6 +14,7 @@ interface YTPlayerEvent {
 interface YTPlayer {
   destroy(): void;
   loadVideoById(videoId: string): void;
+  loadVideoById(args: { videoId: string; startSeconds?: number }): void;
   getCurrentTime(): number;
   getDuration(): number;
   getPlayerState(): number;
@@ -31,7 +32,12 @@ interface YTNamespace {
       events?: { onStateChange?: (event: YTPlayerEvent) => void };
     }
   ) => YTPlayer;
-  PlayerState: { ENDED: number; PLAYING: number };
+  PlayerState: {
+    ENDED: number;
+    PLAYING: number;
+    PAUSED: number;
+    BUFFERING: number;
+  };
 }
 
 declare global {
@@ -44,6 +50,7 @@ declare global {
 interface PlaylistVideo {
   id: string;
   title: string;
+  startSeconds?: number;
 }
 
 interface WatchExperienceProps {
@@ -68,20 +75,60 @@ export function WatchExperience({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayer | null>(null);
   const advancingRef = useRef(false);
+  // Latest position sample, kept fresh by the 500ms tick below.
+  const latestRef = useRef({ videoId: "", position: 0, duration: 0 });
+  const lastSentRef = useRef(0);
+  const lastSentPositionRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+
+    // POST the current position to /api/watch-progress. Beacon for unload
+    // paths (pagehide/unmount), throttled keepalive fetch otherwise.
+    const flush = (useBeacon = false) => {
+      const { videoId, position, duration } = latestRef.current;
+      if (!videoId || duration <= 0) return;
+      lastSentRef.current = Date.now();
+      lastSentPositionRef.current = position;
+      const payload = JSON.stringify({
+        profileId,
+        videoId,
+        positionSeconds: Math.floor(position),
+        durationSeconds: Math.floor(duration),
+        completed: position >= duration * 0.95,
+        sentAt: Date.now(),
+      });
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon(
+          "/api/watch-progress",
+          new Blob([payload], { type: "application/json" })
+        );
+      } else {
+        fetch("/api/watch-progress", {
+          method: "POST",
+          body: payload,
+          keepalive: true,
+          headers: { "Content-Type": "application/json" },
+        }).catch(() => {});
+      }
+    };
 
     // Advance by loading the next video into the SAME player instead of
     // navigating — keeps the element (and fullscreen mode) mounted.
     const advance = () => {
       if (advancingRef.current) return;
       advancingRef.current = true;
+      // Flush BEFORE loadVideoById — the player is reused, so the old
+      // video's position would otherwise be lost.
+      flush();
       const next = indexRef.current + 1;
       if (next < playlist.length) {
         indexRef.current = next;
         setIndex(next);
-        playerRef.current?.loadVideoById(playlist[next].id);
+        playerRef.current?.loadVideoById({
+          videoId: playlist[next].id,
+          startSeconds: playlist[next].startSeconds ?? 0,
+        });
         window.history.replaceState(
           null,
           "",
@@ -117,13 +164,23 @@ export function WatchExperience({
           iv_load_policy: 3,
           controls: 1,
           playsinline: 1,
+          start: Math.floor(playlist[indexRef.current].startSeconds ?? 0),
         },
         events: {
           onStateChange: (event) => {
             if (event.data === window.YT?.PlayerState.PLAYING) {
               advancingRef.current = false;
             }
-            if (event.data === window.YT?.PlayerState.ENDED) advance();
+            if (event.data === window.YT?.PlayerState.PAUSED) flush();
+            if (event.data === window.YT?.PlayerState.ENDED) {
+              // Position = duration so the flush marks it completed.
+              latestRef.current = {
+                ...latestRef.current,
+                position: latestRef.current.duration,
+              };
+              flush();
+              advance();
+            }
           },
         },
       });
@@ -162,27 +219,57 @@ export function WatchExperience({
       const p = playerRef.current;
       if (!p) return;
       const loadedId = p.getVideoData()?.video_id;
+      const currentId = playlist[indexRef.current].id;
       if (loadedId && !approvedIds.has(loadedId)) {
-        p.loadVideoById(playlist[indexRef.current].id);
+        // Rogue video — flush the approved video's last position first.
+        flush();
+        p.loadVideoById(currentId);
         return;
       }
       const duration = p.getDuration();
       const time = p.getCurrentTime();
+      // Only sample when the loaded video is the expected playlist entry —
+      // a rogue "More videos" embed must not overwrite its position.
+      if (loadedId === currentId) {
+        latestRef.current = { videoId: currentId, position: time, duration };
+      }
       const wrapped =
         duration > 0 && lastTime >= duration - 1 && time < 1;
       lastTime = time;
+      const state = p.getPlayerState();
+      // Periodic flush covers swipe-kill / crash where no lifecycle
+      // event fires (common on mobile PWA).
+      if (
+        state === window.YT?.PlayerState.PLAYING &&
+        Date.now() - lastSentRef.current > 10_000 &&
+        Math.abs(time - lastSentPositionRef.current) > 2
+      ) {
+        flush();
+      }
       if (
         duration > 0 &&
-        p.getPlayerState() === window.YT?.PlayerState.PLAYING &&
+        state === window.YT?.PlayerState.PLAYING &&
         (time >= duration - 0.4 || wrapped)
       ) {
         advance();
       }
     }, 500);
 
+    // pagehide is the reliable unload event on mobile; beforeunload is not.
+    const flushBeacon = () => flush(true);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush(true);
+    };
+    window.addEventListener("pagehide", flushBeacon);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       cancelled = true;
       window.clearInterval(tick);
+      window.removeEventListener("pagehide", flushBeacon);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      // Unmount (Back to Videos / House / route change) — last chance flush.
+      flush(true);
       playerRef.current?.destroy();
       playerRef.current = null;
     };

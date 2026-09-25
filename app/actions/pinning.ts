@@ -8,7 +8,7 @@ import {
 } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
-import { getVideoDetails } from "@/lib/youtube";
+import { getVideoDetails, videoRowValues } from "@/lib/youtube";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
@@ -28,25 +28,13 @@ export async function pinVideo(profileId: string, videoId: string) {
 
   if (!existingVideo) {
     const details = await getVideoDetails(videoId);
-    await db.insert(videos).values({
-      id: details.id,
-      title: details.title,
-      thumbnail: details.thumbnail,
-      channelTitle: details.channelTitle,
-      channelId: details.channelId,
-      publishedAt: details.publishedAt,
-      durationSeconds: details.durationSeconds,
-    });
-  } else if (!existingVideo.publishedAt || !existingVideo.durationSeconds) {
-    // Self-heal rows cached before published_at/duration_seconds existed
+    await db.insert(videos).values(videoRowValues(details));
+  } else if (!existingVideo.fetchedAt) {
+    // Self-heal rows cached before the rich-metadata columns existed
     const details = await getVideoDetails(videoId);
     await db
       .update(videos)
-      .set({
-        publishedAt: existingVideo.publishedAt ?? details.publishedAt,
-        durationSeconds:
-          existingVideo.durationSeconds ?? details.durationSeconds,
-      })
+      .set(videoRowValues(details))
       .where(eq(videos.id, videoId));
   }
 

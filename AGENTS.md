@@ -140,6 +140,10 @@ scripts/generate-icons.mjs      Regenerates PWA icons in public/icons/
   heavy fonts (`font-black`), playful emoji avatars, slate/primary palette.
 - Forms use server actions via `<form action={...}>`; validation with
   zod `safeParse` on FormData.
+- Branch names must use a prefix: `feature/` for new functionality,
+  `fix/` for bug fixes, `chore/` for maintenance/tooling, `docs/` for
+  documentation, `refactor/` for restructuring without behavior change
+  (e.g. `feature/kids-profile-switcher`, `fix/dark-mode-titles`).
 - Path alias `@/*` → repo root (`tsconfig.json`).
 - Env vars needed: `DATABASE_URL`, `JWT_SECRET`, `YOUTUBE_API_KEY`,
   `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER`

@@ -6,6 +6,11 @@ export async function proxy(request: NextRequest) {
   const session = await getSession();
   const activeProfileId = request.cookies.get("activeProfileId")?.value;
 
+  // 0. Landing page: authenticated parents and kid-locked devices go straight to /kids
+  if (request.nextUrl.pathname === "/" && (session || activeProfileId)) {
+    return NextResponse.redirect(new URL("/kids", request.url));
+  }
+
   // 1. If trying to access a profile that isn't the active one
   if (request.nextUrl.pathname.startsWith("/kids/")) {
     const profileIdInUrl = request.nextUrl.pathname.split("/")[2];
@@ -32,5 +37,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/parent/:path*", "/kids/:path*", "/login", "/signup"],
+  matcher: ["/", "/parent/:path*", "/kids/:path*", "/login", "/signup"],
 };

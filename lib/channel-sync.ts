@@ -8,7 +8,11 @@ import {
   whitelistedChannels,
   whitelistedVideos,
 } from "@/lib/db/schema";
-import { getUploadsPage, getVideosBatch } from "@/lib/youtube";
+import {
+  getUploadsPage,
+  getVideosBatch,
+  videoRowValues,
+} from "@/lib/youtube";
 
 const MAX_CHANNELS_PER_RUN = 50;
 const MAX_BACKFILL_PAGES_PER_RUN = 40; // ~2000 videos per run; resume via backfillPageToken
@@ -68,17 +72,7 @@ async function upsertVideosAndWhitelist(
 
   await db
     .insert(videos)
-    .values(
-      details.map((v) => ({
-        id: v.id,
-        title: v.title,
-        thumbnail: v.thumbnail,
-        channelTitle: v.channelTitle,
-        channelId: v.channelId,
-        publishedAt: v.publishedAt,
-        durationSeconds: v.durationSeconds,
-      }))
-    )
+    .values(details.map(videoRowValues))
     .onConflictDoUpdate({
       target: videos.id,
       set: {
@@ -88,6 +82,22 @@ async function upsertVideosAndWhitelist(
         channelId: sql`excluded.channel_id`,
         publishedAt: sql`excluded.published_at`,
         durationSeconds: sql`excluded.duration_seconds`,
+        description: sql`excluded.description`,
+        tags: sql`excluded.tags`,
+        categoryId: sql`excluded.category_id`,
+        defaultLanguage: sql`excluded.default_language`,
+        defaultAudioLanguage: sql`excluded.default_audio_language`,
+        liveBroadcastContent: sql`excluded.live_broadcast_content`,
+        madeForKids: sql`excluded.made_for_kids`,
+        ageRestricted: sql`excluded.age_restricted`,
+        embeddable: sql`excluded.embeddable`,
+        privacyStatus: sql`excluded.privacy_status`,
+        hasCaptions: sql`excluded.has_captions`,
+        definition: sql`excluded.definition`,
+        viewCount: sql`excluded.view_count`,
+        likeCount: sql`excluded.like_count`,
+        fetchedAt: sql`excluded.fetched_at`,
+        raw: sql`excluded.raw`,
       },
     });
 

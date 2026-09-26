@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AndroidAppLink } from "@/components/android-app-link";
 import { Button } from "@/components/ui/button";
 import { Video, ShieldCheck, Users, DeviceMobile, PlayCircle, Lock } from "@phosphor-icons/react/dist/ssr";
 
@@ -124,6 +125,7 @@ export default function LandingPage() {
                </div>
                <span className="text-xl font-black tracking-tight text-slate-900">NibrasTube</span>
             </div>
+            <AndroidAppLink />
             <p className="text-slate-400 font-bold">© 2026 NibrasTube. Curated with ❤️ for kids.</p>
          </div>
       </footer>

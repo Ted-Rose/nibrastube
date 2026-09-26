@@ -79,7 +79,20 @@ lib/
   utils.ts                      cn() (clsx + tailwind-merge)
 public/sw.js                    PWA service worker (cache-first static only)
 scripts/generate-icons.mjs      Regenerates PWA icons in public/icons/
+android/                      Capacitor 8 Android project (generated,
+                              committed) — WebView loads server.url
+capacitor.config.ts           appId + server.url (from CAPACITOR_SERVER_URL)
+capacitor-www/                Placeholder webDir for `cap sync` (SSR app
+                              has no static export; APK loads remote URL)
 ```
+
+## Android APK
+
+Capacitor wrapper — see `docs/ANDROID_APK.md`. Requires the app to be
+deployed at a public HTTPS URL (set `CAPACITOR_SERVER_URL` locally /
+`APP_URL` repo variable in CI). `.github/workflows/android-release.yml`
+builds a debug APK on the `android` branch / dispatch and a signed
+release APK on `v*` tags.
 
 ## Data model (`lib/db/schema.ts`)
 

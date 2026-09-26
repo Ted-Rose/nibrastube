@@ -6,3 +6,8 @@ node_modules
 dist
 build
 *.tsbuildinfo
+
+# Android signing material — never commit keystores
+*.p12
+*.keystore
+*.jks

@@ -2,25 +2,20 @@
 
 import { ParentalGateWrapper } from "./parental-gate-wrapper";
 import { Button } from "./ui/button";
-import { unlockParentPortal, unlockKidsMode } from "@/app/actions/safety";
+import { unlockParentPortal } from "@/app/actions/safety";
 import { LockOpen } from "@phosphor-icons/react";
 
 interface KidsFooterGateProps {
   correctPin: string;
-  target?: "/parent/dashboard" | "/kids";
   trigger?: React.ReactNode;
 }
 
-export function KidsFooterGate({ correctPin, target = "/parent/dashboard", trigger }: KidsFooterGateProps) {
+export function KidsFooterGate({ correctPin, trigger }: KidsFooterGateProps) {
   return (
-    <ParentalGateWrapper 
+    <ParentalGateWrapper
       correctPin={correctPin}
       onVerified={async () => {
-         if (target === "/kids") {
-            await unlockKidsMode();
-         } else {
-            await unlockParentPortal();
-         }
+         await unlockParentPortal();
       }}
     >
       {trigger || (

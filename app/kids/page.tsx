@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
-import { profiles } from "@/lib/db/schema";
+import { profiles, users } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth";
+import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { Card, CardContent } from "@/components/ui/card";
 import { selectProfile } from "@/app/actions/safety";
@@ -13,6 +14,23 @@ export default async function KidsPage() {
   const allProfiles = session 
     ? await db.query.profiles.findMany({ where: eq(profiles.parentId, session.user.id) })
     : await db.query.profiles.findMany();
+
+  // The gate PIN must work on kid-locked devices with no/expired session, so
+  // fall back to the PIN of the parent who owns the locked profile (or the
+  // first listed profile) instead of blindly defaulting to "0000".
+  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
+  let gatePin = session?.user?.parentPin ?? null;
+  if (!gatePin) {
+    const gateProfile =
+      allProfiles.find((p) => p.id === activeProfileId) ?? allProfiles[0];
+    if (gateProfile) {
+      const owner = await db.query.users.findFirst({
+        where: eq(users.id, gateProfile.parentId),
+        columns: { parentPin: true },
+      });
+      gatePin = owner?.parentPin ?? null;
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
@@ -51,7 +69,7 @@ export default async function KidsPage() {
       </div>
 
       <div className="fixed bottom-6 right-6">
-        <KidsFooterGate correctPin={session?.user?.parentPin || "0000"} />
+        <KidsFooterGate correctPin={gatePin ?? "0000"} />
       </div>
     </div>
   );

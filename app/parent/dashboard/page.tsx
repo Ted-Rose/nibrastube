@@ -8,12 +8,12 @@ import { searchChannels, searchYouTube } from "@/lib/youtube";
 import { pinVideo, unpinVideo } from "@/app/actions/pinning";
 import { approveChannel, unapproveChannel } from "@/app/actions/channels";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Baby, Check, MagnifyingGlass, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
+import { Check, MagnifyingGlass, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
-import { logoutAction } from "@/app/actions/auth";
 import DailySyncPing from "@/components/daily-sync-ping";
 
 interface DashboardProps {
@@ -84,29 +84,17 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
     `/parent/dashboard?profileId=${activeProfile?.id ?? ""}${query ? `&q=${encodeURIComponent(query)}` : ""}&type=${searchTypeParam}`;
 
   return (
-    <div className="container mx-auto py-10 px-4">
+    <div className="container mx-auto py-6 sm:py-10 px-4">
       <DailySyncPing />
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
-        <div>
-          <h1 className="text-4xl font-bold tracking-tight">Parent Portal</h1>
-          <p className="text-muted-foreground mt-1">Search and approve videos for your kids</p>
-        </div>
-        <div className="flex gap-2">
-           <Link href="/parent/profiles">
-            <Button variant="outline"><Users className="mr-2" /> Manage Kids</Button>
-          </Link>
-          <Link href="/kids">
-            <Button variant="outline"><Baby className="mr-2" /> Kids Corner</Button>
-          </Link>
-          <form action={logoutAction}>
-            <Button variant="ghost" type="submit">Logout</Button>
-          </form>
-        </div>
+      <div className="mb-6 sm:mb-10">
+        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Parent Portal</h1>
+        <p className="text-muted-foreground mt-1">Search and approve videos for your kids</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Sidebar: Profile Selection & Pinned Videos */}
-        <div className="lg:col-span-1 space-y-6">
+        {/* Sidebar: Profile Selection & Pinned Videos — below the search
+            on mobile so the page's primary action comes first */}
+        <div className="order-2 lg:order-1 lg:col-span-1 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Select Kid</CardTitle>
@@ -147,9 +135,9 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                       <p className="text-xs font-medium truncate">{v.title}</p>
                     </div>
                     <form action={unpinVideo.bind(null, activeProfile!.id, v.id)}>
-                      <Button type="submit" variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash size={16} />
-                      </Button>
+                      <SubmitButton variant="ghost" size="icon-touch" aria-label={`Unpin ${v.title}`} className="text-destructive opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                        <Trash size={20} />
+                      </SubmitButton>
                     </form>
                   </div>
                 ))}
@@ -191,9 +179,9 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                       )}
                     </div>
                     <form action={unapproveChannel.bind(null, activeProfile!.id, channel.id)}>
-                      <Button type="submit" variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash size={16} />
-                      </Button>
+                      <SubmitButton variant="ghost" size="icon-touch" aria-label={`Unapprove ${channel.title}`} className="text-destructive opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                        <Trash size={20} />
+                      </SubmitButton>
                     </form>
                   </div>
                 ))}
@@ -203,17 +191,17 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
         </div>
 
         {/* Main Content: Search YouTube */}
-        <div className="lg:col-span-3 space-y-8">
+        <div className="order-1 lg:order-2 lg:col-span-3 space-y-8">
           <Card className="bg-primary/5 border-primary/20">
             <CardContent className="pt-6 space-y-4">
               <div className="flex gap-2">
                 <Link href={dashboardHref("videos")}>
-                  <Button variant={searchType === "videos" ? "default" : "outline"} size="sm">
+                  <Button variant={searchType === "videos" ? "default" : "outline"} size="touch">
                     <Video className="mr-2" /> Videos
                   </Button>
                 </Link>
                 <Link href={dashboardHref("channels")}>
-                  <Button variant={searchType === "channels" ? "default" : "outline"} size="sm">
+                  <Button variant={searchType === "channels" ? "default" : "outline"} size="touch">
                     <Users className="mr-2" /> Channels
                   </Button>
                 </Link>
@@ -260,9 +248,9 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                         </Button>
                       ) : (
                         <form action={pinVideo.bind(null, activeProfile!.id, video.id)} className="w-full">
-                          <Button type="submit" variant="outline" className="w-full hover:bg-primary hover:text-white transition-colors">
+                          <SubmitButton variant="outline" size="touch" pendingLabel="Pinning…" className="w-full hover:bg-primary hover:text-white transition-colors">
                             Pin to {activeProfile?.name}
-                          </Button>
+                          </SubmitButton>
                         </form>
                       )}
                     </CardFooter>
@@ -291,9 +279,9 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                         </Button>
                       ) : (
                         <form action={approveChannel.bind(null, activeProfile!.id, channel.id)} className="w-full">
-                          <Button type="submit" variant="outline" className="w-full hover:bg-primary hover:text-white transition-colors">
+                          <SubmitButton variant="outline" size="touch" pendingLabel="Approving…" className="w-full hover:bg-primary hover:text-white transition-colors">
                             Approve Channel for {activeProfile?.name}
-                          </Button>
+                          </SubmitButton>
                         </form>
                       )}
                     </CardFooter>

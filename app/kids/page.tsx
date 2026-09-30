@@ -33,12 +33,13 @@ export default async function KidsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-      <h1 className="text-4xl md:text-6xl font-black text-slate-900 mb-12 text-center tracking-tight">
-        Who's watching?
-      </h1>
-      
-      <div className="max-w-5xl w-full">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4">
+      <div className="flex-1 flex flex-col items-center justify-center w-full">
+        <h1 className="text-4xl md:text-6xl font-black text-slate-900 mb-12 text-center tracking-tight">
+          Who's watching?
+        </h1>
+
+        <div className="max-w-5xl w-full">
         {allProfiles.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-xl text-slate-500">No kids found. Go to the parent portal to add one!</p>
@@ -66,11 +67,13 @@ export default async function KidsPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
-      <div className="fixed bottom-6 right-6">
+      {/* Inline instead of a fixed overlay so it can never cover content */}
+      <footer className="py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <KidsFooterGate correctPin={gatePin ?? "0000"} />
-      </div>
+      </footer>
     </div>
   );
 }

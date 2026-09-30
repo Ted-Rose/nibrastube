@@ -110,17 +110,17 @@ export default async function KidsPortalPage({
   }
 
   const tabBase =
-    "flex items-center gap-3 rounded-full px-6 py-3 text-xl font-black transition-colors";
+    "flex items-center justify-center gap-2 sm:gap-3 rounded-full px-4 sm:px-6 py-2.5 sm:py-3 text-base sm:text-xl font-black transition-colors";
   const tabActive = "bg-primary text-white shadow-md";
-  const tabInactive = "bg-white text-slate-500 hover:bg-slate-100";
+  const tabInactive = "text-slate-500 hover:bg-slate-100";
 
   return (
-    <div className="min-h-screen bg-[#F0F4FF] pb-20">
+    <div className="min-h-screen bg-[#F0F4FF]">
       <PusherListener profileId={profileId} />
       <DailySyncPing />
       {/* Kids Header */}
-      <header className="bg-white border-b-4 border-slate-100 px-6 py-4 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      <header className="bg-white border-b-4 border-slate-100 px-4 sm:px-6 pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-3">
           <div className="flex items-center gap-3">
              <Link
                href="/kids"
@@ -132,7 +132,7 @@ export default async function KidsPortalPage({
              <span className="text-xl font-black text-slate-900 hidden md:block">NibrasTube</span>
           </div>
 
-          <div className="flex-1 max-w-2xl relative">
+          <div className="relative order-last basis-full min-w-0 sm:order-none sm:basis-auto sm:flex-1 sm:max-w-2xl">
             <MagnifyingGlass className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={24} weight="fill" />
             <form action={`/kids/${profileId}`} method="GET">
               {view !== "videos" && (
@@ -155,7 +155,7 @@ export default async function KidsPortalPage({
                     ? `Search ${profile.name}'s channels...`
                     : `Search ${profile.name}'s videos...`
                 }
-                className="pl-14 h-14 text-xl rounded-full border-4 border-slate-50 bg-slate-50 text-slate-900 focus:bg-white transition-all shadow-inner"
+                className="pl-12 sm:pl-14 h-11 sm:h-14 text-base sm:text-xl rounded-full border-4 border-slate-50 bg-slate-50 text-slate-900 focus:bg-white transition-all shadow-inner"
               />
             </form>
           </div>
@@ -167,7 +167,7 @@ export default async function KidsPortalPage({
           >
              <span className="text-xl font-black text-slate-700 hidden sm:block">{profile.name}</span>
              <div className="relative">
-               <div className="w-14 h-14 rounded-2xl bg-white border-4 border-primary shadow-sm flex items-center justify-center text-3xl">
+               <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-white border-4 border-primary shadow-sm flex items-center justify-center text-2xl sm:text-3xl">
                   {profile.avatar}
                </div>
                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-sm">
@@ -178,27 +178,30 @@ export default async function KidsPortalPage({
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 mt-10">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 sm:mt-10">
         {/* View tabs */}
-        <div className="flex items-center gap-4 mb-8">
-          <Link
-            href={portalUrl({ view: "videos", channel: null })}
-            className={`${tabBase} ${view === "videos" ? tabActive : tabInactive}`}
-          >
-            <Play size={24} weight="fill" />
-            Videos
-          </Link>
-          <Link
-            href={portalUrl({ view: "channels", channel: null })}
-            className={`${tabBase} ${view === "channels" ? tabActive : tabInactive}`}
-          >
-            <MonitorPlay size={24} weight="bold" />
-            Channels
-          </Link>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-8">
+          <div className="grid grid-cols-2 gap-1 rounded-full bg-white p-1 shadow-sm sm:inline-flex">
+            <Link
+              href={portalUrl({ view: "videos", channel: null })}
+              className={`${tabBase} ${view === "videos" ? tabActive : tabInactive}`}
+            >
+              <Play size={24} weight="fill" />
+              Videos
+            </Link>
+            <Link
+              href={portalUrl({ view: "channels", channel: null })}
+              className={`${tabBase} ${view === "channels" ? tabActive : tabInactive}`}
+            >
+              <MonitorPlay size={24} weight="bold" />
+              Channels
+            </Link>
+          </div>
           {showVideoGrid && (
-            <div className="ml-auto">
-              <KidsSortSelect value={`${feed.sort}:${feed.dir}`} />
-            </div>
+            <KidsSortSelect
+              value={`${feed.sort}:${feed.dir}`}
+              className="w-full sm:w-auto sm:ml-auto"
+            />
           )}
         </div>
 
@@ -296,14 +299,15 @@ export default async function KidsPortalPage({
         )}
       </main>
 
-      {/* Parental Gate to switch to Parent Portal altogether */}
-      <div className="fixed bottom-6 right-6">
+      {/* Parental Gate to switch to Parent Portal altogether — inline so
+          it can never overlap grid content */}
+      <footer className="mt-16 flex justify-center pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <KidsFooterGate
           correctPin={
             profileOwner?.parentPin ?? session?.user?.parentPin ?? "0000"
           }
         />
-      </div>
+      </footer>
     </div>
   );
 }

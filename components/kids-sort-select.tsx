@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CaretDown } from "@phosphor-icons/react";
+import { cn } from "@/lib/utils";
 
 const OPTIONS = [
   { value: "age:desc", label: "Newest first" },
@@ -11,7 +12,13 @@ const OPTIONS = [
 ] as const;
 
 // `value` is the validated "<sort>:<dir>" pair from the server.
-export function KidsSortSelect({ value }: { value: string }) {
+export function KidsSortSelect({
+  value,
+  className,
+}: {
+  value: string;
+  className?: string;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -28,12 +35,12 @@ export function KidsSortSelect({ value }: { value: string }) {
   };
 
   return (
-    <div className="relative">
+    <div className={cn("relative", className)}>
       <select
         value={value}
         onChange={onChange}
         aria-label="Sort videos"
-        className="appearance-none h-12 rounded-full border-4 border-slate-100 bg-white pl-5 pr-12 text-lg font-bold text-slate-700 shadow-sm cursor-pointer focus:outline-none focus:border-primary transition-colors"
+        className="w-full appearance-none h-11 sm:h-12 rounded-full border-4 border-slate-100 bg-white pl-5 pr-12 text-base sm:text-lg font-bold text-slate-700 shadow-sm cursor-pointer focus:outline-none focus:border-primary transition-colors"
       >
         {OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { db } from "@/lib/db";
@@ -13,7 +13,7 @@ import {
 } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
-import { getChannelDetails } from "@/lib/youtube";
+import { channelRowValues, getChannelDetails } from "@/lib/youtube";
 import { backfillChannel } from "@/lib/channel-sync";
 
 export async function approveChannel(profileId: string, channelId: string) {
@@ -27,13 +27,22 @@ export async function approveChannel(profileId: string, channelId: string) {
 
   await db
     .insert(channels)
-    .values({
-      id: details.id,
-      title: details.title,
-      thumbnail: details.thumbnail,
-      uploadsPlaylistId: details.uploadsPlaylistId,
-    })
-    .onConflictDoNothing();
+    .values(channelRowValues(details))
+    .onConflictDoUpdate({
+      target: channels.id,
+      set: {
+        title: sql`excluded.title`,
+        thumbnail: sql`excluded.thumbnail`,
+        uploadsPlaylistId: sql`excluded.uploads_playlist_id`,
+        description: sql`excluded.description`,
+        country: sql`excluded.country`,
+        publishedAt: sql`excluded.published_at`,
+        subscriberCount: sql`excluded.subscriber_count`,
+        videoCount: sql`excluded.video_count`,
+        fetchedAt: sql`excluded.fetched_at`,
+        raw: sql`excluded.raw`,
+      },
+    });
 
   // 2. Approve the channel for the profile
   await db

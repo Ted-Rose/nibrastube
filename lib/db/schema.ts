@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, boolean, integer, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, boolean, integer, bigint, jsonb, primaryKey } from "drizzle-orm/pg-core";
 
 // Parent Users
 export const users = pgTable("users", {
@@ -30,6 +30,23 @@ export const videos = pgTable("videos", {
   channelId: text("channel_id"), // YouTube Channel ID (UC...)
   publishedAt: timestamp("published_at", { withTimezone: true }), // YouTube publish time; null for older cached rows
   durationSeconds: integer("duration_seconds"), // total length; null if API didn't return it
+  // Rich metadata from videos.list (snippet/contentDetails/status/statistics)
+  description: text("description"),
+  tags: jsonb("tags"), // string[] of uploader tags
+  categoryId: integer("category_id"), // YouTube video category (27 = Education)
+  defaultLanguage: text("default_language"),
+  defaultAudioLanguage: text("default_audio_language"),
+  liveBroadcastContent: text("live_broadcast_content"), // none | live | upcoming
+  madeForKids: boolean("made_for_kids"), // YouTube's own kids flag
+  ageRestricted: boolean("age_restricted"), // contentRating.ytRating === ytAgeRestricted
+  embeddable: boolean("embeddable"), // can play in the IFrame embed
+  privacyStatus: text("privacy_status"), // public | unlisted | private
+  hasCaptions: boolean("has_captions"),
+  definition: text("definition"), // hd | sd
+  viewCount: bigint("view_count", { mode: "number" }),
+  likeCount: bigint("like_count", { mode: "number" }),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }), // last API refresh; null = stale row from before these columns
+  raw: jsonb("raw"), // full videos.list item for fields we didn't promote
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -39,6 +56,13 @@ export const channels = pgTable("channels", {
   title: text("title").notNull(),
   thumbnail: text("thumbnail"),
   uploadsPlaylistId: text("uploads_playlist_id"),
+  description: text("description"),
+  country: text("country"),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  subscriberCount: bigint("subscriber_count", { mode: "number" }),
+  videoCount: bigint("video_count", { mode: "number" }),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }), // last API refresh
+  raw: jsonb("raw"), // full channels.list item
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

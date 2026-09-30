@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AndroidAppLink } from "@/components/android-app-link";
 import { Button } from "@/components/ui/button";
-import { Video, ShieldCheck, Users, DeviceMobile, PlayCircle, Lock } from "@phosphor-icons/react/dist/ssr";
+import { ShieldCheck, Users, DeviceMobile, PlayCircle, Lock } from "@phosphor-icons/react/dist/ssr";
 
 export default function LandingPage() {
   return (
@@ -19,7 +19,7 @@ export default function LandingPage() {
              <Button variant="ghost" className="hidden sm:inline-flex font-bold text-slate-600">Log in</Button>
            </Link>
            <Link href="/signup">
-             <Button className="rounded-full px-4 py-3 text-base sm:px-8 sm:py-6 sm:text-lg font-bold shadow-xl shadow-primary/20">Get Started</Button>
+             <Button className="rounded-full px-4 h-11 text-base sm:px-8 sm:h-14 sm:text-lg font-bold shadow-xl shadow-primary/20">Get Started</Button>
            </Link>
         </div>
       </nav>

@@ -3,6 +3,7 @@ import { invites, profiles, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { acceptInvite } from "@/app/actions/invites";
 import { notFound } from "next/navigation";
@@ -70,9 +71,9 @@ export default async function InvitePage({ params }: InvitePageProps) {
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
           <form action={acceptInvite.bind(null, token)} className="w-full">
-            <Button size="lg" className="w-full py-7 text-xl font-bold shadow-lg hover:shadow-primary/20 transition-all">
+            <SubmitButton size="lg" className="w-full h-14 text-xl font-bold shadow-lg hover:shadow-primary/20 transition-all" pendingLabel="Accepting…">
               {session ? "Accept Invitation" : "Login & Accept"}
-            </Button>
+            </SubmitButton>
           </form>
           {session && (
             <p className="text-xs text-center text-muted-foreground italic">

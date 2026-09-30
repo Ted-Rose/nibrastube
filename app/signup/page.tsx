@@ -39,7 +39,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
-            <SubmitButton className="w-full py-6 text-lg" pendingLabel="Creating account…">
+            <SubmitButton className="w-full h-12 text-lg" pendingLabel="Creating account…">
               Sign Up
             </SubmitButton>
             <div className="text-sm text-center text-muted-foreground">

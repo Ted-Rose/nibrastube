@@ -30,7 +30,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
-            <SubmitButton className="w-full py-6 text-lg" pendingLabel="Logging in…">
+            <SubmitButton className="w-full h-12 text-lg" pendingLabel="Logging in…">
               Log In
             </SubmitButton>
             <div className="text-sm text-center text-muted-foreground">

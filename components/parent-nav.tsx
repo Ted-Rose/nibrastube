@@ -28,7 +28,12 @@ interface ParentNavProps {
 
 export function ParentNav({ userName }: ParentNavProps) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  // Open state is keyed to the pathname it was opened on, so the menu
+  // closes itself on any navigation (link tap, back/forward) without an
+  // effect.
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  const open = openFor === pathname;
+  const close = () => setOpenFor(null);
 
   const linkClass = (href: string) =>
     cn(
@@ -44,7 +49,7 @@ export function ParentNav({ userName }: ParentNavProps) {
         <Link
           href="/parent/dashboard"
           className="flex items-center gap-2"
-          onClick={() => setOpen(false)}
+          onClick={() => close()}
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">
             <PlayCircle size={20} weight="fill" />
@@ -81,7 +86,8 @@ export function ParentNav({ userName }: ParentNavProps) {
           className="sm:hidden"
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
+          aria-controls="parent-nav-mobile"
+          onClick={() => setOpenFor(open ? null : pathname)}
         >
           {open ? <X size={24} /> : <List size={24} />}
         </Button>
@@ -89,13 +95,16 @@ export function ParentNav({ userName }: ParentNavProps) {
 
       {/* Mobile nav panel */}
       {open && (
-        <nav className="flex flex-col gap-1 border-t px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:hidden">
+        <nav
+          id="parent-nav-mobile"
+          className="flex flex-col gap-1 border-t px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:hidden"
+        >
           {LINKS.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
               className={linkClass(href)}
-              onClick={() => setOpen(false)}
+              onClick={() => close()}
             >
               <Icon size={18} weight="bold" />
               {label}

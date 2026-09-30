@@ -28,7 +28,6 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   const query = q || "";
   const searchType = type === "channels" ? "channels" : "videos";
   const selectedProfileId = profileId;
-  console.log("Dashboard Rendering - Query:", query, "Type:", searchType, "ProfileId:", selectedProfileId);
 
   // Get all profiles this parent owns or has shared access to
   const parentProfiles = await getManageableProfiles(session.user.id);
@@ -37,10 +36,13 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
     redirect("/parent/profiles");
   }
 
-  // Determine active profile
-  const activeProfile = selectedProfileId
-    ? parentProfiles.find(p => p.id === selectedProfileId)
-    : parentProfiles[0];
+  // Determine active profile — fall back to the first manageable profile
+  // when profileId is missing or stale, otherwise a search would crash on
+  // activeProfile!.id when binding pin/approve actions.
+  const activeProfile =
+    (selectedProfileId
+      ? parentProfiles.find(p => p.id === selectedProfileId)
+      : undefined) ?? parentProfiles[0];
 
   // Search results if query exists
   const videoResults = query && searchType === "videos" ? await searchYouTube(query) : [];
@@ -232,7 +234,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                     <div className="relative aspect-video">
                       <img src={video.thumbnail} className="w-full h-full object-cover" alt={video.title} />
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                         <a href={`https://youtube.com/watch?v=${video.id}`} target="_blank" className="text-white bg-black/60 p-2 rounded-full hover:bg-black/80 transition-colors">
+                         <a href={`https://youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer" className="text-white bg-black/60 p-2 rounded-full hover:bg-black/80 transition-colors">
                             <Video size={32} />
                          </a>
                       </div>

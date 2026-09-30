@@ -32,10 +32,8 @@ export async function pinVideo(profileId: string, videoId: string) {
   } else if (!existingVideo.fetchedAt) {
     // Self-heal rows cached before the rich-metadata columns existed
     const details = await getVideoDetails(videoId);
-    await db
-      .update(videos)
-      .set(videoRowValues(details))
-      .where(eq(videos.id, videoId));
+    const { id, ...updates } = videoRowValues(details);
+    await db.update(videos).set(updates).where(eq(videos.id, id));
   }
 
   // 2. Pin the video to the profile (manual pin: viaChannelId stays null)

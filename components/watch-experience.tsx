@@ -409,7 +409,11 @@ export function WatchExperience({
       {/* Kid-Friendly Controls (Optional/Simplified) */}
       <div className="bg-slate-900/50 p-8 flex flex-col items-center gap-4">
         <div className="flex items-center gap-10">
-          <div className="flex items-center gap-3">
+          <Link
+            href="/kids"
+            aria-label="Switch profile"
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          >
             <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center text-4xl shadow-lg border-4 border-primary">
               {profileAvatar}
             </div>
@@ -419,7 +423,7 @@ export function WatchExperience({
               </p>
               <p className="text-2xl font-black">{profileName}</p>
             </div>
-          </div>
+          </Link>
 
           <div className="h-10 w-[2px] bg-slate-800 hidden md:block"></div>
 

@@ -13,6 +13,7 @@ import {
   MonitorPlay,
   Play,
   House,
+  UserSwitch,
 } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -113,15 +114,13 @@ export default async function KidsPortalPage({
       <header className="bg-white border-b-4 border-slate-100 px-6 py-4 sticky top-0 z-10 shadow-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-             <KidsFooterGate
-                correctPin={session?.user?.parentPin || "0000"}
-                target="/kids"
-                trigger={
-                  <div className="p-2 hover:bg-slate-100 rounded-full transition-colors cursor-pointer text-slate-900">
-                    <House size={32} weight="bold" />
-                  </div>
-                }
-             />
+             <Link
+               href="/kids"
+               aria-label="Switch profile"
+               className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-900"
+             >
+               <House size={32} weight="bold" />
+             </Link>
              <span className="text-xl font-black text-slate-900 hidden md:block">NibrasTube</span>
           </div>
 
@@ -153,12 +152,21 @@ export default async function KidsPortalPage({
             </form>
           </div>
 
-          <div className="flex items-center gap-3">
+          <Link
+            href="/kids"
+            aria-label="Switch profile"
+            className="group flex items-center gap-3 rounded-2xl hover:opacity-80 transition-opacity"
+          >
              <span className="text-xl font-black text-slate-700 hidden sm:block">{profile.name}</span>
-             <div className="w-14 h-14 rounded-2xl bg-white border-4 border-primary shadow-sm flex items-center justify-center text-3xl">
-                {profile.avatar}
+             <div className="relative">
+               <div className="w-14 h-14 rounded-2xl bg-white border-4 border-primary shadow-sm flex items-center justify-center text-3xl">
+                  {profile.avatar}
+               </div>
+               <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-sm">
+                 <UserSwitch size={14} weight="bold" />
+               </div>
              </div>
-          </div>
+          </Link>
         </div>
       </header>
 
@@ -284,7 +292,6 @@ export default async function KidsPortalPage({
       <div className="fixed bottom-6 right-6">
         <KidsFooterGate
           correctPin={session?.user?.parentPin || "0000"}
-          target="/parent/dashboard"
         />
       </div>
     </div>

@@ -13,23 +13,8 @@ export async function selectProfile(profileId: string) {
   redirect(`/kids/${profileId}`);
 }
 
-export async function lockToKidsMode() {
-  const cookieStore = await cookies();
-  cookieStore.set("isKidsMode", "true", {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7, // 1 week
-  });
-}
-
 export async function unlockParentPortal() {
   const cookieStore = await cookies();
   cookieStore.delete("activeProfileId");
   redirect("/parent/dashboard");
-}
-
-export async function unlockKidsMode() {
-  const cookieStore = await cookies();
-  cookieStore.delete("isKidsMode");
-  cookieStore.delete("activeProfileId");
-  redirect("/kids");
 }

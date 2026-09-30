@@ -7,10 +7,9 @@ import { LockOpen } from "@phosphor-icons/react";
 
 interface KidsFooterGateProps {
   correctPin: string;
-  trigger?: React.ReactNode;
 }
 
-export function KidsFooterGate({ correctPin, trigger }: KidsFooterGateProps) {
+export function KidsFooterGate({ correctPin }: KidsFooterGateProps) {
   return (
     <ParentalGateWrapper
       correctPin={correctPin}
@@ -18,11 +17,9 @@ export function KidsFooterGate({ correctPin, trigger }: KidsFooterGateProps) {
          await unlockParentPortal();
       }}
     >
-      {trigger || (
-        <Button variant="ghost" className="text-slate-400 hover:text-primary gap-2">
-          <LockOpen size={20} /> Parent Settings
-        </Button>
-      )}
+      <Button variant="ghost" className="text-slate-400 hover:text-primary gap-2">
+        <LockOpen size={20} /> Parent Settings
+      </Button>
     </ParentalGateWrapper>
   );
 }

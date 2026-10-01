@@ -15,6 +15,7 @@ import Link from "next/link";
 
 import { logoutAction } from "@/app/actions/auth";
 import DailySyncPing from "@/components/daily-sync-ping";
+import { AppInstallMenu } from "@/components/app-install-menu";
 
 interface DashboardProps {
   searchParams: Promise<{ q?: string; profileId?: string; type?: string }>;
@@ -98,6 +99,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
           <Link href="/kids">
             <Button variant="outline"><Baby className="mr-2" /> Kids Corner</Button>
           </Link>
+          <AppInstallMenu />
           <form action={logoutAction}>
             <Button variant="ghost" type="submit">Logout</Button>
           </form>

@@ -373,25 +373,25 @@ export function WatchExperience({
   return (
     <div className="min-h-screen bg-black flex flex-col">
       {/* Player Header */}
-      <div className="bg-slate-900/80 backdrop-blur px-6 py-4 flex items-center justify-between text-white border-b border-slate-800">
-        <Link href={portalUrl}>
+      <div className="bg-slate-900/80 backdrop-blur px-3 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 flex items-center justify-between gap-2 text-white border-b border-slate-800">
+        <Link href={portalUrl} aria-label="Back to videos">
           <Button
             variant="ghost"
-            className="text-white hover:bg-slate-800 gap-2"
+            className="text-white hover:bg-slate-800 gap-2 h-11 sm:h-9 px-3"
           >
             <ArrowLeft size={24} weight="bold" />
-            <span className="text-lg font-bold">Back to Videos</span>
+            <span className="hidden sm:inline text-lg font-bold">Back to Videos</span>
           </Button>
         </Link>
 
-        <div className="flex-1 text-center px-4">
-          <h1 className="text-xl font-bold truncate max-w-2xl mx-auto">
+        <div className="flex-1 min-w-0 text-center px-2">
+          <h1 className="text-base sm:text-xl font-bold truncate max-w-full">
             {current.title}
           </h1>
         </div>
 
-        <Link href="/kids">
-          <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center hover:bg-white/20 transition-colors">
+        <Link href="/kids" aria-label="Switch profile">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 bg-white/10 rounded-2xl flex items-center justify-center hover:bg-white/20 transition-colors">
             <House size={24} weight="bold" />
           </div>
         </Link>
@@ -407,21 +407,21 @@ export function WatchExperience({
       </div>
 
       {/* Kid-Friendly Controls (Optional/Simplified) */}
-      <div className="bg-slate-900/50 p-8 flex flex-col items-center gap-4">
-        <div className="flex items-center gap-10">
+      <div className="bg-slate-900/50 p-4 sm:p-8 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-4">
+        <div className="flex items-center gap-4 sm:gap-10">
           <Link
             href="/kids"
             aria-label="Switch profile"
             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
-            <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center text-4xl shadow-lg border-4 border-primary">
+            <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white rounded-3xl flex items-center justify-center text-3xl sm:text-4xl shadow-lg border-4 border-primary">
               {profileAvatar}
             </div>
             <div className="text-white">
-              <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">
+              <p className="text-xs sm:text-sm text-slate-400 font-bold uppercase tracking-widest">
                 Watching as
               </p>
-              <p className="text-2xl font-black">{profileName}</p>
+              <p className="text-xl sm:text-2xl font-black">{profileName}</p>
             </div>
           </Link>
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { signup } from "@/app/actions/auth";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,9 +39,9 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
-            <Button type="submit" className="w-full py-6 text-lg">
+            <SubmitButton className="w-full h-12 text-lg" pendingLabel="Creating account…">
               Sign Up
-            </Button>
+            </SubmitButton>
             <div className="text-sm text-center text-muted-foreground">
               Already have an account?{" "}
               <Link href="/login" className="text-primary hover:underline underline-offset-4 font-medium">

@@ -18,7 +18,7 @@ export function AppInstallMenu() {
     <Menu.Root>
       <Menu.Trigger
         render={
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" size="touch" className="gap-2">
             <AndroidLogo size={18} weight="fill" />
             Get the app
             <CaretDown size={14} weight="bold" />

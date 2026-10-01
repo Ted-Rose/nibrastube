@@ -32,7 +32,7 @@ export function ParentalGateWrapper({ children, correctPin, triggerText, classNa
           />
           <Button 
             variant="ghost" 
-            className="w-full mt-4 text-white hover:bg-white/10" 
+            className="w-full mt-4 h-10 text-white hover:bg-white/10" 
             onClick={() => setIsOpen(false)}
           >
             Cancel

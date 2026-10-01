@@ -1,37 +1,37 @@
 import Link from "next/link";
 import { AndroidAppLink } from "@/components/android-app-link";
 import { Button } from "@/components/ui/button";
-import { Video, ShieldCheck, Users, DeviceMobile, PlayCircle, Lock } from "@phosphor-icons/react/dist/ssr";
+import { ShieldCheck, Users, DeviceMobile, PlayCircle, Lock } from "@phosphor-icons/react/dist/ssr";
 
 export default function LandingPage() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 overflow-x-hidden">
       {/* Navigation */}
-      <nav className="flex justify-between items-center px-6 py-8 max-w-7xl mx-auto w-full">
-        <div className="flex items-center gap-2">
-           <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary/20">
+      <nav className="flex justify-between items-center px-4 sm:px-6 py-4 sm:py-8 max-w-7xl mx-auto w-full">
+        <div className="flex items-center gap-2 min-w-0">
+           <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary/20">
               <PlayCircle size={28} weight="fill" />
            </div>
-           <span className="text-2xl font-black tracking-tight text-slate-900">NibrasTube</span>
+           <span className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">NibrasTube</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
            <Link href="/login">
-             <Button variant="ghost" className="font-bold text-slate-600">Log in</Button>
+             <Button variant="ghost" className="hidden sm:inline-flex font-bold text-slate-600">Log in</Button>
            </Link>
            <Link href="/signup">
-             <Button className="rounded-full px-8 py-6 text-lg font-bold shadow-xl shadow-primary/20">Get Started</Button>
+             <Button className="rounded-full px-4 h-11 text-base sm:px-8 sm:h-14 sm:text-lg font-bold shadow-xl shadow-primary/20">Get Started</Button>
            </Link>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="px-6 pt-16 pb-32 max-w-7xl mx-auto w-full">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+      <section className="px-4 sm:px-6 pt-10 sm:pt-16 pb-16 sm:pb-32 max-w-7xl mx-auto w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 sm:gap-16 items-center">
            <div className="space-y-8 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full font-bold text-sm tracking-wide uppercase">
                  <ShieldCheck weight="bold" /> 100% Human Curated
               </div>
-              <h1 className="text-6xl md:text-8xl font-black text-slate-900 leading-[0.95] tracking-tighter">
+              <h1 className="text-5xl sm:text-6xl md:text-8xl font-black text-slate-900 leading-[0.95] tracking-tighter">
                 Safe videos, <br />
                 <span className="text-primary">Parent approved.</span>
               </h1>
@@ -39,13 +39,13 @@ export default function LandingPage() {
                 Stop worrying about YouTube algorithms. NibrasTube lets you choose exactly what your kids can watch.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                 <Link href="/signup">
-                    <Button size="lg" className="h-16 px-10 rounded-2xl text-xl font-bold shadow-2xl shadow-primary/30">
+                 <Link href="/signup" className="w-full sm:w-auto">
+                    <Button size="lg" className="w-full sm:w-auto h-14 sm:h-16 px-6 sm:px-10 rounded-2xl text-lg sm:text-xl font-bold shadow-2xl shadow-primary/30">
                        Start Protected Browsing
                     </Button>
                  </Link>
-                 <Link href="/kids">
-                    <Button size="lg" variant="outline" className="h-16 px-10 rounded-2xl text-xl font-bold border-2 bg-white">
+                 <Link href="/kids" className="w-full sm:w-auto">
+                    <Button size="lg" variant="outline" className="w-full sm:w-auto h-14 sm:h-16 px-6 sm:px-10 rounded-2xl text-lg sm:text-xl font-bold border-2 bg-white">
                        View Demo Kids Portal
                     </Button>
                  </Link>
@@ -64,7 +64,7 @@ export default function LandingPage() {
 
            <div className="relative">
               <div className="absolute -inset-4 bg-primary/20 blur-[100px] rounded-full animate-pulse"></div>
-              <div className="relative bg-white p-4 rounded-[40px] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] border-8 border-slate-100 transform rotate-2 hover:rotate-0 transition-transform duration-700">
+              <div className="relative bg-white p-4 rounded-[40px] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] border-4 sm:border-8 border-slate-100 transform rotate-2 hover:rotate-0 transition-transform duration-700">
                  <div className="aspect-video bg-slate-900 rounded-[24px] overflow-hidden flex items-center justify-center relative group">
                     <img 
                       src="https://images.unsplash.com/photo-1510333300264-DF47582483ce?auto=format&fit=crop&q=80&w=2000" 
@@ -93,7 +93,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features Grid */}
-      <section className="bg-white py-32 border-y border-slate-100 px-6">
+      <section className="bg-white py-16 sm:py-32 border-y border-slate-100 px-4 sm:px-6">
          <div className="max-w-7xl mx-auto">
             <div className="text-center mb-20">
                <h2 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tight">Everything for parent peace-of-mind.</h2>
@@ -117,7 +117,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="py-20 px-6 max-w-7xl mx-auto w-full">
+      <footer className="py-12 sm:py-20 px-4 sm:px-6 max-w-7xl mx-auto w-full">
          <div className="flex flex-col md:flex-row justify-between items-center gap-8 border-t border-slate-200 pt-16">
             <div className="flex items-center gap-2 grayscale hover:grayscale-0 transition-all opacity-50 hover:opacity-100">
                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white">

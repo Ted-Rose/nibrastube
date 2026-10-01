@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono, Instrument_Sans } from "next/font/google"
+import { Geist_Mono, Instrument_Sans } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -30,6 +30,9 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#ca3500",
+  // Let PWA/Capacitor content extend under the notch — edge elements pad
+  // themselves with env(safe-area-inset-*).
+  viewportFit: "cover",
 }
 
 export default function RootLayout({

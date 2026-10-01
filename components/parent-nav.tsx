@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "./ui/button";
 import { SubmitButton } from "./submit-button";
+import { AppInstallMenu } from "./app-install-menu";
 import { logoutAction } from "@/app/actions/auth";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +68,7 @@ export function ParentNav({ userName }: ParentNavProps) {
               {label}
             </Link>
           ))}
+          <AppInstallMenu />
           <form action={logoutAction} className="ml-1">
             <SubmitButton
               variant="ghost"
@@ -110,6 +112,9 @@ export function ParentNav({ userName }: ParentNavProps) {
               {label}
             </Link>
           ))}
+          <div className="mt-1">
+            <AppInstallMenu />
+          </div>
           <form action={logoutAction} className="mt-1">
             <SubmitButton
               variant="ghost"

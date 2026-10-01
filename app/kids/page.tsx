@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { Card, CardContent } from "@/components/ui/card";
 import { selectProfile } from "@/app/actions/safety";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
+import { AppInstallMenu } from "@/components/app-install-menu";
 import Link from "next/link";
 
 export default async function KidsPage() {
@@ -34,9 +35,14 @@ export default async function KidsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4">
+      {/* Inline rather than fixed so it can't cover the profile grid on
+          scroll */}
+      <div className="w-full max-w-5xl flex justify-end pt-[env(safe-area-inset-top)]">
+        <AppInstallMenu />
+      </div>
       <div className="flex-1 flex flex-col items-center justify-center w-full">
         <h1 className="text-4xl md:text-6xl font-black text-slate-900 mb-12 text-center tracking-tight">
-          Who's watching?
+          Who&apos;s watching?
         </h1>
 
         <div className="max-w-5xl w-full">

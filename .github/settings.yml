@@ -8,3 +8,12 @@ repository:
   allow_squash_merge: true
   allow_merge_commit: false
   allow_rebase_merge: false
+
+branches:
+  - name: main
+    protection:
+      # Block force pushes to main. Admins are exempt because the rules
+      # are not enforced on them.
+      allow_force_pushes: false
+      allow_deletions: false
+      enforce_admins: false

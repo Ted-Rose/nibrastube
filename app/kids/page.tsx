@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { Card, CardContent } from "@/components/ui/card";
 import { selectProfile } from "@/app/actions/safety";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
+import { AppInstallMenu } from "@/components/app-install-menu";
 import Link from "next/link";
 
 export default async function KidsPage() {
@@ -66,6 +67,10 @@ export default async function KidsPage() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="fixed top-6 right-6">
+        <AppInstallMenu />
       </div>
 
       <div className="fixed bottom-6 right-6">

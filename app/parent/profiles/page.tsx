@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { createProfile, deleteProfile } from "@/app/actions/profiles";
+import { SwipeToggle } from "@/components/profile-swipe-toggle";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,17 @@ export default async function ProfilesPage() {
   const allShared = await db.query.sharedAccess.findMany({
     where: inArray(sharedAccess.profileId, kidProfiles.map(p => p.id))
   });
+
+  // Profiles other parents shared with this user — editors get a smaller
+  // card (no delete/invite) but can still manage videos and toggle swipe.
+  const sharedWithMe = await db.query.sharedAccess.findMany({
+    where: eq(sharedAccess.parentId, session.user.id)
+  });
+  const sharedProfiles = sharedWithMe.length > 0
+    ? await db.query.profiles.findMany({
+        where: inArray(profiles.id, sharedWithMe.map(s => s.profileId))
+      })
+    : [];
 
   return (
     <div className="container mx-auto py-6 sm:py-10 px-4">
@@ -64,6 +76,10 @@ export default async function ProfilesPage() {
                     <Trash size={20} />
                   </SubmitButton>
                 </form>
+              </div>
+
+              <div className="w-full pt-4 border-t border-slate-200">
+                <SwipeToggle profileId={profile.id} enabled={profile.swipeEnabled} />
               </div>
 
               <div className="w-full pt-4 border-t border-slate-200">
@@ -118,6 +134,35 @@ export default async function ProfilesPage() {
           </CardContent>
         </Card>
       </div>
+
+      {sharedProfiles.length > 0 && (
+        <>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">Shared With You</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {sharedProfiles.map((profile) => (
+              <Card key={profile.id} className="overflow-hidden border-2">
+                <CardHeader className="flex flex-row items-center space-x-4 pb-2">
+                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-3xl shadow-inner">
+                    {profile.avatar || "👶"}
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">{profile.name}</CardTitle>
+                    <CardDescription>Shared profile</CardDescription>
+                  </div>
+                </CardHeader>
+                <CardFooter className="flex flex-col pt-4 border-t bg-muted/30 space-y-4">
+                  <Link href={`/parent/dashboard?profileId=${profile.id}`} className="w-full">
+                    <Button className="w-full" variant="outline" size="touch">Manage Approved Videos</Button>
+                  </Link>
+                  <div className="w-full pt-4 border-t border-slate-200">
+                    <SwipeToggle profileId={profile.id} enabled={profile.swipeEnabled} />
+                  </div>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

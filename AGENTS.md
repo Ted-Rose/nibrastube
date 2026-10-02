@@ -178,5 +178,9 @@ release APK on `v*` tags.
   for the gate UI — acceptable for a family app, but don't build
   security-critical features on it.
 - `getPusherClient` has a hardcoded fallback Pusher key.
+- `/kids/<uuid>` is effectively a capability URL: `activeProfileId` is
+  the profile UUID, so anyone who learns a UUID can self-set the cookie
+  and view that feed without a session. Unguessable UUIDs keep the risk
+  low — this is the accepted model.
 - YouTube Data API quota is finite (10k units/day); searches are 100
   units each — prefer `videos`/`playlistItems` endpoints in sync code.

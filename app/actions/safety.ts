@@ -6,10 +6,15 @@ import { getSession } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
 
 export async function selectProfile(profileId: string) {
-  const session = await getSession();
-  // Only profiles the signed-in parent owns or has shared access to can be
-  // locked onto a device; throws otherwise.
-  await assertCanManageProfile(session, profileId);
+  try {
+    const session = await getSession();
+    // Only profiles the signed-in parent owns or has shared access to can
+    // be locked onto a device; sends the user back to the picker instead
+    // of surfacing a raw error.
+    await assertCanManageProfile(session, profileId);
+  } catch {
+    redirect("/kids");
+  }
 
   const cookieStore = await cookies();
   cookieStore.set("activeProfileId", profileId, {

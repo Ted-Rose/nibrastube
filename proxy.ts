@@ -6,12 +6,17 @@ export async function proxy(request: NextRequest) {
   const session = await getSession();
   const activeProfileId = request.cookies.get("activeProfileId")?.value;
 
-  // 0. No landing page: `/` sends signed-in parents to their dashboard and
+  // 0. No landing page: `/` sends signed-in parents to their dashboard,
+  // kid-locked devices back to their locked profile (PWA start_url is
+  // `/`, so a cleared session must not strand them on /signup), and
   // everyone else to signup.
   if (request.nextUrl.pathname === "/") {
-    return NextResponse.redirect(
-      new URL(session ? "/parent/dashboard" : "/signup", request.url)
-    );
+    const destination = session
+      ? "/parent/dashboard"
+      : activeProfileId
+        ? `/kids/${activeProfileId}`
+        : "/signup";
+    return NextResponse.redirect(new URL(destination, request.url));
   }
 
   // 1. The profile picker itself requires a parent session — the

@@ -57,18 +57,18 @@ export default async function KidsPortalPage({
   const { view, channel, q: query } = feed;
   const drilledIn = view === "channels" && channel !== null;
 
+  // Access check before the existence check so a signed-in parent can't
+  // use 404-vs-redirect to probe whether a profile UUID exists.
+  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
+  if (!(await canViewProfile(session, profileId, activeProfileId))) {
+    redirect("/kids");
+  }
+
   const profile = await db.query.profiles.findFirst({
     where: eq(profiles.id, profileId),
   });
 
   if (!profile) notFound();
-
-  // No cross-family snooping: the device must be kid-locked to this profile
-  // or the signed-in parent must own/share it.
-  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
-  if (!(await canViewProfile(session, profileId, activeProfileId))) {
-    redirect("/kids");
-  }
 
   // The gate PIN must work on kid-locked devices with no/expired session,
   // so resolve it from the profile owner's row instead of the JWT payload.

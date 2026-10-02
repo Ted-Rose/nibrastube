@@ -21,20 +21,21 @@ interface WatchPageProps {
 export default async function WatchPage({ params, searchParams }: WatchPageProps) {
   const { profileId, videoId } = await params;
 
-  // 1. Verify profile and video approval
-  const profile = await db.query.profiles.findFirst({
-    where: eq(profiles.id, profileId),
-  });
-
-  if (!profile) notFound();
-
-  // 2. Access check: kid-locked to this profile or a parent who
-  //    owns/shares it — no cross-family URL guessing.
+  // 1. Access check first — kid-locked to this profile or a parent who
+  //    owns/shares it — so 404-vs-redirect can't be used to probe whether
+  //    a profile UUID exists.
   const session = await getSession();
   const activeProfileId = (await cookies()).get("activeProfileId")?.value;
   if (!(await canViewProfile(session, profileId, activeProfileId))) {
     redirect("/kids");
   }
+
+  // 2. Verify profile and video approval
+  const profile = await db.query.profiles.findFirst({
+    where: eq(profiles.id, profileId),
+  });
+
+  if (!profile) notFound();
 
   // Autoplay playlist mirrors the grid the kid came from: same channel
   // filter, search, and sort.

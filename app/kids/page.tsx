@@ -11,7 +11,7 @@ export default async function KidsPage() {
   // The picker is parent-only: proxy.ts bounces anonymous visitors to
   // /login?callback=/kids, and this is the server-side backstop.
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) redirect("/login?callback=/kids");
 
   // Only this family's profiles: owned + shared with the parent.
   const allProfiles = await getManageableProfiles(session.user.id);

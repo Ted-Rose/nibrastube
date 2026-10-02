@@ -8,6 +8,16 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+// `callback` is user-controlled — only honor same-origin relative paths
+// so it can't be used as an open redirect off-site.
+function safeCallback(callback: unknown): string {
+  return typeof callback === "string" &&
+    callback.startsWith("/") &&
+    !callback.startsWith("//")
+    ? callback
+    : "/parent/dashboard";
+}
+
 const signupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
@@ -20,7 +30,7 @@ export async function signup(formData: FormData): Promise<void> {
   const password = formData.get("password") as string;
   const name = formData.get("name") as string;
   const pin = (formData.get("pin") as string) || "0000"; // Defaulting to 0000 if not provided
-  const callback = formData.get("callback") as string;
+  const callback = safeCallback(formData.get("callback"));
 
   const validated = signupSchema.safeParse({ email, password, name, pin });
   if (!validated.success) {
@@ -49,7 +59,7 @@ export async function signup(formData: FormData): Promise<void> {
     .returning();
 
   await authLogin({ id: newUser.id, email: newUser.email, name: newUser.name, parentPin: newUser.parentPin });
-  redirect(callback || "/parent/dashboard");
+  redirect(callback);
 }
 
 const loginSchema = z.object({
@@ -60,7 +70,7 @@ const loginSchema = z.object({
 export async function login(formData: FormData): Promise<void> {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
-  const callback = formData.get("callback") as string;
+  const callback = safeCallback(formData.get("callback"));
 
   const validated = loginSchema.safeParse({ email, password });
   if (!validated.success) {
@@ -76,7 +86,7 @@ export async function login(formData: FormData): Promise<void> {
   }
 
   await authLogin({ id: user.id, email: user.email, name: user.name, parentPin: user.parentPin });
-  redirect(callback || "/parent/dashboard");
+  redirect(callback);
 }
 
 export async function logoutAction() {

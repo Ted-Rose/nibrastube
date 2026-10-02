@@ -1,9 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, type TouchEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type TouchEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, House } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  House,
+  ThumbsDown,
+  ThumbsUp,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
 import { SwipeConfirmDialog } from "@/components/swipe-confirm-dialog";
@@ -11,7 +22,7 @@ import { pickNextIndex } from "@/lib/autoplay";
 import { classifySwipe } from "@/lib/gestures";
 import type { SwipeDirection } from "@/lib/gestures";
 import { cn } from "@/lib/utils";
-import type { WatchStatus } from "@/lib/kids-feed";
+import type { VideoReaction, WatchStatus } from "@/lib/kids-feed";
 
 interface YTPlayerEvent {
   data: number;
@@ -60,6 +71,7 @@ interface PlaylistVideo {
   title: string;
   startSeconds?: number;
   status: WatchStatus;
+  reaction: VideoReaction | null;
 }
 
 interface WatchExperienceProps {
@@ -100,6 +112,19 @@ export function WatchExperience({
   // the playlist prop is a page-load snapshot, but kids watch many videos
   // without re-navigating.
   const statusRef = useRef(new Map<string, WatchStatus>());
+  // Per-video reaction keyed by id — same snapshot-and-merge treatment as
+  // statusRef: seeded from the playlist prop, updated optimistically on tap.
+  const [reactions, setReactions] = useState(
+    () =>
+      new Map<string, VideoReaction | null>(
+        playlist.map((v) => [v.id, v.reaction])
+      )
+  );
+  const reactionsRef = useRef(reactions);
+  // Render-side mirror of latestRef.current.videoId (refs can't be read
+  // during render) — the tick below copies it here, so this is the video
+  // a reaction tap would actually write to.
+  const [activeVideoId, setActiveVideoId] = useState("");
   // Videos finished during this session — their startSeconds prop is a
   // stale page-load resume point, so replays must start at 0.
   const completedRef = useRef(new Set<string>());
@@ -124,6 +149,23 @@ export function WatchExperience({
   // "Keep watching" doesn't un-pause a video the kid paused themselves.
   const preSwipeStateRef = useRef<number | null>(null);
 
+  // Disliked videos rank as tier 2 (with watched) — shared by autoplay
+  // and the swipe-next target, so the dialog previews what advance()
+  // would actually pick and both skip dislikes while any
+  // unwatched/started video remains. Memoized on playlist so the effect
+  // below can depend on it without re-running every render.
+  const statusAt = useCallback(
+    (i: number): WatchStatus => {
+      const status = statusRef.current.get(playlist[i].id) ?? 0;
+      return (
+        reactionsRef.current.get(playlist[i].id) === "dislike"
+          ? Math.max(status, 2)
+          : status
+      ) as WatchStatus;
+    },
+    [playlist]
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -136,6 +178,14 @@ export function WatchExperience({
         Math.max(v.status, statusRef.current.get(v.id) ?? 0) as WatchStatus
       );
     }
+
+    // Reactions, unlike status, can go down (like → cleared), so overwrite
+    // per key — the refreshed playlist is a fresh snapshot that already
+    // contains any tap we saved, and keeps a second device in sync.
+    for (const v of playlist) {
+      reactionsRef.current.set(v.id, v.reaction);
+    }
+    setReactions(new Map(reactionsRef.current));
 
     // A Pusher refresh can shrink or reorder the playlist mid-session —
     // follow the still-playing video by id, else clamp the index in
@@ -236,13 +286,7 @@ export function WatchExperience({
     const advance = () => {
       if (advancingRef.current) return;
       advancingRef.current = true;
-      goTo(
-        pickNextIndex(
-          playlist.length,
-          indexRef.current,
-          (i) => statusRef.current.get(playlist[i].id) ?? 0
-        )
-      );
+      goTo(pickNextIndex(playlist.length, indexRef.current, statusAt));
     };
 
     // Previous = the video the kid just came from (nav history stack),
@@ -389,6 +433,7 @@ export function WatchExperience({
       const isExpected = loadedId === currentId;
       if (isExpected) {
         latestRef.current = { videoId: currentId, position: time, duration };
+        setActiveVideoId(currentId);
       }
       const wrapped =
         duration > 0 && lastTime >= duration - 1 && time < 1;
@@ -430,7 +475,7 @@ export function WatchExperience({
       playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, [profileId, playlist, router, portalUrl, returnQuery]);
+  }, [profileId, playlist, router, portalUrl, returnQuery, statusAt]);
 
   // The index goBack would pick, for the confirm dialog's title preview.
   const peekPrevIndex = () => {
@@ -467,11 +512,7 @@ export function WatchExperience({
     // the dialog can show which video the swipe would switch to.
     const target =
       dir === "next"
-        ? pickNextIndex(
-            playlist.length,
-            indexRef.current,
-            (i) => statusRef.current.get(playlist[i].id) ?? 0
-          )
+        ? pickNextIndex(playlist.length, indexRef.current, statusAt)
         : peekPrevIndex();
     // pauseVideo() is an async postMessage, so hold the in-flight nav
     // guard until confirm/cancel releases it — otherwise the 500ms tick
@@ -549,7 +590,41 @@ export function WatchExperience({
   // `index` still points past the new end (the effect clamp runs only
   // after this render).
   const current = playlist[Math.min(index, playlist.length - 1)];
+
+  // Toggle a reaction on the video the player actually loaded
+  // (latestRef), not playlist[index] — they can briefly diverge.
+  const react = (dir: VideoReaction) => {
+    const videoId =
+      latestRef.current.videoId || playlist[indexRef.current]?.id;
+    if (!videoId) return;
+    const prev = reactionsRef.current.get(videoId) ?? null;
+    const next = prev === dir ? null : dir;
+    reactionsRef.current.set(videoId, next);
+    setReactions(new Map(reactionsRef.current));
+    // Route handler, not a server action: an action's revalidation
+    // re-renders this route, which would destroy and recreate the
+    // YouTube player on every tap.
+    fetch("/api/video-reactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId, videoId, reaction: next }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`reaction failed: ${res.status}`);
+      })
+      .catch(() => {
+        reactionsRef.current.set(videoId, prev);
+        setReactions(new Map(reactionsRef.current));
+      });
+  };
+
   if (!current) return null;
+  // Show the reaction for the video a tap would actually write to —
+  // what the player loaded (activeVideoId), which can briefly lag
+  // `current` in the ~500ms window after auto-advance before the tick
+  // catches up.
+  const currentReaction =
+    reactions.get(activeVideoId || current.id) ?? null;
 
   return (
     // touch-none when swipe is on so scroll/pull-to-refresh doesn't steal
@@ -594,6 +669,36 @@ export function WatchExperience({
         <FullscreenPlayer>
           <div ref={containerRef} className="w-full h-full">
             <div ref={mountRef} className="w-full h-full" />
+          </div>
+          {/* Reaction overlay must live inside FullscreenPlayer — in native
+              fullscreen only descendants of the fullscreen element render. */}
+          <div className="absolute top-3 right-3 z-50 flex gap-3">
+            <button
+              onClick={() => react("like")}
+              aria-label="Like video"
+              className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+            >
+              <ThumbsUp
+                size={24}
+                weight={currentReaction === "like" ? "fill" : "regular"}
+                className={
+                  currentReaction === "like" ? "text-primary" : "text-white"
+                }
+              />
+            </button>
+            <button
+              onClick={() => react("dislike")}
+              aria-label="Dislike video"
+              className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+            >
+              <ThumbsDown
+                size={24}
+                weight={currentReaction === "dislike" ? "fill" : "regular"}
+                className={
+                  currentReaction === "dislike" ? "text-red-500" : "text-white"
+                }
+              />
+            </button>
           </div>
           {swipeEnabled && (
             <>

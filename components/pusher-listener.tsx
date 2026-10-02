@@ -19,6 +19,10 @@ export default function PusherListener({ profileId }: { profileId: string }) {
       router.refresh();
     });
 
+    channel.bind("video-reacted", () => {
+      router.refresh();
+    });
+
     return () => {
       pusher.unsubscribe(`profile-${profileId}`);
     };

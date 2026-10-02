@@ -103,10 +103,11 @@ export function WatchExperience({
   // Videos finished during this session — their startSeconds prop is a
   // stale page-load resume point, so replays must start at 0.
   const completedRef = useRef(new Set<string>());
-  // Swipe-"back" history: every navigation pushes the outgoing index, so
-  // prev = the video the kid just came from (not blindly index−1) and
+  // Swipe-"back" history: every navigation pushes the outgoing video id
+  // (an index would retarget on a mid-session reorder), so prev = the
+  // video the kid just came from (not blindly index−1) and
   // autoplay-advanced videos are back-reachable too.
-  const navStackRef = useRef<number[]>([]);
+  const navStackRef = useRef<string[]>([]);
   // The nav functions live inside the effect (they need its flush/playlist
   // closures); this ref surfaces them to the JSX touch handlers.
   const swipeNavRef = useRef<{ next: () => void; prev: () => void } | null>(
@@ -119,6 +120,9 @@ export function WatchExperience({
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(
     null
   );
+  // Player state sampled before the swipe dialog pauses playback, so
+  // "Keep watching" doesn't un-pause a video the kid paused themselves.
+  const preSwipeStateRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,7 +217,7 @@ export function WatchExperience({
         );
         if (status === 2) completedRef.current.add(curId);
       }
-      if (next !== cur) navStackRef.current.push(cur);
+      if (next !== cur && curId) navStackRef.current.push(curId);
       indexRef.current = next;
       setIndex(next);
       playerRef.current?.loadVideoById({
@@ -246,17 +250,23 @@ export function WatchExperience({
     const goBack = () => {
       if (advancingRef.current) return;
       advancingRef.current = true;
-      // Pop until a still-valid index — a mid-session playlist shrink can
-      // leave entries out of bounds, and self-entries are useless.
-      let prev = navStackRef.current.pop();
-      while (
-        prev !== undefined &&
-        (prev >= playlist.length || prev === indexRef.current)
-      ) {
-        prev = navStackRef.current.pop();
+      // Pop until a stacked id still resolves in the playlist — a
+      // mid-session unpin leaves dangling entries, and entries pointing
+      // at the current video are useless.
+      let prev = -1;
+      let id = navStackRef.current.pop();
+      while (id !== undefined) {
+        const idx = playlist.findIndex((v) => v.id === id);
+        if (idx !== -1 && idx !== indexRef.current) {
+          prev = idx;
+          break;
+        }
+        id = navStackRef.current.pop();
       }
       goTo(
-        prev ?? (indexRef.current - 1 + playlist.length) % playlist.length
+        prev === -1
+          ? (indexRef.current - 1 + playlist.length) % playlist.length
+          : prev
       );
     };
 
@@ -425,8 +435,10 @@ export function WatchExperience({
   // The index goBack would pick, for the confirm dialog's title preview.
   const peekPrevIndex = () => {
     for (let i = navStackRef.current.length - 1; i >= 0; i--) {
-      const idx = navStackRef.current[i];
-      if (idx < playlist.length && idx !== indexRef.current) return idx;
+      const idx = playlist.findIndex(
+        (v) => v.id === navStackRef.current[i]
+      );
+      if (idx !== -1 && idx !== indexRef.current) return idx;
     }
     return (indexRef.current - 1 + playlist.length) % playlist.length;
   };
@@ -438,7 +450,15 @@ export function WatchExperience({
   const handleSwipe = (dir: SwipeDirection) => {
     if (!swipeEnabled || pendingSwipe || playlist.length <= 1) return;
     if (advancingRef.current) return;
-    if (localStorage.getItem(noConfirmKey) === "1") {
+    // localStorage can throw where storage is disabled — a failed read
+    // means "not opted out", so the dialog still shows.
+    let skipConfirm = false;
+    try {
+      skipConfirm = localStorage.getItem(noConfirmKey) === "1";
+    } catch {
+      skipConfirm = false;
+    }
+    if (skipConfirm) {
       if (dir === "next") swipeNavRef.current?.next();
       else swipeNavRef.current?.prev();
       return;
@@ -453,6 +473,11 @@ export function WatchExperience({
             (i) => statusRef.current.get(playlist[i].id) ?? 0
           )
         : peekPrevIndex();
+    // pauseVideo() is an async postMessage, so hold the in-flight nav
+    // guard until confirm/cancel releases it — otherwise the 500ms tick
+    // or an ENDED event can advance() under the open dialog.
+    advancingRef.current = true;
+    preSwipeStateRef.current = playerRef.current?.getPlayerState() ?? null;
     // Pause under the modal so audio doesn't keep playing.
     playerRef.current?.pauseVideo();
     setPendingSwipe({ dir, title: playlist[target]?.title });
@@ -461,15 +486,32 @@ export function WatchExperience({
   const confirmSwipe = (dontAskAgain: boolean) => {
     const dir = pendingSwipe?.dir;
     setPendingSwipe(null);
+    // Release the nav guard BEFORE the nav function re-acquires it.
+    advancingRef.current = false;
     if (!dir) return;
-    if (dontAskAgain) localStorage.setItem(noConfirmKey, "1");
+    if (dontAskAgain) {
+      try {
+        localStorage.setItem(noConfirmKey, "1");
+      } catch {
+        // Storage disabled — the opt-out just doesn't persist.
+      }
+    }
     if (dir === "next") swipeNavRef.current?.next();
     else swipeNavRef.current?.prev();
   };
 
   const cancelSwipe = () => {
     setPendingSwipe(null);
-    playerRef.current?.playVideo();
+    advancingRef.current = false;
+    // Resume only if the video was actually playing when the swipe
+    // opened the dialog — don't un-pause a kid-paused video.
+    const preSwipe = preSwipeStateRef.current;
+    if (
+      preSwipe === window.YT?.PlayerState.PLAYING ||
+      preSwipe === window.YT?.PlayerState.BUFFERING
+    ) {
+      playerRef.current?.playVideo();
+    }
   };
 
   // Single-touch tracking shared by every swipe zone — a second finger

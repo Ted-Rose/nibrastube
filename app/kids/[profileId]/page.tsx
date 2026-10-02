@@ -24,6 +24,8 @@ import { KidsFooterGate } from "@/components/kids-footer-gate";
 import { VideoCard } from "@/components/video-card";
 import { KidsSortSelect } from "@/components/kids-sort-select";
 import { getSession } from "@/lib/auth";
+import { canViewProfile } from "@/lib/profiles";
+import { cookies } from "next/headers";
 import {
   getKidsChannels,
   getKidsVideos,
@@ -60,6 +62,13 @@ export default async function KidsPortalPage({
   });
 
   if (!profile) notFound();
+
+  // No cross-family snooping: the device must be kid-locked to this profile
+  // or the signed-in parent must own/share it.
+  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
+  if (!(await canViewProfile(session, profileId, activeProfileId))) {
+    redirect("/kids");
+  }
 
   // The gate PIN must work on kid-locked devices with no/expired session,
   // so resolve it from the profile owner's row instead of the JWT payload.

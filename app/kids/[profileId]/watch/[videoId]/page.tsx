@@ -2,6 +2,9 @@ import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { getSession } from "@/lib/auth";
+import { canViewProfile } from "@/lib/profiles";
 import { WatchExperience } from "@/components/watch-experience";
 import {
   getKidsVideos,
@@ -24,6 +27,14 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   });
 
   if (!profile) notFound();
+
+  // 2. Access check: kid-locked to this profile or a parent who
+  //    owns/shares it — no cross-family URL guessing.
+  const session = await getSession();
+  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
+  if (!(await canViewProfile(session, profileId, activeProfileId))) {
+    redirect("/kids");
+  }
 
   // Autoplay playlist mirrors the grid the kid came from: same channel
   // filter, search, and sort.

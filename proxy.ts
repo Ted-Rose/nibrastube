@@ -6,15 +6,16 @@ export async function proxy(request: NextRequest) {
   const session = await getSession();
   const activeProfileId = request.cookies.get("activeProfileId")?.value;
 
-  // 0. No landing page: `/` sends signed-in parents to their dashboard,
-  // kid-locked devices back to their locked profile (PWA start_url is
-  // `/`, so a cleared session must not strand them on /signup), and
+  // 0. No landing page: `/` sends kid-locked devices straight back to
+  // their locked profile's feed — the lock wins over a lingering
+  // session (PWA start_url is `/`, so a locked device must land on its
+  // feed, not the picker) — signed-in parents to their dashboard, and
   // everyone else to signup.
   if (request.nextUrl.pathname === "/") {
-    const destination = session
-      ? "/parent/dashboard"
-      : activeProfileId
-        ? `/kids/${activeProfileId}`
+    const destination = activeProfileId
+      ? `/kids/${activeProfileId}`
+      : session
+        ? "/parent/dashboard"
         : "/signup";
     return NextResponse.redirect(new URL(destination, request.url));
   }

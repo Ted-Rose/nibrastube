@@ -8,14 +8,23 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-// `callback` is user-controlled — only honor same-origin relative paths
-// so it can't be used as an open redirect off-site.
+// `callback` is user-controlled — parse it against a dummy origin and
+// only honor it when it stays on that origin. A bare startsWith("/")
+// check is bypassable: "/\evil.com" treats "\" as a path separator and
+// "/%09/evil.com" hides a tab that collapses to "//evil.com", both of
+// which resolve cross-origin. Fragments are dropped — app routes don't
+// need them.
 function safeCallback(callback: unknown): string {
-  return typeof callback === "string" &&
-    callback.startsWith("/") &&
-    !callback.startsWith("//")
-    ? callback
-    : "/parent/dashboard";
+  if (typeof callback !== "string") return "/parent/dashboard";
+  try {
+    const url = new URL(callback, "https://internal.invalid");
+    if (url.origin !== "https://internal.invalid") {
+      return "/parent/dashboard";
+    }
+    return url.pathname + url.search;
+  } catch {
+    return "/parent/dashboard";
+  }
 }
 
 const signupSchema = z.object({

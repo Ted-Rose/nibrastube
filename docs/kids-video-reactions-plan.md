@@ -44,12 +44,15 @@ video that's currently approved for their profile.
 - **Auth for kid-driven writes already exists.** `app/api/watch-progress`
   accepts a write when `activeProfileId` cookie === profileId (kid-locked
   device, no session) OR `getSession()` + `assertCanManageProfile`
-  succeeds (parent). Server actions can `await cookies()` the same way —
+  succeeds (parent). A route handler can `await cookies()` the same way —
   no new auth machinery needed.
 - **Reactions don't need beacons.** Unlike watch position (flushed on
-  pagehide/unload), a reaction is a deliberate tap — a server action is
-  the codebase's default for mutations (`app/actions/*.ts`) and needs no
-  `sendBeacon`/`keepalive` plumbing.
+  pagehide/unload), a reaction is a deliberate tap — a plain `fetch`
+  POST needs no `sendBeacon`/`keepalive` plumbing. It must be a route
+  handler, not a server action: a server action's `revalidatePath`
+  re-renders the current route, which would tear down and recreate the
+  YouTube player on every tap — the `/api/watch-progress` pattern
+  avoids that.
 - **Schema precedent:** `(profileId, videoId)` composite PK tables with
   cascade FKs to `profiles` and `videos` are the established pattern
   (`watch_progress`, `channel_video_exclusions`).
@@ -97,28 +100,34 @@ disappears but silently returns if the parent re-pins it.
 
 ## Files to create / modify
 
-### 1. `app/actions/reactions.ts` (new)
+### 1. `app/api/video-reactions/route.ts` (new)
+
+A route handler, not a server action: an action's `revalidatePath`
+forces a re-render of the current route, which would tear down and
+recreate the YouTube player on every tap — the `/api/watch-progress`
+pattern avoids that.
 
 ```ts
-"use server";
-
-const reactionSchema = z.object({
+const bodySchema = z.object({
   profileId: z.string().uuid(),
   videoId: z.string().min(1),
   reaction: z.enum(["like", "dislike"]).nullable(), // null = clear
 });
 
-export async function setVideoReaction(input: unknown) {
-  const parsed = reactionSchema.safeParse(input);
-  if (!parsed.success) return;
-  const { profileId, videoId, reaction } = parsed.data;
+export async function POST(request: NextRequest) {
+  const body = bodySchema.parse(await request.json()); // 400 on failure
+  const { profileId, videoId, reaction } = body;
 
   // Dual auth, mirroring /api/watch-progress: kid-locked device OR
   // managing parent session.
   const activeProfileId = (await cookies()).get("activeProfileId")?.value;
   if (activeProfileId !== profileId) {
-    const session = await getSession();
-    await assertCanManageProfile(session, profileId);
+    try {
+      const session = await getSession();
+      await assertCanManageProfile(session, profileId);
+    } catch {
+      return NextResponse.json({ ok: false }, { status: 403 });
+    }
   }
 
   // Whitelist is absolute — reactions only on approved videos.
@@ -128,7 +137,7 @@ export async function setVideoReaction(input: unknown) {
       eq(whitelistedVideos.videoId, videoId)
     ),
   });
-  if (!approved) return;
+  if (!approved) return NextResponse.json({ ok: false }, { status: 403 });
 
   if (reaction === null) {
     await db.delete(videoReactions).where(
@@ -149,11 +158,14 @@ export async function setVideoReaction(input: unknown) {
   await pusherServer.trigger(`profile-${profileId}`, "video-reacted", { videoId });
 
   revalidatePath(`/kids/${profileId}`);
+
+  return NextResponse.json({ ok: true });
 }
 ```
 
-`revalidatePath` refreshes the portal's Liked tab; the Pusher event keeps
-a second kid device in sync (optional but one line — include it).
+`revalidatePath` is allowed in route handlers — it refreshes the portal's
+Liked tab without re-rendering the watch route; the Pusher event keeps a
+second kid device in sync (optional but one line — include it).
 
 ### 2. `lib/kids-feed.ts` (modify)
 
@@ -216,9 +228,9 @@ fallback-to-full-list, `currentIndex`, `returnQuery` — is unchanged.
   multi-device in sync.
 - `react(dir)`: read `latestRef.current.videoId` (NOT `playlist[index].id`
   — the ref is what the player actually loaded); toggle semantics
-  (`same → null`, `different → switch`); optimistic `setReactions`; call
-  `setVideoReaction({ profileId, videoId, reaction })` in a
-  `startTransition`, revert on throw.
+  (`same → null`, `different → switch`); optimistic `setReactions`; POST
+  `{ profileId, videoId, reaction }` to `/api/video-reactions`, revert
+  on non-ok/throw.
 - **Buttons inside `<FullscreenPlayer>`** (required — see fullscreen
   constraint): an `absolute top-3 right-3 z-50` row of two big round
   buttons (`w-12 h-12`+, `bg-black/60`, kids-UI weight). `ThumbsUp` /
@@ -248,7 +260,7 @@ skip if it clutters cards.
 | Tap 👎 on liked video | Switches row to `dislike` |
 | Liked video later unpinned | Row survives; hidden from Liked tab (inner join); reappears on re-pin |
 | Disliked video | Still playable/browsable; deprioritized by autoplay + `sort=status` (tier 2) |
-| Reaction on non-whitelisted video | Server action no-ops (whitelist check) |
+| Reaction on non-whitelisted video | Route rejects it (403 whitelist check) |
 | Multi-device | Same profile → shared rows; Pusher refresh keeps tabs in sync |
 | Who can react | Kid device (`activeProfileId` cookie) or managing parent session |
 

@@ -51,8 +51,9 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   }
 
   if (currentIndex === -1) {
-    // If not approved, redirect back to the portal
-    redirect(`/kids/${profileId}`);
+    // If not approved, redirect back to the portal — keep the feed
+    // context so a stale Liked-tab link returns to the Liked tab.
+    redirect(`/kids/${profileId}${kidsFeedQuery(feed)}`);
   }
 
   const playlist = rows.map(({ video, progress, reaction }) => {

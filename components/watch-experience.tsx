@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -12,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
 import { pickNextIndex } from "@/lib/autoplay";
-import { setVideoReaction } from "@/app/actions/reactions";
 import type { VideoReaction, WatchStatus } from "@/lib/kids-feed";
 
 interface YTPlayerEvent {
@@ -107,6 +106,10 @@ export function WatchExperience({
       )
   );
   const reactionsRef = useRef(reactions);
+  // Render-side mirror of latestRef.current.videoId (refs can't be read
+  // during render) — the tick below copies it here, so this is the video
+  // a reaction tap would actually write to.
+  const [activeVideoId, setActiveVideoId] = useState("");
   // Videos finished during this session — their startSeconds prop is a
   // stale page-load resume point, so replays must start at 0.
   const completedRef = useRef(new Set<string>());
@@ -350,6 +353,7 @@ export function WatchExperience({
       const isExpected = loadedId === currentId;
       if (isExpected) {
         latestRef.current = { videoId: currentId, position: time, duration };
+        setActiveVideoId(currentId);
       }
       const wrapped =
         duration > 0 && lastTime >= duration - 1 && time < 1;
@@ -408,18 +412,30 @@ export function WatchExperience({
     const next = prev === dir ? null : dir;
     reactionsRef.current.set(videoId, next);
     setReactions(new Map(reactionsRef.current));
-    startTransition(async () => {
-      try {
-        await setVideoReaction({ profileId, videoId, reaction: next });
-      } catch {
+    // Route handler, not a server action: an action's revalidation
+    // re-renders this route, which would destroy and recreate the
+    // YouTube player on every tap.
+    fetch("/api/video-reactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId, videoId, reaction: next }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`reaction failed: ${res.status}`);
+      })
+      .catch(() => {
         reactionsRef.current.set(videoId, prev);
         setReactions(new Map(reactionsRef.current));
-      }
-    });
+      });
   };
 
   if (!current) return null;
-  const currentReaction = reactions.get(current.id) ?? null;
+  // Show the reaction for the video a tap would actually write to —
+  // what the player loaded (activeVideoId), which can briefly lag
+  // `current` in the ~500ms window after auto-advance before the tick
+  // catches up.
+  const currentReaction =
+    reactions.get(activeVideoId || current.id) ?? null;
 
   return (
     <div className="min-h-screen bg-black flex flex-col">

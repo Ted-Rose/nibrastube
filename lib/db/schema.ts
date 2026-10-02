@@ -18,6 +18,7 @@ export const profiles = pgTable("profiles", {
     .notNull(),
   name: text("name").notNull(),
   avatar: text("avatar"), // URL or base64 or emoji
+  swipeEnabled: boolean("swipe_enabled").default(false).notNull(), // kid may swipe to switch videos on the watch page
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

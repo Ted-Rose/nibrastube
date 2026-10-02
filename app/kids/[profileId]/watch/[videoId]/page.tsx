@@ -73,6 +73,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
       playlist={playlist}
       startIndex={currentIndex}
       returnQuery={kidsFeedQuery(feed)}
+      swipeEnabled={profile.swipeEnabled}
     />
   );
 }

@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type TouchEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, House } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
+import { SwipeConfirmDialog } from "@/components/swipe-confirm-dialog";
 import { pickNextIndex } from "@/lib/autoplay";
+import { classifySwipe } from "@/lib/gestures";
+import type { SwipeDirection } from "@/lib/gestures";
+import { cn } from "@/lib/utils";
 import type { WatchStatus } from "@/lib/kids-feed";
 
 interface YTPlayerEvent {
@@ -21,6 +25,8 @@ interface YTPlayer {
   getDuration(): number;
   getPlayerState(): number;
   getVideoData(): { video_id?: string } | undefined;
+  pauseVideo(): void;
+  playVideo(): void;
 }
 
 interface YTNamespace {
@@ -65,6 +71,8 @@ interface WatchExperienceProps {
   // Query string (incl. leading "?", or "") preserving the grid context —
   // view/channel/sort/q — the kid arrived from.
   returnQuery?: string;
+  // Per-profile opt-in: swipe right/up = next video, left/down = previous.
+  swipeEnabled: boolean;
 }
 
 export function WatchExperience({
@@ -74,6 +82,7 @@ export function WatchExperience({
   playlist,
   startIndex,
   returnQuery = "",
+  swipeEnabled,
 }: WatchExperienceProps) {
   const router = useRouter();
   const portalUrl = `/kids/${profileId}${returnQuery}`;
@@ -94,6 +103,26 @@ export function WatchExperience({
   // Videos finished during this session — their startSeconds prop is a
   // stale page-load resume point, so replays must start at 0.
   const completedRef = useRef(new Set<string>());
+  // Swipe-"back" history: every navigation pushes the outgoing video id
+  // (an index would retarget on a mid-session reorder), so prev = the
+  // video the kid just came from (not blindly index−1) and
+  // autoplay-advanced videos are back-reachable too.
+  const navStackRef = useRef<string[]>([]);
+  // The nav functions live inside the effect (they need its flush/playlist
+  // closures); this ref surfaces them to the JSX touch handlers.
+  const swipeNavRef = useRef<{ next: () => void; prev: () => void } | null>(
+    null
+  );
+  const [pendingSwipe, setPendingSwipe] = useState<{
+    dir: SwipeDirection;
+    title?: string;
+  } | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(
+    null
+  );
+  // Player state sampled before the swipe dialog pauses playback, so
+  // "Keep watching" doesn't un-pause a video the kid paused themselves.
+  const preSwipeStateRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +150,11 @@ export function WatchExperience({
       indexRef.current = Math.max(0, playlist.length - 1);
     }
     setIndex(indexRef.current);
+
+    // Playlist changed under an open swipe dialog — the pending target
+    // preview may be stale, so drop it. The recreated player autoplays,
+    // which is the "keep watching" outcome anyway.
+    setPendingSwipe(null);
 
     // Playlist emptied mid-session — nothing to play; the watch page
     // redirects when the current video is unpinned, so this is a brief
@@ -157,11 +191,10 @@ export function WatchExperience({
       }
     };
 
-    // Advance by loading the next video into the SAME player instead of
-    // navigating — keeps the element (and fullscreen mode) mounted.
-    const advance = () => {
-      if (advancingRef.current) return;
-      advancingRef.current = true;
+    // Switch to another playlist index by loading it into the SAME player
+    // instead of navigating — keeps the element (and fullscreen mode)
+    // mounted. Shared by autoplay and swipe gestures.
+    const goTo = (next: number) => {
       // Flush BEFORE loadVideoById — the player is reused, so the old
       // video's position would otherwise be lost.
       flush();
@@ -184,11 +217,7 @@ export function WatchExperience({
         );
         if (status === 2) completedRef.current.add(curId);
       }
-      const next = pickNextIndex(
-        playlist.length,
-        cur,
-        (i) => statusRef.current.get(playlist[i].id) ?? 0
-      );
+      if (next !== cur && curId) navStackRef.current.push(curId);
       indexRef.current = next;
       setIndex(next);
       playerRef.current?.loadVideoById({
@@ -203,6 +232,45 @@ export function WatchExperience({
         `/kids/${profileId}/watch/${playlist[next].id}${returnQuery}`
       );
     };
+
+    const advance = () => {
+      if (advancingRef.current) return;
+      advancingRef.current = true;
+      goTo(
+        pickNextIndex(
+          playlist.length,
+          indexRef.current,
+          (i) => statusRef.current.get(playlist[i].id) ?? 0
+        )
+      );
+    };
+
+    // Previous = the video the kid just came from (nav history stack),
+    // falling back to index−1 when the stack is empty.
+    const goBack = () => {
+      if (advancingRef.current) return;
+      advancingRef.current = true;
+      // Pop until a stacked id still resolves in the playlist — a
+      // mid-session unpin leaves dangling entries, and entries pointing
+      // at the current video are useless.
+      let prev = -1;
+      let id = navStackRef.current.pop();
+      while (id !== undefined) {
+        const idx = playlist.findIndex((v) => v.id === id);
+        if (idx !== -1 && idx !== indexRef.current) {
+          prev = idx;
+          break;
+        }
+        id = navStackRef.current.pop();
+      }
+      goTo(
+        prev === -1
+          ? (indexRef.current - 1 + playlist.length) % playlist.length
+          : prev
+      );
+    };
+
+    swipeNavRef.current = { next: advance, prev: goBack };
 
     const createPlayer = () => {
       const container = containerRef.current;
@@ -364,6 +432,119 @@ export function WatchExperience({
     };
   }, [profileId, playlist, router, portalUrl, returnQuery]);
 
+  // The index goBack would pick, for the confirm dialog's title preview.
+  const peekPrevIndex = () => {
+    for (let i = navStackRef.current.length - 1; i >= 0; i--) {
+      const idx = playlist.findIndex(
+        (v) => v.id === navStackRef.current[i]
+      );
+      if (idx !== -1 && idx !== indexRef.current) return idx;
+    }
+    return (indexRef.current - 1 + playlist.length) % playlist.length;
+  };
+
+  // Per-device opt-out from the confirm dialog (kid's own preference,
+  // same localStorage precedent as daily-sync-ping).
+  const noConfirmKey = `nibrastube:swipe-no-confirm:${profileId}`;
+
+  const handleSwipe = (dir: SwipeDirection) => {
+    if (!swipeEnabled || pendingSwipe || playlist.length <= 1) return;
+    if (advancingRef.current) return;
+    // localStorage can throw where storage is disabled — a failed read
+    // means "not opted out", so the dialog still shows.
+    let skipConfirm = false;
+    try {
+      skipConfirm = localStorage.getItem(noConfirmKey) === "1";
+    } catch {
+      skipConfirm = false;
+    }
+    if (skipConfirm) {
+      if (dir === "next") swipeNavRef.current?.next();
+      else swipeNavRef.current?.prev();
+      return;
+    }
+    // Resolve the target now (event handler — refs are readable here) so
+    // the dialog can show which video the swipe would switch to.
+    const target =
+      dir === "next"
+        ? pickNextIndex(
+            playlist.length,
+            indexRef.current,
+            (i) => statusRef.current.get(playlist[i].id) ?? 0
+          )
+        : peekPrevIndex();
+    // pauseVideo() is an async postMessage, so hold the in-flight nav
+    // guard until confirm/cancel releases it — otherwise the 500ms tick
+    // or an ENDED event can advance() under the open dialog.
+    advancingRef.current = true;
+    preSwipeStateRef.current = playerRef.current?.getPlayerState() ?? null;
+    // Pause under the modal so audio doesn't keep playing.
+    playerRef.current?.pauseVideo();
+    setPendingSwipe({ dir, title: playlist[target]?.title });
+  };
+
+  const confirmSwipe = (dontAskAgain: boolean) => {
+    const dir = pendingSwipe?.dir;
+    setPendingSwipe(null);
+    // Release the nav guard BEFORE the nav function re-acquires it.
+    advancingRef.current = false;
+    if (!dir) return;
+    if (dontAskAgain) {
+      try {
+        localStorage.setItem(noConfirmKey, "1");
+      } catch {
+        // Storage disabled — the opt-out just doesn't persist.
+      }
+    }
+    if (dir === "next") swipeNavRef.current?.next();
+    else swipeNavRef.current?.prev();
+  };
+
+  const cancelSwipe = () => {
+    setPendingSwipe(null);
+    advancingRef.current = false;
+    // Resume only if the video was actually playing when the swipe
+    // opened the dialog — don't un-pause a kid-paused video.
+    const preSwipe = preSwipeStateRef.current;
+    if (
+      preSwipe === window.YT?.PlayerState.PLAYING ||
+      preSwipe === window.YT?.PlayerState.BUFFERING
+    ) {
+      playerRef.current?.playVideo();
+    }
+  };
+
+  // Single-touch tracking shared by every swipe zone — a second finger
+  // joining cancels the gesture. Note: touches starting inside the
+  // cross-origin YouTube iframe never reach us, which is why the edge
+  // strips over the player exist below.
+  const onTouchStart = (e: TouchEvent) => {
+    if (e.touches.length !== 1) {
+      touchStartRef.current = null;
+      return;
+    }
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+  };
+  const onTouchMove = (e: TouchEvent) => {
+    if (e.touches.length !== 1) touchStartRef.current = null;
+  };
+  const onTouchEnd = (e: TouchEvent) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || pendingSwipe) return;
+    const t = e.changedTouches[0];
+    const dir = classifySwipe(
+      t.clientX - start.x,
+      t.clientY - start.y,
+      Date.now() - start.t
+    );
+    if (dir) handleSwipe(dir);
+  };
+  const onTouchCancel = () => {
+    touchStartRef.current = null;
+  };
+
   // Clamp at render too: a Pusher refresh can shrink the playlist while
   // `index` still points past the new end (the effect clamp runs only
   // after this render).
@@ -371,7 +552,18 @@ export function WatchExperience({
   if (!current) return null;
 
   return (
-    <div className="min-h-screen bg-black flex flex-col">
+    // touch-none when swipe is on so scroll/pull-to-refresh doesn't steal
+    // the gesture — the watch page is built to fit the viewport.
+    <div
+      className={cn(
+        "min-h-screen bg-black flex flex-col",
+        swipeEnabled && "touch-none select-none"
+      )}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchCancel}
+    >
       {/* Player Header */}
       <div className="bg-slate-900/80 backdrop-blur px-3 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 flex items-center justify-between gap-2 text-white border-b border-slate-800">
         <Link href={portalUrl} aria-label="Back to videos">
@@ -403,6 +595,39 @@ export function WatchExperience({
           <div ref={containerRef} className="w-full h-full">
             <div ref={mountRef} className="w-full h-full" />
           </div>
+          {swipeEnabled && (
+            <>
+              {/* Edge swipe zones: touches starting inside the cross-origin
+                  YT iframe never reach our document, so these transparent
+                  strips catch swipes that begin at the screen edge. They
+                  must live INSIDE FullscreenPlayer — in native fullscreen
+                  only descendants of fullscreenElement render. bottom-16
+                  leaves the YouTube control bar (incl. corner buttons)
+                  reachable; the video center stays fully tappable. */}
+              <div
+                className="absolute top-0 bottom-16 left-0 w-7 z-40 touch-none"
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                onTouchCancel={onTouchCancel}
+              />
+              <div
+                className="absolute top-0 bottom-16 right-0 w-7 z-40 touch-none"
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                onTouchCancel={onTouchCancel}
+              />
+            </>
+          )}
+          {pendingSwipe && (
+            <SwipeConfirmDialog
+              direction={pendingSwipe.dir}
+              targetTitle={pendingSwipe.title}
+              onConfirm={confirmSwipe}
+              onCancel={cancelSwipe}
+            />
+          )}
         </FullscreenPlayer>
       </div>
 

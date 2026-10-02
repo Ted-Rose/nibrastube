@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth";
+import { assertCanManageProfile } from "@/lib/profiles";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -38,6 +39,30 @@ export async function deleteProfile(profileId: string) {
   await db
     .delete(profiles)
     .where(and(eq(profiles.id, profileId), eq(profiles.parentId, session.user.id)));
+
+  revalidatePath("/parent/profiles");
+}
+
+const swipeSchema = z.object({
+  profileId: z.string().uuid(),
+  enabled: z.boolean(),
+});
+
+export async function setSwipeEnabled(formData: FormData): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+
+  const parsed = swipeSchema.safeParse({
+    profileId: formData.get("profileId"),
+    enabled: formData.get("enabled") === "true",
+  });
+  if (!parsed.success) return;
+
+  await assertCanManageProfile(session, parsed.data.profileId);
+  await db
+    .update(profiles)
+    .set({ swipeEnabled: parsed.data.enabled })
+    .where(eq(profiles.id, parsed.data.profileId));
 
   revalidatePath("/parent/profiles");
 }

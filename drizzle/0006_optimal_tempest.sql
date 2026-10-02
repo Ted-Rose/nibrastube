@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "swipe_enabled" boolean DEFAULT false NOT NULL;

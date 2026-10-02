@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { WatchExperience } from "@/components/watch-experience";
 import {
   getKidsVideos,
+  getLikedVideos,
   kidsFeedQuery,
   parseKidsFeedParams,
   watchStatus,
@@ -28,18 +29,24 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   // Autoplay playlist mirrors the grid the kid came from: same channel
   // filter, search, and sort.
   const feed = parseKidsFeedParams(await searchParams);
-  let rows = await getKidsVideos(profileId, {
-    q: feed.q,
-    channelId: feed.channel,
-    sort: feed.sort,
-    dir: feed.dir,
-  });
+  let rows =
+    feed.view === "liked"
+      ? await getLikedVideos(profileId, { q: feed.q })
+      : await getKidsVideos(profileId, {
+          q: feed.q,
+          channelId: feed.channel,
+          sort: feed.sort,
+          dir: feed.dir,
+        });
   let currentIndex = rows.findIndex((r) => r.video.id === videoId);
 
   if (currentIndex === -1) {
     // Stale link from a filtered view — fall back to the full list (still
     // sorted) instead of bouncing the kid out.
-    rows = await getKidsVideos(profileId, { sort: feed.sort, dir: feed.dir });
+    rows =
+      feed.view === "liked"
+        ? await getLikedVideos(profileId)
+        : await getKidsVideos(profileId, { sort: feed.sort, dir: feed.dir });
     currentIndex = rows.findIndex((r) => r.video.id === videoId);
   }
 
@@ -48,7 +55,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
     redirect(`/kids/${profileId}`);
   }
 
-  const playlist = rows.map(({ video, progress }) => {
+  const playlist = rows.map(({ video, progress, reaction }) => {
     const duration = video.durationSeconds ?? 0;
     const startSeconds =
       progress &&
@@ -62,6 +69,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
       title: video.title,
       startSeconds,
       status: watchStatus(progress),
+      reaction,
     };
   });
 

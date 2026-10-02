@@ -10,6 +10,7 @@ import { notFound, redirect } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import {
   ArrowLeft,
+  Heart,
   MagnifyingGlass,
   MonitorPlay,
   Play,
@@ -27,6 +28,7 @@ import { getSession } from "@/lib/auth";
 import {
   getKidsChannels,
   getKidsVideos,
+  getLikedVideos,
   kidsFeedQuery,
   parseKidsFeedParams,
   type KidsFeedParams,
@@ -75,14 +77,17 @@ export default async function KidsPortalPage({
     `/kids/${profileId}/watch/${videoId}${kidsFeedQuery(feed)}`;
 
   const showVideoGrid = view === "videos" || drilledIn;
-  const rows = showVideoGrid
-    ? await getKidsVideos(profileId, {
-        q: query,
-        channelId: channel,
-        sort: feed.sort,
-        dir: feed.dir,
-      })
-    : [];
+  const rows =
+    view === "liked"
+      ? await getLikedVideos(profileId, { q: query })
+      : showVideoGrid
+        ? await getKidsVideos(profileId, {
+            q: query,
+            channelId: channel,
+            sort: feed.sort,
+            dir: feed.dir,
+          })
+        : [];
   const channelRows =
     view === "channels" && !drilledIn
       ? await getKidsChannels(profileId, { q: query })
@@ -181,7 +186,7 @@ export default async function KidsPortalPage({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 sm:mt-10">
         {/* View tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-8">
-          <div className="grid grid-cols-2 gap-1 rounded-full bg-white p-1 shadow-sm sm:inline-flex">
+          <div className="grid grid-cols-3 gap-1 rounded-full bg-white p-1 shadow-sm sm:inline-flex">
             <Link
               href={portalUrl({ view: "videos", channel: null })}
               className={`${tabBase} ${view === "videos" ? tabActive : tabInactive}`}
@@ -195,6 +200,13 @@ export default async function KidsPortalPage({
             >
               <MonitorPlay size={24} weight="bold" />
               Channels
+            </Link>
+            <Link
+              href={portalUrl({ view: "liked", channel: null })}
+              className={`${tabBase} ${view === "liked" ? tabActive : tabInactive}`}
+            >
+              <Heart size={24} weight={view === "liked" ? "fill" : "bold"} />
+              Liked
             </Link>
           </div>
           {showVideoGrid && (
@@ -225,7 +237,9 @@ export default async function KidsPortalPage({
                  ? `Results for "${query}"`
                  : view === "channels"
                    ? "Channels"
-                   : "Approved Videos"}
+                   : view === "liked"
+                     ? "Liked Videos"
+                     : "Approved Videos"}
            </h2>
         </div>
 
@@ -275,24 +289,31 @@ export default async function KidsPortalPage({
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
              <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
-                 <Play size={48} weight="fill" />
+                 {view === "liked" ? (
+                   <Heart size={48} weight="fill" />
+                 ) : (
+                   <Play size={48} weight="fill" />
+                 )}
              </div>
              <p className="text-2xl font-bold text-slate-400">
                {query
                  ? "No videos found!"
-                 : channelApproved
-                   ? "Videos are on the way!"
-                   : "Ask Mom or Dad to pick some videos!"}
+                 : view === "liked"
+                   ? "No liked videos yet! Tap the 👍 while watching."
+                   : channelApproved
+                     ? "Videos are on the way!"
+                     : "Ask Mom or Dad to pick some videos!"}
              </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {rows.map(({ video, progress }) => (
+            {rows.map(({ video, progress, reaction }) => (
               <VideoCard
                 key={video.id}
                 href={watchUrl(video.id)}
                 video={video}
                 progress={progress}
+                reaction={reaction}
               />
             ))}
           </div>

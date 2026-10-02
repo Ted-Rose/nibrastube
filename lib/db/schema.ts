@@ -125,6 +125,27 @@ export const watchProgress = pgTable(
   })
 );
 
+// Kid reactions per (profile, video): one row, latest wins.
+// "like" | "dislike" — text column leaves room for more reactions later.
+export const videoReactions = pgTable(
+  "video_reactions",
+  {
+    profileId: uuid("profile_id")
+      .references(() => profiles.id, { onDelete: "cascade" })
+      .notNull(),
+    videoId: text("video_id")
+      .references(() => videos.id, { onDelete: "cascade" })
+      .notNull(),
+    reaction: text("reaction").notNull(), // "like" | "dislike"
+    reactedAt: timestamp("reacted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.profileId, table.videoId] }),
+  })
+);
+
 // Tombstones: videos a parent explicitly unpinned from an approved channel,
 // so the sync does not re-add them
 export const channelVideoExclusions = pgTable(

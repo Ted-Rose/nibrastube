@@ -2,13 +2,15 @@ import { and, asc, count, desc, eq, ilike, inArray, isNotNull, sql } from "drizz
 import { db } from "@/lib/db";
 import {
   channels,
+  videoReactions,
   videos,
   watchProgress,
   whitelistedChannels,
   whitelistedVideos,
 } from "@/lib/db/schema";
 
-export type KidsView = "videos" | "channels";
+export type KidsView = "videos" | "channels" | "liked";
+export type VideoReaction = "like" | "dislike";
 export type KidsSort = "age" | "status";
 export type KidsDir = "asc" | "desc";
 
@@ -28,7 +30,9 @@ export function parseKidsFeedParams(
 ): KidsFeedParams {
   const first = (v: string | string[] | undefined) =>
     (Array.isArray(v) ? v[0] : v) ?? "";
-  const view: KidsView = first(raw.view) === "channels" ? "channels" : "videos";
+  const rawView = first(raw.view);
+  const view: KidsView =
+    rawView === "channels" || rawView === "liked" ? rawView : "videos";
   const rawChannel = first(raw.channel);
   const channel =
     view === "channels" && CHANNEL_ID_RE.test(rawChannel) ? rawChannel : null;
@@ -77,8 +81,9 @@ export async function getKidsVideos(
     dir,
   }: { q?: string; channelId?: string | null; sort: KidsSort; dir: KidsDir }
 ) {
-  // 0 = not watched, 1 = started/not finished, 2 = watched
+  // 0 = not watched, 1 = started/not finished, 2 = watched or disliked
   const statusRank = sql<number>`case
+    when ${videoReactions.reaction} = 'dislike' then 2
     when ${watchProgress.completed} then 2
     when ${watchProgress.positionSeconds} > 0 then 1
     else 0 end`;
@@ -93,7 +98,11 @@ export async function getKidsVideos(
         : [newestFirst];
 
   return db
-    .select({ video: videos, progress: watchProgress })
+    .select({
+      video: videos,
+      progress: watchProgress,
+      reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
+    })
     .from(whitelistedVideos)
     .innerJoin(videos, eq(videos.id, whitelistedVideos.videoId))
     .leftJoin(
@@ -101,6 +110,13 @@ export async function getKidsVideos(
       and(
         eq(watchProgress.profileId, whitelistedVideos.profileId),
         eq(watchProgress.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .leftJoin(
+      videoReactions,
+      and(
+        eq(videoReactions.profileId, whitelistedVideos.profileId),
+        eq(videoReactions.videoId, whitelistedVideos.videoId)
       )
     )
     .where(
@@ -111,6 +127,45 @@ export async function getKidsVideos(
       )
     )
     .orderBy(...orderBy);
+}
+
+// Videos the kid tapped 👍 on, newest reaction first. Inner-joins
+// whitelisted_videos so an unpinned favorite hides until re-pinned.
+// Same { video, progress, reaction } row shape as getKidsVideos.
+export async function getLikedVideos(
+  profileId: string,
+  { q }: { q?: string } = {}
+) {
+  return db
+    .select({
+      video: videos,
+      progress: watchProgress,
+      reaction: sql<VideoReaction>`${videoReactions.reaction}`,
+    })
+    .from(videoReactions)
+    .innerJoin(videos, eq(videos.id, videoReactions.videoId))
+    .innerJoin(
+      whitelistedVideos,
+      and(
+        eq(whitelistedVideos.profileId, videoReactions.profileId),
+        eq(whitelistedVideos.videoId, videoReactions.videoId)
+      )
+    )
+    .leftJoin(
+      watchProgress,
+      and(
+        eq(watchProgress.profileId, videoReactions.profileId),
+        eq(watchProgress.videoId, videoReactions.videoId)
+      )
+    )
+    .where(
+      and(
+        eq(videoReactions.profileId, profileId),
+        eq(videoReactions.reaction, "like"),
+        q ? ilike(videos.title, `%${q}%`) : undefined
+      )
+    )
+    .orderBy(desc(videoReactions.reactedAt));
 }
 
 export interface KidsChannel {

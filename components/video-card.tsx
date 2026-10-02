@@ -1,15 +1,17 @@
 import Link from "next/link";
-import { Play } from "@phosphor-icons/react/dist/ssr";
+import { Heart, Play, ThumbsDown } from "@phosphor-icons/react/dist/ssr";
 import { Card, CardContent } from "@/components/ui/card";
 import type { videos, watchProgress } from "@/lib/db/schema";
+import type { VideoReaction } from "@/lib/kids-feed";
 
 interface VideoCardProps {
   href: string;
   video: typeof videos.$inferSelect;
   progress: typeof watchProgress.$inferSelect | null;
+  reaction?: VideoReaction | null;
 }
 
-export function VideoCard({ href, video, progress }: VideoCardProps) {
+export function VideoCard({ href, video, progress, reaction }: VideoCardProps) {
   const pct = progress?.completed
     ? 100
     : progress && video.durationSeconds
@@ -29,6 +31,15 @@ export function VideoCard({ href, video, progress }: VideoCardProps) {
             alt={video.title}
           />
           <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors" />
+          {reaction && (
+            <div className="absolute top-3 left-3 w-9 h-9 bg-white/90 rounded-full flex items-center justify-center shadow">
+              {reaction === "like" ? (
+                <Heart weight="fill" className="text-primary" size={20} />
+              ) : (
+                <ThumbsDown weight="fill" className="text-red-500" size={20} />
+              )}
+            </div>
+          )}
           {pct > 0 && (
             <div
               className="absolute bottom-0 left-0 h-1.5 bg-red-600"

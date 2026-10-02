@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, House } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  House,
+  ThumbsDown,
+  ThumbsUp,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
 import { pickNextIndex } from "@/lib/autoplay";
-import type { WatchStatus } from "@/lib/kids-feed";
+import { setVideoReaction } from "@/app/actions/reactions";
+import type { VideoReaction, WatchStatus } from "@/lib/kids-feed";
 
 interface YTPlayerEvent {
   data: number;
@@ -54,6 +60,7 @@ interface PlaylistVideo {
   title: string;
   startSeconds?: number;
   status: WatchStatus;
+  reaction: VideoReaction | null;
 }
 
 interface WatchExperienceProps {
@@ -91,6 +98,15 @@ export function WatchExperience({
   // the playlist prop is a page-load snapshot, but kids watch many videos
   // without re-navigating.
   const statusRef = useRef(new Map<string, WatchStatus>());
+  // Per-video reaction keyed by id — same snapshot-and-merge treatment as
+  // statusRef: seeded from the playlist prop, updated optimistically on tap.
+  const [reactions, setReactions] = useState(
+    () =>
+      new Map<string, VideoReaction | null>(
+        playlist.map((v) => [v.id, v.reaction])
+      )
+  );
+  const reactionsRef = useRef(reactions);
   // Videos finished during this session — their startSeconds prop is a
   // stale page-load resume point, so replays must start at 0.
   const completedRef = useRef(new Set<string>());
@@ -107,6 +123,14 @@ export function WatchExperience({
         Math.max(v.status, statusRef.current.get(v.id) ?? 0) as WatchStatus
       );
     }
+
+    // Reactions, unlike status, can go down (like → cleared), so overwrite
+    // per key — the refreshed playlist is a fresh snapshot that already
+    // contains any tap we saved, and keeps a second device in sync.
+    for (const v of playlist) {
+      reactionsRef.current.set(v.id, v.reaction);
+    }
+    setReactions(new Map(reactionsRef.current));
 
     // A Pusher refresh can shrink or reorder the playlist mid-session —
     // follow the still-playing video by id, else clamp the index in
@@ -184,11 +208,16 @@ export function WatchExperience({
         );
         if (status === 2) completedRef.current.add(curId);
       }
-      const next = pickNextIndex(
-        playlist.length,
-        cur,
-        (i) => statusRef.current.get(playlist[i].id) ?? 0
-      );
+      const next = pickNextIndex(playlist.length, cur, (i) => {
+        const status = statusRef.current.get(playlist[i].id) ?? 0;
+        // Disliked videos sit in tier 2 with watched ones — autoplay skips
+        // them while any unwatched/started video remains.
+        return (
+          reactionsRef.current.get(playlist[i].id) === "dislike"
+            ? Math.max(status, 2)
+            : status
+        ) as WatchStatus;
+      });
       indexRef.current = next;
       setIndex(next);
       playerRef.current?.loadVideoById({
@@ -368,7 +397,29 @@ export function WatchExperience({
   // `index` still points past the new end (the effect clamp runs only
   // after this render).
   const current = playlist[Math.min(index, playlist.length - 1)];
+
+  // Toggle a reaction on the video the player actually loaded
+  // (latestRef), not playlist[index] — they can briefly diverge.
+  const react = (dir: VideoReaction) => {
+    const videoId =
+      latestRef.current.videoId || playlist[indexRef.current]?.id;
+    if (!videoId) return;
+    const prev = reactionsRef.current.get(videoId) ?? null;
+    const next = prev === dir ? null : dir;
+    reactionsRef.current.set(videoId, next);
+    setReactions(new Map(reactionsRef.current));
+    startTransition(async () => {
+      try {
+        await setVideoReaction({ profileId, videoId, reaction: next });
+      } catch {
+        reactionsRef.current.set(videoId, prev);
+        setReactions(new Map(reactionsRef.current));
+      }
+    });
+  };
+
   if (!current) return null;
+  const currentReaction = reactions.get(current.id) ?? null;
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
@@ -402,6 +453,36 @@ export function WatchExperience({
         <FullscreenPlayer>
           <div ref={containerRef} className="w-full h-full">
             <div ref={mountRef} className="w-full h-full" />
+          </div>
+          {/* Reaction overlay must live inside FullscreenPlayer — in native
+              fullscreen only descendants of the fullscreen element render. */}
+          <div className="absolute top-3 right-3 z-50 flex gap-3">
+            <button
+              onClick={() => react("like")}
+              aria-label="Like video"
+              className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+            >
+              <ThumbsUp
+                size={24}
+                weight={currentReaction === "like" ? "fill" : "regular"}
+                className={
+                  currentReaction === "like" ? "text-primary" : "text-white"
+                }
+              />
+            </button>
+            <button
+              onClick={() => react("dislike")}
+              aria-label="Dislike video"
+              className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+            >
+              <ThumbsDown
+                size={24}
+                weight={currentReaction === "dislike" ? "fill" : "regular"}
+                className={
+                  currentReaction === "dislike" ? "text-red-500" : "text-white"
+                }
+              />
+            </button>
           </div>
         </FullscreenPlayer>
       </div>

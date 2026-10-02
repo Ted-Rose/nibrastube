@@ -146,10 +146,10 @@ export default async function KidsPortalPage({
               {channel && (
                 <input type="hidden" name="channel" value={channel} />
               )}
-              {feed.sort !== "age" && (
+              {feed.sort !== "status" && (
                 <input type="hidden" name="sort" value={feed.sort} />
               )}
-              {feed.dir !== "desc" && (
+              {feed.dir !== "asc" && (
                 <input type="hidden" name="dir" value={feed.dir} />
               )}
               <Input

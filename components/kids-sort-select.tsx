@@ -5,10 +5,10 @@ import { CaretDown } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 const OPTIONS = [
-  { value: "age:desc", label: "Newest first" },
-  { value: "age:asc", label: "Oldest first" },
   { value: "status:asc", label: "Not watched first" },
   { value: "status:desc", label: "Watched first" },
+  { value: "age:desc", label: "Newest first" },
+  { value: "age:asc", label: "Oldest first" },
 ] as const;
 
 // `value` is the validated "<sort>:<dir>" pair from the server.
@@ -26,9 +26,9 @@ export function KidsSortSelect({
   const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const [sort, dir] = e.target.value.split(":");
     const sp = new URLSearchParams(searchParams.toString());
-    if (sort === "age") sp.delete("sort");
+    if (sort === "status") sp.delete("sort");
     else sp.set("sort", sort);
-    if (dir === "desc") sp.delete("dir");
+    if (dir === "asc") sp.delete("dir");
     else sp.set("dir", dir);
     const qs = sp.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);

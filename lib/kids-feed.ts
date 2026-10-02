@@ -36,8 +36,8 @@ export function parseKidsFeedParams(
   const rawChannel = first(raw.channel);
   const channel =
     view === "channels" && CHANNEL_ID_RE.test(rawChannel) ? rawChannel : null;
-  const sort: KidsSort = first(raw.sort) === "status" ? "status" : "age";
-  const dir: KidsDir = first(raw.dir) === "asc" ? "asc" : "desc";
+  const sort: KidsSort = first(raw.sort) === "age" ? "age" : "status";
+  const dir: KidsDir = first(raw.dir) === "desc" ? "desc" : "asc";
   return { view, channel, sort, dir, q: first(raw.q) };
 }
 
@@ -51,8 +51,8 @@ export function kidsFeedQuery(
   if (next.view !== "videos") sp.set("view", next.view);
   if (next.view === "channels" && next.channel)
     sp.set("channel", next.channel);
-  if (next.sort !== "age") sp.set("sort", next.sort);
-  if (next.dir !== "desc") sp.set("dir", next.dir);
+  if (next.sort !== "status") sp.set("sort", next.sort);
+  if (next.dir !== "asc") sp.set("dir", next.dir);
   if (next.q) sp.set("q", next.q);
   const qs = sp.toString();
   return qs ? `?${qs}` : "";

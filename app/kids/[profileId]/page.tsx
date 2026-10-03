@@ -23,6 +23,7 @@ import { KidsFooterGate } from "@/components/kids-footer-gate";
 import { KidsSearch } from "@/components/kids-search";
 import { VideoCard } from "@/components/video-card";
 import { KidsSortSelect } from "@/components/kids-sort-select";
+import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { getSession } from "@/lib/auth";
 import {
   getKidsChannels,
@@ -176,21 +177,38 @@ export default async function KidsPortalPage({
               href={portalUrl({ view: "videos", channel: null })}
               className={`${tabBase} ${view === "videos" ? tabActive : tabInactive}`}
             >
-              <Play size={24} weight="fill" />
+              <LinkPendingSpinner
+                size={24}
+                weight="bold"
+                fallback={<Play size={24} weight="fill" />}
+              />
               Videos
             </Link>
             <Link
               href={portalUrl({ view: "channels", channel: null })}
               className={`${tabBase} ${view === "channels" ? tabActive : tabInactive}`}
             >
-              <MonitorPlay size={24} weight="bold" />
+              <LinkPendingSpinner
+                size={24}
+                weight="bold"
+                fallback={<MonitorPlay size={24} weight="bold" />}
+              />
               Channels
             </Link>
             <Link
               href={portalUrl({ view: "liked", channel: null })}
               className={`${tabBase} ${view === "liked" ? tabActive : tabInactive}`}
             >
-              <Heart size={24} weight={view === "liked" ? "fill" : "bold"} />
+              <LinkPendingSpinner
+                size={24}
+                weight="bold"
+                fallback={
+                  <Heart
+                    size={24}
+                    weight={view === "liked" ? "fill" : "bold"}
+                  />
+                }
+              />
               Liked
             </Link>
           </div>
@@ -210,6 +228,7 @@ export default async function KidsPortalPage({
             >
               <ArrowLeft size={20} weight="bold" />
               All channels
+              <LinkPendingSpinner size={20} weight="bold" />
             </Link>
           </div>
         )}
@@ -244,7 +263,12 @@ export default async function KidsPortalPage({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
               {channelRows.map((c) => (
                 <Link key={c.id} href={portalUrl({ channel: c.id })} className="group">
-                  <Card className="overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
+                  <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
+                    <LinkPendingSpinner
+                      size={24}
+                      weight="bold"
+                      className="absolute right-5 top-5 text-slate-400"
+                    />
                     <CardContent className="p-8 flex flex-col items-center text-center gap-4">
                       {c.thumbnail ? (
                         <img

@@ -11,7 +11,7 @@ import {
   whitelistedChannels,
   whitelistedVideos,
 } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth";
+import { getSession, requireParentUnlocked } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
 import { channelRowValues, getChannelDetails } from "@/lib/youtube";
 import { backfillChannel } from "@/lib/channel-sync";
@@ -19,6 +19,7 @@ import { backfillChannel } from "@/lib/channel-sync";
 export async function approveChannel(profileId: string, channelId: string) {
   const session = await getSession();
   if (!session) return;
+  await requireParentUnlocked();
   await assertCanManageProfile(session, profileId);
 
   // 1. Ensure the channel exists in our registry
@@ -77,6 +78,7 @@ export async function approveChannel(profileId: string, channelId: string) {
 export async function unapproveChannel(profileId: string, channelId: string) {
   const session = await getSession();
   if (!session) return;
+  await requireParentUnlocked();
   await assertCanManageProfile(session, profileId);
 
   // 1. Remove the approval

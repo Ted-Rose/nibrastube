@@ -1,37 +1,25 @@
-import { db } from "@/lib/db";
-import { profiles, users } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth";
-import { cookies } from "next/headers";
-import { eq } from "drizzle-orm";
+import { getSession, isParentUnlockedCookie } from "@/lib/auth";
+import { getManageableProfiles } from "@/lib/profiles";
+import { redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { selectProfile } from "@/app/actions/safety";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
 import { AppInstallMenu } from "@/components/app-install-menu";
 import Link from "next/link";
 
-export default async function KidsPage() {
+export default async function KidsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ gate?: string }>;
+}) {
   const session = await getSession();
-  
-  const allProfiles = session 
-    ? await db.query.profiles.findMany({ where: eq(profiles.parentId, session.user.id) })
-    : await db.query.profiles.findMany();
+  if (!session) redirect("/login");
 
-  // The gate PIN must work on kid-locked devices with no/expired session, so
-  // fall back to the PIN of the parent who owns the locked profile (or the
-  // first listed profile) instead of blindly defaulting to "0000".
-  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
-  let gatePin = session?.user?.parentPin ?? null;
-  if (!gatePin) {
-    const gateProfile =
-      allProfiles.find((p) => p.id === activeProfileId) ?? allProfiles[0];
-    if (gateProfile) {
-      const owner = await db.query.users.findFirst({
-        where: eq(users.id, gateProfile.parentId),
-        columns: { parentPin: true },
-      });
-      gatePin = owner?.parentPin ?? null;
-    }
-  }
+  const { gate } = await searchParams;
+  const allProfiles = await getManageableProfiles(session.user.id);
+  // Verify (not just presence-check) the unlock token so a stale or
+  // forged cookie doesn't suppress the gate modal.
+  const parentUnlocked = await isParentUnlockedCookie(session);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4">
@@ -76,9 +64,16 @@ export default async function KidsPage() {
         </div>
       </div>
 
-      {/* Inline instead of a fixed overlay so it can never cover content */}
+      {/* Inline instead of a fixed overlay so it can never cover content.
+          gate=1 (set when /parent/* redirects here) auto-opens the PIN
+          modal unless the device is already unlocked. The key remounts
+          the gate on same-page client navigations to/from ?gate=1 so a
+          stale open/closed state can't linger. */}
       <footer className="py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <KidsFooterGate correctPin={gatePin ?? "0000"} />
+        <KidsFooterGate
+          key={gate === "1" ? "gated" : "idle"}
+          defaultOpen={gate === "1" && !parentUnlocked}
+        />
       </footer>
     </div>
   );

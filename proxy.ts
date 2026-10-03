@@ -1,36 +1,60 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getSession } from "@/lib/auth";
+import {
+  getRequestSession,
+  isParentUnlocked,
+  refreshSessionCookie,
+} from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
-  const session = await getSession();
-  const activeProfileId = request.cookies.get("activeProfileId")?.value;
+  const { pathname } = request.nextUrl;
+  const session = await getRequestSession(request);
+  const parentUnlocked = await isParentUnlocked(request, session);
 
-  // 0. Landing page: authenticated parents and kid-locked devices go straight to /kids
-  if (request.nextUrl.pathname === "/" && (session || activeProfileId)) {
-    return NextResponse.redirect(new URL("/kids", request.url));
-  }
-
-  // 1. If trying to access a profile that isn't the active one
-  if (request.nextUrl.pathname.startsWith("/kids/")) {
-    const profileIdInUrl = request.nextUrl.pathname.split("/")[2];
-    if (activeProfileId && profileIdInUrl && activeProfileId !== profileIdInUrl) {
-      return NextResponse.redirect(new URL(`/kids/${activeProfileId}`, request.url));
+  // 1. Landing page: logged-in devices go straight to the kids picker
+  if (pathname === "/") {
+    if (session) {
+      return NextResponse.redirect(new URL("/kids", request.url));
     }
+    return NextResponse.next();
   }
 
-  // 2. If trying to access parent portal while child profile is active
-  if (request.nextUrl.pathname.startsWith("/parent") && activeProfileId) {
-    return NextResponse.redirect(new URL("/kids", request.url));
+  // 2. Auth pages are only for logged-out devices
+  if (pathname === "/login" || pathname === "/signup") {
+    if (session) {
+      return NextResponse.redirect(new URL("/kids", request.url));
+    }
+    return NextResponse.next();
   }
 
-  // Auth logic
-  if (!session && request.nextUrl.pathname.startsWith("/parent")) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  // 3. Kids area needs a session; kids may use any of the family's
+  //    profiles — no per-profile lock.
+  if (pathname === "/kids" || pathname.startsWith("/kids/")) {
+    if (!session) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    const res = NextResponse.next();
+    await refreshSessionCookie(session, res);
+    return res;
   }
 
-  if (session && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/signup")) {
-    return NextResponse.redirect(new URL("/parent/dashboard", request.url));
+  // 4. Parent area needs a session AND a fresh PIN unlock
+  if (pathname.startsWith("/parent")) {
+    if (!session) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    if (!parentUnlocked) {
+      const res = NextResponse.redirect(
+        new URL("/kids?gate=1", request.url)
+      );
+      // Drop a stale/forged unlock cookie so /kids sees it as absent and
+      // auto-opens the PIN modal instead of dead-ending on the picker.
+      res.cookies.delete("parentUnlocked");
+      return res;
+    }
+    const res = NextResponse.next();
+    await refreshSessionCookie(session, res);
+    return res;
   }
 
   return NextResponse.next();

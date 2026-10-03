@@ -122,7 +122,7 @@ export default async function ProfilesPage() {
           <CardContent className="w-full">
             <form action={createProfile} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Kid's Name</Label>
+                <Label htmlFor="name">Kid&apos;s Name</Label>
                 <Input id="name" name="name" placeholder="Adam" required />
               </div>
               <div className="space-y-2">

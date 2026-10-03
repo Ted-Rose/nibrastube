@@ -1,9 +1,10 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { invites, sharedAccess, users } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth";
-import { eq, and } from "drizzle-orm";
+import { invites, sharedAccess } from "@/lib/db/schema";
+import { getSession, requireParentUnlocked } from "@/lib/auth";
+import { assertCanManageProfile } from "@/lib/profiles";
+import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
@@ -11,6 +12,8 @@ import crypto from "crypto";
 export async function inviteParent(profileId: string, email: string) {
   const session = await getSession();
   if (!session) return;
+  await requireParentUnlocked();
+  await assertCanManageProfile(session, profileId);
 
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
@@ -46,16 +49,19 @@ export async function acceptInvite(token: string) {
     where: eq(invites.token, token),
   });
 
-  if (!invite || invite.expiresAt < new Date()) {
+  if (!invite || invite.status !== "pending" || invite.expiresAt < new Date()) {
     return;
   }
 
-  // Grant access
-  await db.insert(sharedAccess).values({
-    parentId: session.user.id,
-    profileId: invite.profileId,
-    role: "editor",
-  });
+  // Grant access (idempotent — a re-accept or double-submit is a no-op)
+  await db
+    .insert(sharedAccess)
+    .values({
+      parentId: session.user.id,
+      profileId: invite.profileId,
+      role: "editor",
+    })
+    .onConflictDoNothing();
 
   // Update invite status
   await db.update(invites).set({ status: "accepted" }).where(eq(invites.id, invite.id));

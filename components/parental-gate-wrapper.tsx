@@ -3,32 +3,25 @@
 import { useState } from "react";
 import { ParentalGate } from "./parental-gate";
 import { Button } from "./ui/button";
-import { Lock, LockOpen } from "@phosphor-icons/react";
+import { Lock } from "@phosphor-icons/react";
 
 interface ParentalGateWrapperProps {
   children: React.ReactNode;
-  correctPin: string;
   triggerText?: string;
   className?: string;
-  onVerified?: () => void;
+  defaultOpen?: boolean;
 }
 
-export function ParentalGateWrapper({ children, correctPin, triggerText, className, onVerified }: ParentalGateWrapperProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export function ParentalGateWrapper({ children, triggerText, className, defaultOpen }: ParentalGateWrapperProps) {
+  const [isOpen, setIsOpen] = useState(!!defaultOpen);
 
   if (isOpen) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
         <div className="w-full max-w-sm">
-          <ParentalGate 
-            correctPin={correctPin}
-            onPass={() => {
-              setIsOpen(false);
-              if (onVerified) onVerified();
-            }} 
-            onFail={() => setIsOpen(false)}
+          <ParentalGate
             title="Parental Control"
-            description="Solving this will unlock restricted options."
+            description="Enter your PIN to unlock parent settings."
           />
           <Button 
             variant="ghost" 

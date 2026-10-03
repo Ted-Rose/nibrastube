@@ -40,6 +40,7 @@ export function DashboardSearch({
       <div className="relative flex-1">
         <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={20} />
         <Input
+          key={query}
           name="q"
           placeholder={searchType === "channels" ? "Search YouTube channels (e.g., Cocomelon, Nat Geo Kids)..." : "Search YouTube (e.g., Cocomelon, Nat Geo Kids)..."}
           defaultValue={query}

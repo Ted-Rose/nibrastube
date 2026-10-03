@@ -44,7 +44,13 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
     if (!parentUnlocked) {
-      return NextResponse.redirect(new URL("/kids?gate=1", request.url));
+      const res = NextResponse.redirect(
+        new URL("/kids?gate=1", request.url)
+      );
+      // Drop a stale/forged unlock cookie so /kids sees it as absent and
+      // auto-opens the PIN modal instead of dead-ending on the picker.
+      res.cookies.delete("parentUnlocked");
+      return res;
     }
     const res = NextResponse.next();
     await refreshSessionCookie(session, res);

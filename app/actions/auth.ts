@@ -12,6 +12,11 @@ export interface AuthFormState {
   error?: string;
 }
 
+// Only same-origin absolute paths; rejects "//host", "/\host", whitespace.
+function safeCallback(callback: string | null): string {
+  return /^\/(?!\/)[^\s\\]*$/.test(callback ?? "") ? callback : "/kids";
+}
+
 const signupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
@@ -63,11 +68,7 @@ export async function signup(
 
   await authLogin({ id: newUser.id, email: newUser.email, name: newUser.name });
   await setParentUnlocked();
-  const target =
-    callback?.startsWith("/") && !callback.startsWith("//")
-      ? callback
-      : "/kids";
-  redirect(target);
+  redirect(safeCallback(callback));
 }
 
 const loginSchema = z.object({
@@ -98,11 +99,7 @@ export async function login(
 
   await authLogin({ id: user.id, email: user.email, name: user.name });
   await setParentUnlocked();
-  const target =
-    callback?.startsWith("/") && !callback.startsWith("//")
-      ? callback
-      : "/kids";
-  redirect(target);
+  redirect(safeCallback(callback));
 }
 
 export async function logoutAction() {

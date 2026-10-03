@@ -9,9 +9,9 @@ import { pinVideo, unpinVideo } from "@/app/actions/pinning";
 import { approveChannel, unapproveChannel } from "@/app/actions/channels";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
-import { Input } from "@/components/ui/input";
+import { DashboardSearch } from "@/components/dashboard-search";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, MagnifyingGlass, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
+import { Check, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
 import DailySyncPing from "@/components/daily-sync-ping";
@@ -208,20 +208,11 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                   </Button>
                 </Link>
               </div>
-              <form action="/parent/dashboard" method="GET" className="flex gap-2">
-                <input type="hidden" name="profileId" value={activeProfile?.id} />
-                <input type="hidden" name="type" value={searchType} />
-                <div className="relative flex-1">
-                  <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={20} />
-                  <Input
-                    name="q"
-                    placeholder={searchType === "channels" ? "Search YouTube channels (e.g., Cocomelon, Nat Geo Kids)..." : "Search YouTube (e.g., Cocomelon, Nat Geo Kids)..."}
-                    defaultValue={query}
-                    className="pl-10 h-14 text-lg bg-background border-2"
-                  />
-                </div>
-                <SubmitButton pendingLabel="Searching…" size="lg" className="px-8 h-14 text-lg">Search</SubmitButton>
-              </form>
+              <DashboardSearch
+                profileId={activeProfile?.id ?? ""}
+                searchType={searchType}
+                query={query}
+              />
             </CardContent>
           </Card>
 

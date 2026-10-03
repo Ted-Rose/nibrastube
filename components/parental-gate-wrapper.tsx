@@ -19,14 +19,16 @@ export function ParentalGateWrapper({ children, correctPin, triggerText, classNa
 
   // onVerified may be an async server action that redirects — keep a
   // full-screen spinner up until it settles so the user isn't left
-  // staring at the kids page with no feedback.
+  // staring at the kids page with no feedback. On success the spinner
+  // stays up deliberately: the redirect unmounts us anyway, and clearing
+  // it first would flash the kids page for a tick before navigation.
   const handlePass = async () => {
     setIsOpen(false);
     if (!onVerified) return;
     setVerifying(true);
     try {
       await onVerified();
-    } finally {
+    } catch {
       setVerifying(false);
     }
   };
@@ -57,7 +59,7 @@ export function ParentalGateWrapper({ children, correctPin, triggerText, classNa
   return (
     <>
       {verifying && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+        <div role="status" aria-live="polite" className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
           <SpinnerGap size={48} className="animate-spin text-white" />
         </div>
       )}

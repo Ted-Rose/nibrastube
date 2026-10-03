@@ -220,7 +220,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                     className="pl-10 h-14 text-lg bg-background border-2"
                   />
                 </div>
-                <Button type="submit" size="lg" className="px-8 h-14 text-lg">Search</Button>
+                <SubmitButton pendingLabel="Searching…" size="lg" className="px-8 h-14 text-lg">Search</SubmitButton>
               </form>
             </CardContent>
           </Card>

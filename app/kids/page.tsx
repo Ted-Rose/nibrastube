@@ -3,9 +3,9 @@ import { profiles, users } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
-import { Card, CardContent } from "@/components/ui/card";
 import { selectProfile } from "@/app/actions/safety";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
+import { ProfilePickerButton } from "@/components/profile-picker-button";
 import { AppInstallMenu } from "@/components/app-install-menu";
 import Link from "next/link";
 
@@ -57,18 +57,7 @@ export default async function KidsPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
             {allProfiles.map((profile) => (
               <form key={profile.id} action={selectProfile.bind(null, profile.id)} className="group cursor-pointer">
-                <button type="submit" className="w-full text-left bg-transparent border-0 p-0 hover:scale-105 transition-transform duration-300">
-                  <Card className="border-0 shadow-none bg-transparent overflow-visible">
-                    <CardContent className="p-0 flex flex-col items-center">
-                      <div className="w-full aspect-square bg-white rounded-3xl shadow-xl border-4 border-transparent group-hover:border-primary flex items-center justify-center text-7xl md:text-8xl transition-colors">
-                        {profile.avatar || "👶"}
-                      </div>
-                      <h2 className="mt-6 text-3xl font-black text-slate-800 group-hover:text-primary transition-colors">
-                        {profile.name}
-                      </h2>
-                    </CardContent>
-                  </Card>
-                </button>
+                <ProfilePickerButton name={profile.name} avatar={profile.avatar} />
               </form>
             ))}
           </div>

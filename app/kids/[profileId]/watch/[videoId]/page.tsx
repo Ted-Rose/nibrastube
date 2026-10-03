@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
+import { assertCanManageProfile } from "@/lib/profiles";
 import { WatchExperience } from "@/components/watch-experience";
 import {
   getKidsVideos,
@@ -19,12 +21,27 @@ interface WatchPageProps {
 export default async function WatchPage({ params, searchParams }: WatchPageProps) {
   const { profileId, videoId } = await params;
 
+  // Basic UUID validation to prevent DB crash
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(profileId)) {
+    redirect("/kids");
+  }
+
   // 1. Verify profile and video approval
   const profile = await db.query.profiles.findFirst({
     where: eq(profiles.id, profileId),
   });
 
   if (!profile) notFound();
+
+  // Only profiles owned by (or shared with) the logged-in parent
+  const session = await getSession();
+  try {
+    await assertCanManageProfile(session, profileId);
+  } catch {
+    redirect("/kids");
+  }
 
   // Autoplay playlist mirrors the grid the kid came from: same channel
   // filter, search, and sort.

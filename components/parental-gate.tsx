@@ -1,33 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { SpinnerGap } from "@phosphor-icons/react";
+import { verifyParentPin } from "@/app/actions/safety";
 
 interface ParentalGateProps {
-  onPass: () => void;
-  onFail?: () => void;
-  correctPin: string;
   title?: string;
   description?: string;
 }
 
-export function ParentalGate({ onPass, onFail, correctPin, title, description }: ParentalGateProps) {
+export function ParentalGate({ title, description }: ParentalGateProps) {
   const [pin, setPin] = useState("");
-  const [error, setError] = useState(false);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pin === correctPin) {
-      onPass();
-    } else {
-      setError(true);
+  // Wrap the action so the input clears on each failed attempt (a
+  // successful verify redirects away, so a return means failure)
+  const [state, formAction, pending] = useActionState(
+    async (prev: { error?: string } | null, formData: FormData) => {
+      const result = await verifyParentPin(prev, formData);
       setPin("");
-      if (onFail) onFail();
-    }
-  };
+      return result;
+    },
+    null
+  );
 
   return (
     <Card className="w-full max-w-sm mx-auto shadow-2xl border-4 border-primary/20 bg-background/95 backdrop-blur">
@@ -36,12 +33,13 @@ export function ParentalGate({ onPass, onFail, correctPin, title, description }:
         <CardDescription>{description || "Enter your 4-digit Parent PIN to continue."}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form action={formAction} className="space-y-6">
           <div className="text-center space-y-4">
             <div className="space-y-2">
               <Label htmlFor="pin" className="sr-only">Parent PIN</Label>
               <Input
                 id="pin"
+                name="pin"
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]{4}"
@@ -49,14 +47,23 @@ export function ParentalGate({ onPass, onFail, correctPin, title, description }:
                 placeholder="****"
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
-                className={`text-center text-3xl h-16 tracking-[1em] font-mono ${error ? "border-destructive ring-destructive" : ""}`}
+                className={`text-center text-3xl h-16 tracking-[1em] font-mono ${state?.error ? "border-destructive ring-destructive" : ""}`}
                 autoFocus
                 required
               />
-              {error && <p className="text-destructive text-sm font-bold">Incorrect PIN. Try again.</p>}
+              {state?.error && <p className="text-destructive text-sm font-bold">{state.error}</p>}
             </div>
           </div>
-          <Button type="submit" className="w-full h-12 text-lg">Unlock Settings</Button>
+          <Button type="submit" className="w-full h-12 text-lg" disabled={pending}>
+            {pending ? (
+              <>
+                <SpinnerGap className="animate-spin" />
+                Checking…
+              </>
+            ) : (
+              "Unlock Settings"
+            )}
+          </Button>
         </form>
       </CardContent>
     </Card>

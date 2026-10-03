@@ -53,19 +53,19 @@ export default async function InvitePage({ params }: InvitePageProps) {
             🤝
           </div>
           <CardTitle className="text-2xl font-black">Accept Invitation</CardTitle>
-          <CardDescription>Join the team managing {kid?.name}'s videos</CardDescription>
+          <CardDescription>Join the team managing {kid?.name}&apos;s videos</CardDescription>
         </CardHeader>
         <CardContent className="text-center space-y-6 py-6">
           <div className="space-y-2">
             <p className="text-lg text-slate-700">
-              <span className="font-bold">{fromParent?.name}</span> ({fromParent?.email}) has invited you to manage <span className="font-bold text-primary">{kid?.name}</span>'s whitelisted YouTube videos.
+              <span className="font-bold">{fromParent?.name}</span> ({fromParent?.email}) has invited you to manage <span className="font-bold text-primary">{kid?.name}</span>&apos;s whitelisted YouTube videos.
             </p>
           </div>
           
           {!session && (
             <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 text-amber-800 text-sm flex gap-3 items-start text-left">
               <span className="text-xl">⚠️</span>
-              <p>You need to be logged in as a parent to accept this invite. If you don't have an account, create one first!</p>
+              <p>You need to be logged in as a parent to accept this invite. If you don&apos;t have an account, create one first!</p>
             </div>
           )}
         </CardContent>

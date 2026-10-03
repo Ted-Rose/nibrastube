@@ -15,12 +15,12 @@ import { Button } from "./ui/button";
 import { SubmitButton } from "./submit-button";
 import { AppInstallMenu } from "./app-install-menu";
 import { logoutAction } from "@/app/actions/auth";
+import { lockParentPortal } from "@/app/actions/safety";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
   { href: "/parent/dashboard", label: "Dashboard", icon: PlayCircle },
   { href: "/parent/profiles", label: "Manage Kids", icon: Users },
-  { href: "/kids", label: "Kids Corner", icon: Baby },
 ];
 
 interface ParentNavProps {
@@ -68,6 +68,13 @@ export function ParentNav({ userName }: ParentNavProps) {
               {label}
             </Link>
           ))}
+          {/* Leaving for the kids area re-locks the parent portal */}
+          <form action={lockParentPortal}>
+            <button type="submit" className={linkClass("/kids")}>
+              <Baby size={18} weight="bold" />
+              Kids Corner
+            </button>
+          </form>
           <AppInstallMenu />
           <form action={logoutAction} className="ml-1">
             <SubmitButton
@@ -112,6 +119,15 @@ export function ParentNav({ userName }: ParentNavProps) {
               {label}
             </Link>
           ))}
+          <form action={lockParentPortal}>
+            <button
+              type="submit"
+              className={cn(linkClass("/kids"), "w-full")}
+            >
+              <Baby size={18} weight="bold" />
+              Kids Corner
+            </button>
+          </form>
           <div className="mt-1">
             <AppInstallMenu />
           </div>

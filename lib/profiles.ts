@@ -33,6 +33,25 @@ export async function assertCanManageProfile(
   return profile;
 }
 
+/**
+ * Read-side counterpart of assertCanManageProfile: a profile page may be
+ * viewed if the device is kid-locked to it (activeProfileId matches) or the
+ * signed-in parent can manage it. Returns a boolean instead of throwing.
+ */
+export async function canViewProfile(
+  session: SessionLike | null,
+  profileId: string,
+  activeProfileId: string | undefined
+) {
+  if (activeProfileId === profileId) return true;
+  try {
+    await assertCanManageProfile(session, profileId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** All profiles the user can manage: owned + shared with them. */
 export async function getManageableProfiles(userId: string) {
   const shared = await db.query.sharedAccess.findMany({

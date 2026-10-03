@@ -5,11 +5,13 @@ import { NextRequest, NextResponse } from "next/server";
 const secretKey = "secret"; // Fallback for type safety, should use env
 const key = new TextEncoder().encode(process.env.JWT_SECRET || secretKey);
 
+const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000; // ~1 year
+
 export async function encrypt(payload: any) {
   return await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("2h")
+    .setExpirationTime("1y")
     .sign(key);
 }
 
@@ -22,11 +24,17 @@ export async function decrypt(input: string): Promise<any> {
 
 export async function login(user: { id: string; email: string; name: string | null; parentPin?: string }) {
   // Create the session
-  const expires = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
+  const expires = new Date(Date.now() + SESSION_TTL_MS);
   const session = await encrypt({ user, expires });
 
   // Save the session in a cookie
-  (await cookies()).set("session", session, { expires, httpOnly: true });
+  (await cookies()).set("session", session, {
+    expires,
+    httpOnly: true,
+    sameSite: "lax",
+    // secure only in prod — unconditional secure breaks http://localhost
+    secure: process.env.NODE_ENV === "production",
+  });
 }
 
 export async function logout() {
@@ -49,13 +57,20 @@ export async function updateSession(request: NextRequest) {
   if (!session) return;
 
   // Refresh the session so it doesn't expire
-  const parsed = await decrypt(session);
-  parsed.expires = new Date(Date.now() + 2 * 60 * 60 * 1000);
+  let parsed;
+  try {
+    parsed = await decrypt(session);
+  } catch {
+    return; // expired/invalid cookie — nothing to refresh
+  }
+  parsed.expires = new Date(Date.now() + SESSION_TTL_MS);
   const res = NextResponse.next();
   res.cookies.set({
     name: "session",
     value: await encrypt(parsed),
     httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     expires: parsed.expires,
   });
   return res;

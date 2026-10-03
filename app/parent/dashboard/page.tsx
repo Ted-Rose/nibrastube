@@ -9,6 +9,7 @@ import { pinVideo, unpinVideo } from "@/app/actions/pinning";
 import { approveChannel, unapproveChannel } from "@/app/actions/channels";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
+import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { DashboardSearch } from "@/components/dashboard-search";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
@@ -112,6 +113,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                     className="w-full justify-start text-lg h-12"
                   >
                     <span className="mr-3">{p.avatar || "👶"}</span> {p.name}
+                    <LinkPendingSpinner size={18} className="ml-auto" />
                   </Button>
                 </Link>
               ))}
@@ -199,12 +201,12 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
               <div className="flex gap-2">
                 <Link href={dashboardHref("videos")}>
                   <Button variant={searchType === "videos" ? "default" : "outline"} size="touch">
-                    <Video className="mr-2" /> Videos
+                    <LinkPendingSpinner fallback={<Video className="mr-2" />} className="mr-2" /> Videos
                   </Button>
                 </Link>
                 <Link href={dashboardHref("channels")}>
                   <Button variant={searchType === "channels" ? "default" : "outline"} size="touch">
-                    <Users className="mr-2" /> Channels
+                    <LinkPendingSpinner fallback={<Users className="mr-2" />} className="mr-2" /> Channels
                   </Button>
                 </Link>
               </div>

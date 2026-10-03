@@ -14,7 +14,8 @@ export interface AuthFormState {
 
 // Only same-origin absolute paths; rejects "//host", "/\host", whitespace.
 function safeCallback(callback: string | null): string {
-  return /^\/(?!\/)[^\s\\]*$/.test(callback ?? "") ? callback : "/kids";
+  if (callback && /^\/(?!\/)[^\s\\]*$/.test(callback)) return callback;
+  return "/kids";
 }
 
 const signupSchema = z.object({

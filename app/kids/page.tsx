@@ -1,6 +1,5 @@
-import { getSession } from "@/lib/auth";
+import { getSession, isParentUnlockedCookie } from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { selectProfile } from "@/app/actions/safety";
@@ -18,9 +17,9 @@ export default async function KidsPage({
 
   const { gate } = await searchParams;
   const allProfiles = await getManageableProfiles(session.user.id);
-  // Presence is enough for this UI decision; proxy.ts does the real
-  // signature check on /parent/* navigation.
-  const parentUnlocked = !!(await cookies()).get("parentUnlocked");
+  // Verify (not just presence-check) the unlock token so a stale or
+  // forged cookie doesn't suppress the gate modal.
+  const parentUnlocked = await isParentUnlockedCookie(session);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4">

@@ -112,21 +112,40 @@ export async function setParentUnlocked() {
   (await cookies()).set("parentUnlocked", token, cookieOptions);
 }
 
+async function verifyUnlockToken(
+  token: string | undefined,
+  userId: string
+): Promise<boolean> {
+  if (!token) return false;
+  try {
+    const payload = await decrypt(token);
+    return payload.scope === "parent-unlock" && payload.sub === userId;
+  } catch {
+    return false;
+  }
+}
+
 export async function isParentUnlocked(
   request: NextRequest,
   session: SessionPayload | null
 ): Promise<boolean> {
   if (!session) return false;
-  const token = request.cookies.get("parentUnlocked")?.value;
-  if (!token) return false;
-  try {
-    const payload = await decrypt(token);
-    return (
-      payload.scope === "parent-unlock" && payload.sub === session.user.id
-    );
-  } catch {
-    return false;
-  }
+  return verifyUnlockToken(
+    request.cookies.get("parentUnlocked")?.value,
+    session.user.id
+  );
+}
+
+// Cookie-store variant for server components and actions (no
+// NextRequest available there).
+export async function isParentUnlockedCookie(
+  session: SessionPayload | null
+): Promise<boolean> {
+  if (!session) return false;
+  return verifyUnlockToken(
+    (await cookies()).get("parentUnlocked")?.value,
+    session.user.id
+  );
 }
 
 // Guard for parent-mutating server actions: redirects to the PIN gate
@@ -134,19 +153,12 @@ export async function isParentUnlocked(
 // current session user. (redirect() throws, so keep it out of try.)
 export async function requireParentUnlocked(): Promise<void> {
   const session = await getSession();
-  const token = (await cookies()).get("parentUnlocked")?.value;
-  let unlocked = false;
-  if (session && token) {
-    try {
-      const payload = await decrypt(token);
-      unlocked =
-        payload.scope === "parent-unlock" &&
-        payload.sub === session.user.id;
-    } catch {
-      unlocked = false;
-    }
+  if (!(await isParentUnlockedCookie(session))) {
+    // Clear the stale/forged cookie so /kids auto-opens the PIN modal
+    // instead of dead-ending on the picker.
+    (await cookies()).delete("parentUnlocked");
+    redirect("/kids?gate=1");
   }
-  if (!unlocked) redirect("/kids?gate=1");
 }
 
 export async function clearParentUnlocked() {

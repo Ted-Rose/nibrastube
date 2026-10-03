@@ -1,5 +1,6 @@
 import { getSession } from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { selectProfile } from "@/app/actions/safety";
@@ -17,6 +18,9 @@ export default async function KidsPage({
 
   const { gate } = await searchParams;
   const allProfiles = await getManageableProfiles(session.user.id);
+  // Presence is enough for this UI decision; proxy.ts does the real
+  // signature check on /parent/* navigation.
+  const parentUnlocked = !!(await cookies()).get("parentUnlocked");
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4">
@@ -63,9 +67,14 @@ export default async function KidsPage({
 
       {/* Inline instead of a fixed overlay so it can never cover content.
           gate=1 (set when /parent/* redirects here) auto-opens the PIN
-          modal. */}
+          modal unless the device is already unlocked. The key remounts
+          the gate on same-page client navigations to/from ?gate=1 so a
+          stale open/closed state can't linger. */}
       <footer className="py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <KidsFooterGate defaultOpen={gate === "1"} />
+        <KidsFooterGate
+          key={gate === "1" ? "gated" : "idle"}
+          defaultOpen={gate === "1" && !parentUnlocked}
+        />
       </footer>
     </div>
   );

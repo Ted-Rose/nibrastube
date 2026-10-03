@@ -49,6 +49,8 @@ export async function verifyParentPin(
   });
 
   if (!user || pin !== user.parentPin) {
+    // Slow down brute-force attempts on the 4-digit PIN.
+    await new Promise((r) => setTimeout(r, 500));
     return { error: "Incorrect PIN. Try again." };
   }
 

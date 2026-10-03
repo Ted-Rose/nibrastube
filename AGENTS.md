@@ -126,13 +126,17 @@ release APK on `v*` tags.
   row). Watch-progress also accepts the `activeProfileId` cookie matching
   the profile.
 - **Three auth cookies:** `session` = parent JWT (1 year, rolling
-  refresh via `proxy.ts`); `parentUnlocked` = browser-session cookie set
-  by `verifyParentPin`/login, cleared by "Kids Corner"
-  (`lockParentPortal`) — `/parent/*` is unreachable without it;
-  `activeProfileId` = last kid profile used (1 year, informational, used
-  by `/api/watch-progress` & `/api/video-reactions`). PIN verification
-  is server-side (`verifyParentPin` reads `users.parentPin` from the
-  DB) — never pass the PIN to client components.
+  refresh via `proxy.ts`); `parentUnlocked` = signed JWT (scope
+  `parent-unlock`, bound to the session user, 24h exp) inside a
+  browser-session cookie set by `verifyParentPin`/login, cleared by
+  "Kids Corner" (`lockParentPortal`) — `/parent/*` is unreachable
+  without it, and parent-mutating server actions re-verify it via
+  `requireParentUnlocked()` (invite acceptance excepted — the token is
+  the credential); `activeProfileId` = last kid profile used (1 year,
+  informational, used by `/api/watch-progress` & `/api/video-reactions`).
+  PIN verification is server-side (`verifyParentPin` reads
+  `users.parentPin` from the DB, with a 500 ms delay on failures to
+  throttle brute force) — never pass the PIN to client components.
 - **Channel sync:** approving a channel backfills its uploads playlist in
   the background (`after()`), resumable via `backfillPageToken`. Daily
   sync (`/api/sync-channels`, pinged once/day by clients) polls newest

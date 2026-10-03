@@ -16,7 +16,9 @@ const signupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   name: z.string().min(2),
-  pin: z.string().optional(), // Pin is optional in schema, default handled in formData extraction
+  // 4-digit PIN; optional in schema, "0000" default applied on
+  // extraction below.
+  pin: z.string().regex(/^\d{4}$/).optional(),
 });
 
 export async function signup(
@@ -61,7 +63,11 @@ export async function signup(
 
   await authLogin({ id: newUser.id, email: newUser.email, name: newUser.name });
   await setParentUnlocked();
-  redirect(callback || "/kids");
+  const target =
+    callback?.startsWith("/") && !callback.startsWith("//")
+      ? callback
+      : "/kids";
+  redirect(target);
 }
 
 const loginSchema = z.object({
@@ -92,7 +98,11 @@ export async function login(
 
   await authLogin({ id: user.id, email: user.email, name: user.name });
   await setParentUnlocked();
-  redirect(callback || "/kids");
+  const target =
+    callback?.startsWith("/") && !callback.startsWith("//")
+      ? callback
+      : "/kids";
+  redirect(target);
 }
 
 export async function logoutAction() {

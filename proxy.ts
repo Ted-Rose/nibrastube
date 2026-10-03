@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getRequestSession, refreshSessionCookie } from "@/lib/auth";
+import {
+  getRequestSession,
+  isParentUnlocked,
+  refreshSessionCookie,
+} from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const session = await getRequestSession(request);
-  const parentUnlocked =
-    request.cookies.get("parentUnlocked")?.value === "1";
+  const parentUnlocked = await isParentUnlocked(request, session);
 
   // 1. Landing page: logged-in devices go straight to the kids picker
   if (pathname === "/") {
@@ -31,7 +34,7 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
     const res = NextResponse.next();
-    await refreshSessionCookie(request, res);
+    await refreshSessionCookie(session, res);
     return res;
   }
 
@@ -44,7 +47,7 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL("/kids?gate=1", request.url));
     }
     const res = NextResponse.next();
-    await refreshSessionCookie(request, res);
+    await refreshSessionCookie(session, res);
     return res;
   }
 

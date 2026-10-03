@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { invites, sharedAccess, users } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth";
+import { getSession, requireParentUnlocked } from "@/lib/auth";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -11,6 +11,7 @@ import crypto from "crypto";
 export async function inviteParent(profileId: string, email: string) {
   const session = await getSession();
   if (!session) return;
+  await requireParentUnlocked();
 
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours

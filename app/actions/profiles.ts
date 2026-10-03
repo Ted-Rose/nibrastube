@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth";
+import { getSession, requireParentUnlocked } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -16,6 +16,7 @@ const profileSchema = z.object({
 export async function createProfile(formData: FormData): Promise<void> {
   const session = await getSession();
   if (!session) return;
+  await requireParentUnlocked();
 
   const name = formData.get("name") as string;
   const avatar = formData.get("avatar") as string;
@@ -35,6 +36,7 @@ export async function createProfile(formData: FormData): Promise<void> {
 export async function deleteProfile(profileId: string) {
   const session = await getSession();
   if (!session) return;
+  await requireParentUnlocked();
 
   await db
     .delete(profiles)
@@ -51,6 +53,7 @@ const swipeSchema = z.object({
 export async function setSwipeEnabled(formData: FormData): Promise<void> {
   const session = await getSession();
   if (!session) return;
+  await requireParentUnlocked();
 
   const parsed = swipeSchema.safeParse({
     profileId: formData.get("profileId"),

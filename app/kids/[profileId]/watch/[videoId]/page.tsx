@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { getSession } from "@/lib/auth";
-import { canViewProfile } from "@/lib/profiles";
+import { assertCanManageProfile, canViewProfile } from "@/lib/profiles";
 import { WatchExperience } from "@/components/watch-experience";
 import {
   getKidsVideos,
@@ -22,9 +22,15 @@ interface WatchPageProps {
 export default async function WatchPage({ params, searchParams }: WatchPageProps) {
   const { profileId, videoId } = await params;
 
-  // 1. Access check first — kid-locked to this profile or a parent who
-  //    owns/shares it — so 404-vs-redirect can't be used to probe whether
-  //    a profile UUID exists.
+  // Basic UUID validation to prevent DB crash
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(profileId)) {
+    redirect("/kids");
+  }
+
+  // 1. Access check first — so 404-vs-redirect can't be used to probe
+  //    whether a profile UUID exists.
   const session = await getSession();
   const activeProfileId = (await cookies()).get("activeProfileId")?.value;
   if (!(await canViewProfile(session, profileId, activeProfileId))) {
@@ -37,6 +43,13 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   });
 
   if (!profile) notFound();
+
+  // Only profiles owned by (or shared with) the logged-in parent
+  try {
+    await assertCanManageProfile(session, profileId);
+  } catch {
+    redirect("/kids");
+  }
 
   // Autoplay playlist mirrors the grid the kid came from: same channel
   // filter, search, and sort.

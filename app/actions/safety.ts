@@ -3,14 +3,18 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { getSession } from "@/lib/auth";
-import { assertCanManageProfile } from "@/lib/profiles";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
+import {
+  clearParentUnlocked,
+  getSession,
+  setParentUnlocked,
+} from "@/lib/auth";
+import { assertCanManageProfile } from "@/lib/profiles";
 
 export async function selectProfile(profileId: string) {
+  const session = await getSession();
   try {
-    const session = await getSession();
     // Only profiles the signed-in parent owns or has shared access to can
     // be locked onto a device; sends the user back to the picker instead
     // of surfacing a raw error.
@@ -22,7 +26,7 @@ export async function selectProfile(profileId: string) {
   const cookieStore = await cookies();
   cookieStore.set("activeProfileId", profileId, {
     path: "/",
-    maxAge: 60 * 60 * 24 * 365, // 1 year — matches the session lifetime
+    maxAge: 60 * 60 * 24 * 365, // 1 year — informational only
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -30,30 +34,34 @@ export async function selectProfile(profileId: string) {
   redirect(`/kids/${profileId}`);
 }
 
-export async function unlockParentPortal(pin: string) {
+interface VerifyPinState {
+  error?: string;
+}
+
+export async function verifyParentPin(
+  _prevState: VerifyPinState | null,
+  formData: FormData
+): Promise<VerifyPinState> {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  // The PIN is still a soft family gate, but lifting the kid lock on a
-  // device holding a ~1y session must be verified server-side, not just
-  // in the client gate. parentPin rides in the JWT payload (set at
-  // login); fall back to the users row so sessions minted before that
-  // was included — or with a since-changed PIN — still verify against
-  // the source of truth.
-  let expectedPin = session.user?.parentPin as string | undefined;
-  if (!expectedPin && session.user?.id) {
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, session.user.id),
-      columns: { parentPin: true },
-    });
-    expectedPin = user?.parentPin;
+  const pin = formData.get("pin");
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, session.user.id),
+    columns: { parentPin: true },
+  });
+
+  if (!user || pin !== user.parentPin) {
+    // Slow down brute-force attempts on the 4-digit PIN.
+    await new Promise((r) => setTimeout(r, 500));
+    return { error: "Incorrect PIN. Try again." };
   }
 
-  if (!expectedPin || pin !== expectedPin) {
-    return { error: "Incorrect PIN" };
-  }
-
-  const cookieStore = await cookies();
-  cookieStore.delete("activeProfileId");
+  await setParentUnlocked();
   redirect("/parent/dashboard");
+}
+
+export async function lockParentPortal() {
+  await clearParentUnlocked();
+  redirect("/kids");
 }

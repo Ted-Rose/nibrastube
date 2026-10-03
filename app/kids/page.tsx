@@ -1,4 +1,4 @@
-import { getSession } from "@/lib/auth";
+import { getSession, isParentUnlockedCookie } from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
 import { redirect } from "next/navigation";
 import { selectProfile } from "@/app/actions/safety";
@@ -7,16 +7,20 @@ import { ProfilePickerButton } from "@/components/profile-picker-button";
 import { AppInstallMenu } from "@/components/app-install-menu";
 import Link from "next/link";
 
-export default async function KidsPage() {
-  // The picker is parent-only: proxy.ts bounces anonymous visitors to
-  // /login?callback=/kids, and this is the server-side backstop.
+export default async function KidsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ gate?: string }>;
+}) {
   const session = await getSession();
-  if (!session) redirect("/login?callback=/kids");
+  if (!session) redirect("/login");
 
+  const { gate } = await searchParams;
   // Only this family's profiles: owned + shared with the parent.
   const allProfiles = await getManageableProfiles(session.user.id);
-
-  const gatePin = session.user.parentPin ?? "0000";
+  // Verify (not just presence-check) the unlock token so a stale or
+  // forged cookie doesn't suppress the gate modal.
+  const parentUnlocked = await isParentUnlockedCookie(session);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4">
@@ -50,9 +54,16 @@ export default async function KidsPage() {
         </div>
       </div>
 
-      {/* Inline instead of a fixed overlay so it can never cover content */}
+      {/* Inline instead of a fixed overlay so it can never cover content.
+          gate=1 (set when /parent/* redirects here) auto-opens the PIN
+          modal unless the device is already unlocked. The key remounts
+          the gate on same-page client navigations to/from ?gate=1 so a
+          stale open/closed state can't linger. */}
       <footer className="py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <KidsFooterGate correctPin={gatePin} />
+        <KidsFooterGate
+          key={gate === "1" ? "gated" : "idle"}
+          defaultOpen={gate === "1" && !parentUnlocked}
+        />
       </footer>
     </div>
   );

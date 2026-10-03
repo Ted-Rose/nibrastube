@@ -6,7 +6,7 @@ import {
   videos,
   whitelistedVideos,
 } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth";
+import { getSession, requireParentUnlocked } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
 import { getVideoDetails, videoRowValues } from "@/lib/youtube";
 import { eq, and } from "drizzle-orm";
@@ -18,6 +18,7 @@ export async function pinVideo(profileId: string, videoId: string) {
     console.log("Pinning failed: Not authenticated");
     return;
   }
+  await requireParentUnlocked();
   await assertCanManageProfile(session, profileId);
   console.log("Pinning video:", videoId, "for profile:", profileId);
 
@@ -69,6 +70,7 @@ export async function unpinVideo(profileId: string, videoId: string) {
     console.log("Unpinning failed: Not authenticated");
     return;
   }
+  await requireParentUnlocked();
   await assertCanManageProfile(session, profileId);
   console.log("Unpinning video:", videoId, "from profile:", profileId);
 

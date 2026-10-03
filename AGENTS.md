@@ -36,12 +36,13 @@ pass `--repo Ted-Rose/nibrastube` when in doubt.
 ## Architecture
 
 Route protection lives in `proxy.ts` (Next 16's middleware replacement):
-`/` redirects to `/parent/dashboard` (session) or `/signup`; `/parent/*`
-needs a session (and bounces kid-locked devices to `/kids`); `/kids`
-needs a session; `/kids/:profileId/*` needs a session OR an
-`activeProfileId` cookie matching that profile; `/login`/`/signup`
-redirect signed-in users to the dashboard. There is **no**
-`middleware.ts` — do not create one; extend `proxy.ts` instead.
+`/` → `/kids` when logged in, `/signup` otherwise (there is no landing
+page); `/kids/*` needs a `session`;
+`/parent/*` needs `session` **and** the `parentUnlocked` cookie (else
+redirect to `/kids?gate=1`, which auto-opens the PIN modal);
+`/login`/`/signup` redirect to `/kids` when logged in. `proxy.ts` also
+rolling-refreshes `session` (reissues JWTs older than ~1 day). There is
+**no** `middleware.ts` — do not create one; extend `proxy.ts` instead.
 
 All mutations are Server Actions in `app/actions/*.ts` (`"use server"`).
 Pages are Server Components that query Drizzle directly; client components
@@ -50,7 +51,7 @@ Pages are Server Components that query Drizzle directly; client components
 ```
 app/
   page.tsx                      Redirect stub — proxy.ts routes `/` to
-                                /parent/dashboard or /signup
+                                /kids or /signup
   login/ signup/                Parent auth (server actions, FormData + zod)
   invite/[token]/               Accept shared-access invite
   parent/dashboard/             Search YouTube, pin videos, approve channels
@@ -125,15 +126,19 @@ release APK on `v*` tags.
 - **Every mutating server action** must call `getSession()` then
   `assertCanManageProfile(session, profileId)` (owner or `shared_access`
   row). Watch-progress also accepts the `activeProfileId` cookie matching
-  the profile (a locked kid device may lack a manageable session).
-- **Two auth layers:** parent JWT `session` cookie (~1y, sliding refresh
-  via `updateSession` wired into `proxy.ts`), and `activeProfileId`
-  cookie (also ~1y) = which kid profile the device is locked to. The
-  `/kids` picker needs a session and lists owned+shared profiles
-  (`getManageableProfiles`); `/kids/<id>` pages allow the matching
-  `activeProfileId` lock OR a managing session (`canViewProfile`).
-  Parent PIN is a soft client-side gate
-  (`ParentalGate`), not real security — never rely on it server-side.
+  the profile.
+- **Three auth cookies:** `session` = parent JWT (1 year, rolling
+  refresh via `proxy.ts`); `parentUnlocked` = signed JWT (scope
+  `parent-unlock`, bound to the session user, 24h exp) inside a
+  browser-session cookie set by `verifyParentPin`/login, cleared by
+  "Kids Corner" (`lockParentPortal`) — `/parent/*` is unreachable
+  without it, and parent-mutating server actions re-verify it via
+  `requireParentUnlocked()` (invite acceptance excepted — the token is
+  the credential); `activeProfileId` = last kid profile used (1 year,
+  informational, used by `/api/watch-progress` & `/api/video-reactions`).
+  PIN verification is server-side (`verifyParentPin` reads
+  `users.parentPin` from the DB, with a 500 ms delay on failures to
+  throttle brute force) — never pass the PIN to client components.
 - **Channel sync:** approving a channel backfills its uploads playlist in
   the background (`after()`), resumable via `backfillPageToken`. Daily
   sync (`/api/sync-channels`, pinged once/day by clients) polls newest
@@ -174,13 +179,8 @@ release APK on `v*` tags.
 
 - `lib/auth.ts` falls back to `JWT_SECRET="secret"` — dev only, always set
   the env var.
-- Parent PIN is stored/compared in plaintext and shipped to the client
-  for the gate UI — acceptable for a family app, but don't build
-  security-critical features on it.
+- Parent PIN is stored/compared in plaintext — acceptable for a family
+  app, but don't build security-critical features on it.
 - `getPusherClient` has a hardcoded fallback Pusher key.
-- `/kids/<uuid>` is effectively a capability URL: `activeProfileId` is
-  the profile UUID, so anyone who learns a UUID can self-set the cookie
-  and view that feed without a session. Unguessable UUIDs keep the risk
-  low — this is the accepted model.
 - YouTube Data API quota is finite (10k units/day); searches are 100
   units each — prefer `videos`/`playlistItems` endpoints in sync code.

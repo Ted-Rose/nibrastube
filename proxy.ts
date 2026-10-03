@@ -1,66 +1,62 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getSession, updateSession } from "@/lib/auth";
+import {
+  getRequestSession,
+  isParentUnlocked,
+  refreshSessionCookie,
+} from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
-  const session = await getSession();
-  const activeProfileId = request.cookies.get("activeProfileId")?.value;
+  const { pathname } = request.nextUrl;
+  const session = await getRequestSession(request);
+  const parentUnlocked = await isParentUnlocked(request, session);
 
-  // 0. No landing page: `/` sends kid-locked devices straight back to
-  // their locked profile's feed — the lock wins over a lingering
-  // session (PWA start_url is `/`, so a locked device must land on its
-  // feed, not the picker) — signed-in parents to their dashboard, and
-  // everyone else to signup.
-  if (request.nextUrl.pathname === "/") {
-    const destination = activeProfileId
-      ? `/kids/${activeProfileId}`
-      : session
-        ? "/parent/dashboard"
-        : "/signup";
+  // 1. No landing page: `/` is the app's front door (PWA start_url) —
+  //    signed-in devices go to the kids picker, signed-out to signup.
+  if (pathname === "/") {
+    const destination = session ? "/kids" : "/signup";
     return NextResponse.redirect(new URL(destination, request.url));
   }
 
-  // 1. The profile picker itself requires a parent session — the
-  // activeProfileId "kid lock" only unlocks that one profile's pages.
-  if (request.nextUrl.pathname === "/kids" && !session) {
-    return NextResponse.redirect(
-      new URL("/login?callback=/kids", request.url)
-    );
+  // 2. Auth pages are only for logged-out devices
+  if (pathname === "/login" || pathname === "/signup") {
+    if (session) {
+      return NextResponse.redirect(new URL("/kids", request.url));
+    }
+    return NextResponse.next();
   }
 
-  // 2. Kid-locked device: /kids/<other> snaps back to the locked profile.
-  //    Without a session AND without a matching lock, it's off-limits.
-  if (request.nextUrl.pathname.startsWith("/kids/")) {
-    const profileIdInUrl = request.nextUrl.pathname.split("/")[2];
-    if (activeProfileId && profileIdInUrl && activeProfileId !== profileIdInUrl) {
-      return NextResponse.redirect(new URL(`/kids/${activeProfileId}`, request.url));
+  // 3. Kids area needs a session; kids may use any of the family's
+  //    profiles — no per-profile lock.
+  if (pathname === "/kids" || pathname.startsWith("/kids/")) {
+    if (!session) {
+      return NextResponse.redirect(new URL("/login", request.url));
     }
-    if (!session && activeProfileId !== profileIdInUrl) {
-      return NextResponse.redirect(
-        new URL(
-          `/login?callback=${encodeURIComponent(request.nextUrl.pathname)}`,
-          request.url
-        )
+    const res = NextResponse.next();
+    await refreshSessionCookie(session, res);
+    return res;
+  }
+
+  // 4. Parent area needs a session AND a fresh PIN unlock
+  if (pathname.startsWith("/parent")) {
+    if (!session) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    if (!parentUnlocked) {
+      const res = NextResponse.redirect(
+        new URL("/kids?gate=1", request.url)
       );
+      // Drop a stale/forged unlock cookie so /kids sees it as absent and
+      // auto-opens the PIN modal instead of dead-ending on the picker.
+      res.cookies.delete("parentUnlocked");
+      return res;
     }
+    const res = NextResponse.next();
+    await refreshSessionCookie(session, res);
+    return res;
   }
 
-  // 3. If trying to access parent portal while child profile is active
-  if (request.nextUrl.pathname.startsWith("/parent") && activeProfileId) {
-    return NextResponse.redirect(new URL("/kids", request.url));
-  }
-
-  // Auth logic
-  if (!session && request.nextUrl.pathname.startsWith("/parent")) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
-  if (session && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/signup")) {
-    return NextResponse.redirect(new URL("/parent/dashboard", request.url));
-  }
-
-  // Refresh the ~1y session on activity so it effectively never expires.
-  return (await updateSession(request)) ?? NextResponse.next();
+  return NextResponse.next();
 }
 
 export const config = {

@@ -7,11 +7,9 @@ import {
 } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
-import { Input } from "@/components/ui/input";
 import {
   ArrowLeft,
   Heart,
-  MagnifyingGlass,
   MonitorPlay,
   Play,
   House,
@@ -22,6 +20,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import PusherListener from "@/components/pusher-listener";
 import DailySyncPing from "@/components/daily-sync-ping";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
+import { KidsSearch } from "@/components/kids-search";
 import { VideoCard } from "@/components/video-card";
 import { KidsSortSelect } from "@/components/kids-sort-select";
 import { getSession } from "@/lib/auth";
@@ -146,33 +145,19 @@ export default async function KidsPortalPage({
              <span className="text-xl font-black text-slate-900 hidden md:block">NibrasTube</span>
           </div>
 
-          <div className="relative order-last basis-full min-w-0 sm:order-none sm:basis-auto sm:flex-1 sm:max-w-2xl">
-            <MagnifyingGlass className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={24} weight="fill" />
-            <form action={`/kids/${profileId}`} method="GET">
-              {view !== "videos" && (
-                <input type="hidden" name="view" value={view} />
-              )}
-              {channel && (
-                <input type="hidden" name="channel" value={channel} />
-              )}
-              {feed.sort !== "status" && (
-                <input type="hidden" name="sort" value={feed.sort} />
-              )}
-              {feed.dir !== "asc" && (
-                <input type="hidden" name="dir" value={feed.dir} />
-              )}
-              <Input
-                name="q"
-                defaultValue={query}
-                placeholder={
-                  view === "channels" && !drilledIn
-                    ? `Search ${profile.name}'s channels...`
-                    : `Search ${profile.name}'s videos...`
-                }
-                className="pl-12 sm:pl-14 h-11 sm:h-14 text-base sm:text-xl rounded-full border-4 border-slate-50 bg-slate-50 text-slate-900 focus:bg-white transition-all shadow-inner"
-              />
-            </form>
-          </div>
+          <KidsSearch
+            profileId={profileId}
+            view={view}
+            channel={channel}
+            sort={feed.sort}
+            dir={feed.dir}
+            query={query}
+            placeholder={
+              view === "channels" && !drilledIn
+                ? `Search ${profile.name}'s channels...`
+                : `Search ${profile.name}'s videos...`
+            }
+          />
 
           <Link
             href="/kids"

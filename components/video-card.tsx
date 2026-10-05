@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Heart, Play, ThumbsDown } from "@phosphor-icons/react/dist/ssr";
 import { Card, CardContent } from "@/components/ui/card";
-import type { videos, watchProgress } from "@/lib/db/schema";
-import type { VideoReaction } from "@/lib/kids-feed";
+import type { watchProgress } from "@/lib/db/schema";
+import type { FeedVideo, VideoReaction } from "@/lib/kids-feed";
 
 interface VideoCardProps {
   href: string;
-  video: typeof videos.$inferSelect;
+  video: FeedVideo;
   progress: typeof watchProgress.$inferSelect | null;
   reaction?: VideoReaction | null;
 }

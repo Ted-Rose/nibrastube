@@ -60,6 +60,26 @@ export function kidsFeedQuery(
 
 export type WatchStatus = 0 | 1 | 2; // 0 new, 1 started, 2 watched
 
+// Only the columns the feed grid and the watch-page playlist actually
+// render. The full `videos` row carries description/tags/raw JSONB
+// (~9KB/row); fetching it for ~2k whitelisted videos made every feed
+// render multi-second and multi-megabyte.
+const feedVideoCols = {
+  id: videos.id,
+  title: videos.title,
+  thumbnail: videos.thumbnail,
+  channelTitle: videos.channelTitle,
+  durationSeconds: videos.durationSeconds,
+};
+
+export interface FeedVideo {
+  id: string;
+  title: string;
+  thumbnail: string;
+  channelTitle: string;
+  durationSeconds: number | null;
+}
+
 // JS mirror of the statusRank CASE below — same tiers, so autoplay picks
 // match what the sort=status grid shows.
 export function watchStatus(
@@ -99,7 +119,7 @@ export async function getKidsVideos(
 
   return db
     .select({
-      video: videos,
+      video: feedVideoCols,
       progress: watchProgress,
       reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
     })
@@ -138,7 +158,7 @@ export async function getLikedVideos(
 ) {
   return db
     .select({
-      video: videos,
+      video: feedVideoCols,
       progress: watchProgress,
       reaction: sql<VideoReaction>`${videoReactions.reaction}`,
     })

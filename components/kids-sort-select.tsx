@@ -1,7 +1,8 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CaretDown } from "@phosphor-icons/react";
+import { useTransition } from "react";
+import { CaretDown, SpinnerGap } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 const OPTIONS = [
@@ -22,6 +23,7 @@ export function KidsSortSelect({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const [sort, dir] = e.target.value.split(":");
@@ -31,7 +33,11 @@ export function KidsSortSelect({
     if (dir === "asc") sp.delete("dir");
     else sp.set("dir", dir);
     const qs = sp.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
+    // Same-route param change — router.push inside startTransition so
+    // isPending can drive a spinner (loading.tsx never fires here).
+    startTransition(() => {
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+    });
   };
 
   return (
@@ -48,11 +54,19 @@ export function KidsSortSelect({
           </option>
         ))}
       </select>
-      <CaretDown
-        size={20}
-        weight="bold"
-        className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
-      />
+      {isPending ? (
+        <SpinnerGap
+          size={20}
+          weight="bold"
+          className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-slate-400"
+        />
+      ) : (
+        <CaretDown
+          size={20}
+          weight="bold"
+          className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
+        />
+      )}
     </div>
   );
 }

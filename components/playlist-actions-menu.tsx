@@ -60,6 +60,7 @@ export function PlaylistActionsMenu({
       setDeleting(false);
     } catch {
       setError("Couldn't delete — try again");
+    } finally {
       setBusy(false);
     }
   };

@@ -376,5 +376,7 @@ export async function getPlaylistVideos(
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )
-    .orderBy(asc(playlistItems.position));
+    // addedAt breaks same-position ties (concurrent adds racing on
+    // max(position)+1) so the kid-visible order is deterministic.
+    .orderBy(asc(playlistItems.position), asc(playlistItems.addedAt));
 }

@@ -27,20 +27,32 @@ export function VideoCardMenu({
   playlistId?: string;
 }) {
   const saveTo = useSaveToPlaylist();
+  const [open, setOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const remove = async () => {
     if (!playlistId || removing) return;
     setRemoving(true);
+    setError(null);
     try {
       await removeFromPlaylist(profileId, playlistId, videoId);
+      setOpen(false);
+    } catch {
+      setError("Couldn't remove — try again");
     } finally {
       setRemoving(false);
     }
   };
 
   return (
-    <Menu.Root>
+    <Menu.Root
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setError(null);
+      }}
+    >
       <Menu.Trigger
         aria-label="Video options"
         className="absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow transition-colors hover:bg-white"
@@ -61,6 +73,9 @@ export function VideoCardMenu({
               <Menu.Item
                 className={itemClass}
                 disabled={removing}
+                // Stays open while removing so a failure can show the
+                // error below; success closes the menu explicitly.
+                closeOnClick={false}
                 onClick={remove}
               >
                 {removing ? (
@@ -74,6 +89,11 @@ export function VideoCardMenu({
                 )}
                 Remove from this playlist
               </Menu.Item>
+            )}
+            {error && (
+              <p className="px-4 py-2 text-sm font-bold text-red-500">
+                {error}
+              </p>
             )}
           </Menu.Popup>
         </Menu.Positioner>

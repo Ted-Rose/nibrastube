@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -56,17 +57,27 @@ export function SaveToPlaylistProvider({
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Latest video the dialog was opened for — stale getVideoPlaylistIds
+  // responses (re-opened for another video mid-flight) are dropped.
+  const videoIdRef = useRef<string | null>(null);
 
   const openFor = useCallback(
     (id: string) => {
+      videoIdRef.current = id;
       setVideoId(id);
       setOpen(true);
       setMembers(null);
       setNewName("");
       setError(null);
       getVideoPlaylistIds(profileId, id)
-        .then((ids) => setMembers(new Set(ids)))
-        .catch(() => setMembers(new Set()));
+        .then((ids) => {
+          if (videoIdRef.current !== id) return;
+          setMembers(new Set(ids));
+        })
+        .catch(() => {
+          if (videoIdRef.current !== id) return;
+          setMembers(new Set());
+        });
     },
     [profileId]
   );

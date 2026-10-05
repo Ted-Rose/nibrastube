@@ -37,7 +37,9 @@ export function VideoCard({
   // an anchor is invalid interactive-in-interactive markup and its clicks
   // would navigate.
   return (
-    <div className="relative group">
+    // No `group` here — the ⋮ menu trigger is this div's child too, and an
+    // outer group would fire the card's group-hover lift when hovering it.
+    <div className="relative">
       <Link href={href} className="group">
         <Card className="overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
           <div className="relative aspect-video">

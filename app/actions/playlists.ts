@@ -15,7 +15,7 @@ const MAX_PLAYLISTS = 50;
 const MAX_ITEMS = 500;
 
 const nameSchema = z.string().trim().min(1).max(60);
-const playlistIdSchema = z.string().uuid();
+const playlistIdSchema = z.uuid();
 const videoIdSchema = z.string().min(1);
 
 // Kid-scope auth (kid-locked device OR managing parent session) happens in
@@ -192,8 +192,9 @@ export async function removeFromPlaylist(
   await notifyPlaylistChanged(profileId);
 }
 
-// Full-order rewrite: the posted id list must equal the playlist's item
-// set exactly, so a stale client can't silently drop or inject items.
+// Full-order rewrite: the posted id list must equal the playlist's
+// visible item set exactly, so a stale client can't silently drop or
+// inject items. Hidden (unpinned) rows keep their positions untouched.
 export async function setPlaylistOrder(
   profileId: string,
   playlistId: string,
@@ -214,9 +215,19 @@ export async function setPlaylistOrder(
   }
   const ids = parsed.data;
 
+  // Compare against the same visible set the client sorted — item rows
+  // outlive unpins (no FK to whitelisted_videos), so a bare select would
+  // include hidden rows the client can't see and reject every posted set.
   const existing = await db
     .select({ videoId: playlistItems.videoId })
     .from(playlistItems)
+    .innerJoin(
+      whitelistedVideos,
+      and(
+        eq(whitelistedVideos.profileId, profileId),
+        eq(whitelistedVideos.videoId, playlistItems.videoId)
+      )
+    )
     .where(eq(playlistItems.playlistId, playlist.id));
   const idSet = new Set(ids);
   if (

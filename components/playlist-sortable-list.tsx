@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   DndContext,
+  KeyboardSensor,
   PointerSensor,
   closestCenter,
   useSensor,
@@ -13,6 +14,7 @@ import {
 import {
   SortableContext,
   arrayMove,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
@@ -159,7 +161,14 @@ export function PlaylistSortableList({
     setItems(rows);
   }
 
-  const sensors = useSensors(useSensor(PointerSensor));
+  // KeyboardSensor acts on the same activator (the drag handle's
+  // listeners/attributes), so focus the handle and use arrows to reorder.
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;

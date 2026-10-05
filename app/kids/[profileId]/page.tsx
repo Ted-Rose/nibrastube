@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { db } from "@/lib/db";
 import {
   channels,
@@ -12,6 +13,7 @@ import {
   MonitorPlay,
   Play,
   House,
+  SpinnerGap,
   UserSwitch,
 } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
@@ -20,7 +22,7 @@ import PusherListener from "@/components/pusher-listener";
 import DailySyncPing from "@/components/daily-sync-ping";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
 import { KidsSearch } from "@/components/kids-search";
-import { VideoCard } from "@/components/video-card";
+import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { KidsSortSelect } from "@/components/kids-sort-select";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { getSession } from "@/lib/auth";
@@ -40,44 +42,29 @@ interface KidsPortalProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function KidsPortalPage({
-  params,
-  searchParams,
-}: KidsPortalProps) {
-  const session = await getSession();
-  const { profileId } = await params;
+const tabBase =
+  "flex items-center justify-center gap-2 sm:gap-3 rounded-full px-4 sm:px-6 py-2.5 sm:py-3 text-base sm:text-xl font-black transition-colors";
+const tabActive = "bg-primary text-white shadow-md";
+const tabInactive = "text-slate-500 hover:bg-slate-100";
 
-  // Basic UUID validation to prevent DB crash
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(profileId)) {
-    redirect("/kids");
-  }
-
-  const feed = parseKidsFeedParams(await searchParams);
+// Everything below the tab bar fetches feed rows and streams in under its
+// own Suspense boundary, so header + tabs paint while the (remote) DB work
+// is still in flight.
+async function FeedContent({
+  profileId,
+  feed,
+}: {
+  profileId: string;
+  feed: KidsFeedParams;
+}) {
   const { view, channel, q: query } = feed;
   const drilledIn = view === "channels" && channel !== null;
-
-  // Access check before the existence check so a signed-in parent can't
-  // use 404-vs-redirect to probe whether a profile UUID exists.
-  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
-  if (!(await canViewProfile(session, profileId, activeProfileId))) {
-    redirect("/kids");
-  }
-
-  const profile = await db.query.profiles.findFirst({
-    where: eq(profiles.id, profileId),
-  });
-
-  if (!profile) notFound();
+  const showVideoGrid = view === "videos" || drilledIn;
 
   // Single helper so tabs/sorts/drill-down links never drop each other's params
   const portalUrl = (overrides: Partial<KidsFeedParams> = {}) =>
     `/kids/${profileId}${kidsFeedQuery(feed, overrides)}`;
-  const watchUrl = (videoId: string) =>
-    `/kids/${profileId}/watch/${videoId}${kidsFeedQuery(feed)}`;
 
-  const showVideoGrid = view === "videos" || drilledIn;
   const rows =
     view === "liked"
       ? await getLikedVideos(profileId, { q: query })
@@ -115,10 +102,157 @@ export default async function KidsPortalPage({
     }
   }
 
-  const tabBase =
-    "flex items-center justify-center gap-2 sm:gap-3 rounded-full px-4 sm:px-6 py-2.5 sm:py-3 text-base sm:text-xl font-black transition-colors";
-  const tabActive = "bg-primary text-white shadow-md";
-  const tabInactive = "text-slate-500 hover:bg-slate-100";
+  return (
+    <>
+      {drilledIn && (
+        <div className="mb-6">
+          <Link
+            href={portalUrl({ channel: null })}
+            className="inline-flex items-center gap-2 text-lg font-bold text-slate-500 hover:text-slate-800 transition-colors"
+          >
+            <ArrowLeft size={20} weight="bold" />
+            All channels
+            <LinkPendingSpinner size={20} weight="bold" />
+          </Link>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-8">
+         <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+           {drilledIn
+             ? channelTitle
+             : query
+               ? `Results for "${query}"`
+               : view === "channels"
+                 ? "Channels"
+                 : view === "liked"
+                   ? "Liked Videos"
+                   : "Approved Videos"}
+         </h2>
+      </div>
+
+      {view === "channels" && !drilledIn ? (
+        channelRows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
+             <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
+                 <MonitorPlay size={48} weight="fill" />
+             </div>
+             <p className="text-2xl font-bold text-slate-400">
+               {query
+                 ? "No channels found!"
+                 : "Ask Mom or Dad to approve some channels!"}
+             </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            {channelRows.map((c) => (
+              <Link key={c.id} href={portalUrl({ channel: c.id })} className="group">
+                <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
+                  <LinkPendingSpinner
+                    size={24}
+                    weight="bold"
+                    className="absolute right-5 top-5 text-slate-400"
+                  />
+                  <CardContent className="p-8 flex flex-col items-center text-center gap-4">
+                    {c.thumbnail ? (
+                      <img
+                        src={c.thumbnail}
+                        className="w-24 h-24 rounded-full object-cover border-4 border-slate-100"
+                        alt={c.title}
+                      />
+                    ) : (
+                      <div className="w-24 h-24 rounded-full bg-primary/10 text-primary border-4 border-slate-100 flex items-center justify-center text-4xl font-black">
+                        {c.title.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <h3 className="text-xl font-bold line-clamp-2 leading-tight text-slate-900 group-hover:underline">
+                        {c.title}
+                      </h3>
+                      <p className="text-slate-500 mt-2 font-medium">
+                        {c.videoCount} {c.videoCount === 1 ? "video" : "videos"}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        )
+      ) : rows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
+           <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
+               {view === "liked" ? (
+                 <Heart size={48} weight="fill" />
+               ) : (
+                 <Play size={48} weight="fill" />
+               )}
+           </div>
+           <p className="text-2xl font-bold text-slate-400">
+             {query
+               ? "No videos found!"
+               : view === "liked"
+                 ? "No liked videos yet! Tap the 👍 while watching."
+                 : channelApproved
+                   ? "Videos are on the way!"
+                   : "Ask Mom or Dad to pick some videos!"}
+           </p>
+        </div>
+      ) : (
+        <KidsVideoGrid
+          rows={rows}
+          profileId={profileId}
+          feedQuery={kidsFeedQuery(feed)}
+        />
+      )}
+    </>
+  );
+}
+
+function FeedFallback() {
+  return (
+    <div className="flex items-center justify-center py-32 text-slate-300">
+      <SpinnerGap size={48} className="animate-spin" />
+    </div>
+  );
+}
+
+export default async function KidsPortalPage({
+  params,
+  searchParams,
+}: KidsPortalProps) {
+  const session = await getSession();
+  const { profileId } = await params;
+
+  // Basic UUID validation to prevent DB crash
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(profileId)) {
+    redirect("/kids");
+  }
+
+  const feed = parseKidsFeedParams(await searchParams);
+  const { view, channel, q: query } = feed;
+  const drilledIn = view === "channels" && channel !== null;
+
+  // Access check before the existence check so a signed-in parent can't
+  // use 404-vs-redirect to probe whether a profile UUID exists.
+  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
+  if (!(await canViewProfile(session, profileId, activeProfileId))) {
+    redirect("/kids");
+  }
+
+  const profile = await db.query.profiles.findFirst({
+    where: eq(profiles.id, profileId),
+  });
+
+  if (!profile) notFound();
+
+  // Single helper so tabs/sorts/drill-down links never drop each other's params
+  const portalUrl = (overrides: Partial<KidsFeedParams> = {}) =>
+    `/kids/${profileId}${kidsFeedQuery(feed, overrides)}`;
+
+  const showVideoGrid = view === "videos" || drilledIn;
 
   return (
     <div className="min-h-screen bg-[#F0F4FF]">
@@ -227,113 +361,9 @@ export default async function KidsPortalPage({
           )}
         </div>
 
-        {drilledIn && (
-          <div className="mb-6">
-            <Link
-              href={portalUrl({ channel: null })}
-              className="inline-flex items-center gap-2 text-lg font-bold text-slate-500 hover:text-slate-800 transition-colors"
-            >
-              <ArrowLeft size={20} weight="bold" />
-              All channels
-              <LinkPendingSpinner size={20} weight="bold" />
-            </Link>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between mb-8">
-           <h2 className="text-3xl font-black text-slate-900 tracking-tight">
-             {drilledIn
-               ? channelTitle
-               : query
-                 ? `Results for "${query}"`
-                 : view === "channels"
-                   ? "Channels"
-                   : view === "liked"
-                     ? "Liked Videos"
-                     : "Approved Videos"}
-           </h2>
-        </div>
-
-        {view === "channels" && !drilledIn ? (
-          channelRows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
-               <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
-                   <MonitorPlay size={48} weight="fill" />
-               </div>
-               <p className="text-2xl font-bold text-slate-400">
-                 {query
-                   ? "No channels found!"
-                   : "Ask Mom or Dad to approve some channels!"}
-               </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-              {channelRows.map((c) => (
-                <Link key={c.id} href={portalUrl({ channel: c.id })} className="group">
-                  <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
-                    <LinkPendingSpinner
-                      size={24}
-                      weight="bold"
-                      className="absolute right-5 top-5 text-slate-400"
-                    />
-                    <CardContent className="p-8 flex flex-col items-center text-center gap-4">
-                      {c.thumbnail ? (
-                        <img
-                          src={c.thumbnail}
-                          className="w-24 h-24 rounded-full object-cover border-4 border-slate-100"
-                          alt={c.title}
-                        />
-                      ) : (
-                        <div className="w-24 h-24 rounded-full bg-primary/10 text-primary border-4 border-slate-100 flex items-center justify-center text-4xl font-black">
-                          {c.title.charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <div>
-                        <h3 className="text-xl font-bold line-clamp-2 leading-tight text-slate-900 group-hover:underline">
-                          {c.title}
-                        </h3>
-                        <p className="text-slate-500 mt-2 font-medium">
-                          {c.videoCount} {c.videoCount === 1 ? "video" : "videos"}
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          )
-        ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
-             <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
-                 {view === "liked" ? (
-                   <Heart size={48} weight="fill" />
-                 ) : (
-                   <Play size={48} weight="fill" />
-                 )}
-             </div>
-             <p className="text-2xl font-bold text-slate-400">
-               {query
-                 ? "No videos found!"
-                 : view === "liked"
-                   ? "No liked videos yet! Tap the 👍 while watching."
-                   : channelApproved
-                     ? "Videos are on the way!"
-                     : "Ask Mom or Dad to pick some videos!"}
-             </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {rows.map(({ video, progress, reaction }) => (
-              <VideoCard
-                key={video.id}
-                href={watchUrl(video.id)}
-                video={video}
-                progress={progress}
-                reaction={reaction}
-              />
-            ))}
-          </div>
-        )}
+        <Suspense fallback={<FeedFallback />}>
+          <FeedContent profileId={profileId} feed={feed} />
+        </Suspense>
       </main>
 
       {/* Parental Gate to switch to Parent Portal altogether — inline so

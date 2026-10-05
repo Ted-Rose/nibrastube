@@ -12,13 +12,18 @@ import { z } from "zod";
 // only honor it when it stays on that origin. A bare startsWith("/")
 // check is bypassable: "/\evil.com" treats "\" as a path separator and
 // "/%09/evil.com" hides a tab that collapses to "//evil.com", both of
-// which resolve cross-origin. Fragments are dropped — app routes don't
-// need them.
+// which resolve cross-origin. ".." normalization can likewise yield a
+// "//host" pathname ("/..//evil.com"), which redirect() treats as
+// scheme-relative — reject it too. Fragments are dropped — app routes
+// don't need them.
 function safeCallback(callback: unknown): string {
   if (typeof callback !== "string") return "/parent/dashboard";
   try {
     const url = new URL(callback, "https://internal.invalid");
-    if (url.origin !== "https://internal.invalid") {
+    if (
+      url.origin !== "https://internal.invalid" ||
+      url.pathname.startsWith("//")
+    ) {
       return "/parent/dashboard";
     }
     return url.pathname + url.search;

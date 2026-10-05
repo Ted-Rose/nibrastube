@@ -12,8 +12,9 @@
       "name": "Next.js: debug full stack",
       "type": "node",
       "request": "launch",
+      "runtimeExecutable": "/opt/homebrew/bin/node",
       "program": "${workspaceFolder}/node_modules/next/dist/bin/next",
-      "args": ["dev", "-p", "3003"],
+      "args": ["dev", "-p", "3000"],
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
     }

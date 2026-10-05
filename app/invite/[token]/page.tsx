@@ -33,7 +33,9 @@ export default async function InvitePage({ params }: InvitePageProps) {
             <CardDescription>This invitation has already been accepted or has expired.</CardDescription>
           </CardHeader>
           <CardFooter>
-             <Link href="/parent/dashboard" className="w-full">
+             {/* Auth-conditional target — a prefetch while logged out
+                 would cache the 307 to /login; resolve fresh on click. */}
+             <Link href="/parent/dashboard" prefetch={false} className="w-full">
                 <Button className="w-full">Go to Dashboard</Button>
              </Link>
           </CardFooter>

@@ -131,6 +131,11 @@ export default async function KidsPortalPage({
              <Link
                href="/kids"
                aria-label="Switch profile"
+               // /kids is auth-conditional: proxy.ts 307-redirects it to
+               // /login on locked kid devices. A prefetched redirect
+               // pollutes the router's segment cache and can replay on
+               // later navigations — always resolve it fresh on click.
+               prefetch={false}
                className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-900"
              >
                <House size={32} weight="bold" />
@@ -155,6 +160,7 @@ export default async function KidsPortalPage({
           <Link
             href="/kids"
             aria-label="Switch profile"
+            prefetch={false}
             className="group flex items-center gap-3 rounded-2xl hover:opacity-80 transition-opacity"
           >
              <span className="text-xl font-black text-slate-700 hidden sm:block">{profile.name}</span>

@@ -149,17 +149,21 @@ export function WatchExperience({
   // "Keep watching" doesn't un-pause a video the kid paused themselves.
   const preSwipeStateRef = useRef<number | null>(null);
 
-  // Both exit routes are dynamic pages (session + DB), so an unprefetched
-  // Back/House tap blocks ~1s on the server round trip. Warm the router
-  // cache on mount and at natural exit signals (pause, video end, header
-  // press) — throttled, since each prefetch is an RSC fetch.
+  // The feed exit route is a dynamic page (session + DB), so an
+  // unprefetched Back tap blocks ~1s on the server round trip. Warm the
+  // router cache on mount and at natural exit signals (pause, video end,
+  // header press) — throttled, since each prefetch is an RSC fetch. The
+  // House link's /kids target deliberately is NOT prefetched: it is
+  // auth-conditional and can answer with a redirect.
   const lastPrefetchRef = useRef(0);
   const prefetchExits = useCallback(() => {
     const now = Date.now();
     if (now - lastPrefetchRef.current < 15_000) return;
     lastPrefetchRef.current = now;
+    // Only warm the feed route — /kids is auth-conditional (proxy.ts
+    // redirects it to /login when the device has no session), so an
+    // eager prefetch would cache a redirect instead of picker data.
     router.prefetch(portalUrl);
-    router.prefetch("/kids");
   }, [router, portalUrl]);
 
   // Disliked videos rank as tier 2 (with watched) — shared by autoplay
@@ -692,6 +696,7 @@ export function WatchExperience({
         <Link
           href="/kids"
           aria-label="Switch profile"
+          prefetch={false}
           onPointerDown={prefetchExits}
         >
           <div className="w-11 h-11 sm:w-12 sm:h-12 bg-white/10 rounded-2xl flex items-center justify-center hover:bg-white/20 transition-colors">
@@ -778,6 +783,7 @@ export function WatchExperience({
           <Link
             href="/kids"
             aria-label="Switch profile"
+            prefetch={false}
             onPointerDown={prefetchExits}
             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >

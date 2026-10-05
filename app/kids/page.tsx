@@ -40,7 +40,14 @@ export default async function KidsPage({
         {allProfiles.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-xl text-slate-500">No kids found. Go to the parent portal to add one!</p>
-            <Link href="/parent/profiles" className="mt-4 inline-block text-primary font-bold hover:underline">
+            {/* Auth-conditional target — prefetch could cache a
+                307 to /kids?gate=1 (which also deletes the unlock
+                cookie); resolve fresh on click. */}
+            <Link
+              href="/parent/profiles"
+              prefetch={false}
+              className="mt-4 inline-block text-primary font-bold hover:underline"
+            >
               Manage Kids
             </Link>
           </div>

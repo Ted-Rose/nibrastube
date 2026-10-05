@@ -149,6 +149,19 @@ export function WatchExperience({
   // "Keep watching" doesn't un-pause a video the kid paused themselves.
   const preSwipeStateRef = useRef<number | null>(null);
 
+  // Both exit routes are dynamic pages (session + DB), so an unprefetched
+  // Back/House tap blocks ~1s on the server round trip. Warm the router
+  // cache on mount and at natural exit signals (pause, video end, header
+  // press) — throttled, since each prefetch is an RSC fetch.
+  const lastPrefetchRef = useRef(0);
+  const prefetchExits = useCallback(() => {
+    const now = Date.now();
+    if (now - lastPrefetchRef.current < 15_000) return;
+    lastPrefetchRef.current = now;
+    router.prefetch(portalUrl);
+    router.prefetch("/kids");
+  }, [router, portalUrl]);
+
   // Disliked videos rank as tier 2 (with watched) — shared by autoplay
   // and the swipe-next target, so the dialog previews what advance()
   // would actually pick and both skip dislikes while any
@@ -356,8 +369,13 @@ export function WatchExperience({
             if (event.data === window.YT?.PlayerState.PLAYING) {
               advancingRef.current = false;
             }
-            if (event.data === window.YT?.PlayerState.PAUSED) flush();
+            // Pausing often precedes exiting — warm the exit routes.
+            if (event.data === window.YT?.PlayerState.PAUSED) {
+              flush();
+              prefetchExits();
+            }
             if (event.data === window.YT?.PlayerState.ENDED) {
+              prefetchExits();
               // Position = duration so advance()'s flush marks it completed.
               latestRef.current = {
                 ...latestRef.current,
@@ -465,6 +483,8 @@ export function WatchExperience({
     window.addEventListener("pagehide", flushBeacon);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
+    prefetchExits();
+
     return () => {
       cancelled = true;
       window.clearInterval(tick);
@@ -475,7 +495,15 @@ export function WatchExperience({
       playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, [profileId, playlist, router, portalUrl, returnQuery, statusAt]);
+  }, [
+    profileId,
+    playlist,
+    router,
+    portalUrl,
+    returnQuery,
+    statusAt,
+    prefetchExits,
+  ]);
 
   // The index goBack would pick, for the confirm dialog's title preview.
   const peekPrevIndex = () => {
@@ -641,7 +669,11 @@ export function WatchExperience({
     >
       {/* Player Header */}
       <div className="bg-slate-900/80 backdrop-blur px-3 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 flex items-center justify-between gap-2 text-white border-b border-slate-800">
-        <Link href={portalUrl} aria-label="Back to videos">
+        <Link
+          href={portalUrl}
+          aria-label="Back to videos"
+          onPointerDown={prefetchExits}
+        >
           <Button
             variant="ghost"
             className="text-white hover:bg-slate-800 gap-2 h-11 sm:h-9 px-3"
@@ -657,7 +689,11 @@ export function WatchExperience({
           </h1>
         </div>
 
-        <Link href="/kids" aria-label="Switch profile">
+        <Link
+          href="/kids"
+          aria-label="Switch profile"
+          onPointerDown={prefetchExits}
+        >
           <div className="w-11 h-11 sm:w-12 sm:h-12 bg-white/10 rounded-2xl flex items-center justify-center hover:bg-white/20 transition-colors">
             <House size={24} weight="bold" />
           </div>
@@ -742,6 +778,7 @@ export function WatchExperience({
           <Link
             href="/kids"
             aria-label="Switch profile"
+            onPointerDown={prefetchExits}
             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
             <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white rounded-3xl flex items-center justify-center text-3xl sm:text-4xl shadow-lg border-4 border-primary">

@@ -1,8 +1,6 @@
-import { db } from "@/lib/db";
-import { profiles, users } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth";
-import { cookies } from "next/headers";
-import { eq } from "drizzle-orm";
+import { getManageableProfiles } from "@/lib/profiles";
+import { redirect } from "next/navigation";
 import { selectProfile } from "@/app/actions/safety";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
 import { ProfilePickerButton } from "@/components/profile-picker-button";
@@ -10,28 +8,15 @@ import { AppInstallMenu } from "@/components/app-install-menu";
 import Link from "next/link";
 
 export default async function KidsPage() {
+  // The picker is parent-only: proxy.ts bounces anonymous visitors to
+  // /login?callback=/kids, and this is the server-side backstop.
   const session = await getSession();
-  
-  const allProfiles = session 
-    ? await db.query.profiles.findMany({ where: eq(profiles.parentId, session.user.id) })
-    : await db.query.profiles.findMany();
+  if (!session) redirect("/login?callback=/kids");
 
-  // The gate PIN must work on kid-locked devices with no/expired session, so
-  // fall back to the PIN of the parent who owns the locked profile (or the
-  // first listed profile) instead of blindly defaulting to "0000".
-  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
-  let gatePin = session?.user?.parentPin ?? null;
-  if (!gatePin) {
-    const gateProfile =
-      allProfiles.find((p) => p.id === activeProfileId) ?? allProfiles[0];
-    if (gateProfile) {
-      const owner = await db.query.users.findFirst({
-        where: eq(users.id, gateProfile.parentId),
-        columns: { parentPin: true },
-      });
-      gatePin = owner?.parentPin ?? null;
-    }
-  }
+  // Only this family's profiles: owned + shared with the parent.
+  const allProfiles = await getManageableProfiles(session.user.id);
+
+  const gatePin = session.user.parentPin ?? "0000";
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4">
@@ -67,7 +52,7 @@ export default async function KidsPage() {
 
       {/* Inline instead of a fixed overlay so it can never cover content */}
       <footer className="py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <KidsFooterGate correctPin={gatePin ?? "0000"} />
+        <KidsFooterGate correctPin={gatePin} />
       </footer>
     </div>
   );

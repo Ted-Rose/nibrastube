@@ -24,6 +24,8 @@ import { KidsSearch } from "@/components/kids-search";
 import { VideoCard } from "@/components/video-card";
 import { KidsSortSelect } from "@/components/kids-sort-select";
 import { getSession } from "@/lib/auth";
+import { canViewProfile } from "@/lib/profiles";
+import { cookies } from "next/headers";
 import {
   getKidsChannels,
   getKidsVideos,
@@ -55,6 +57,13 @@ export default async function KidsPortalPage({
   const feed = parseKidsFeedParams(await searchParams);
   const { view, channel, q: query } = feed;
   const drilledIn = view === "channels" && channel !== null;
+
+  // Access check before the existence check so a signed-in parent can't
+  // use 404-vs-redirect to probe whether a profile UUID exists.
+  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
+  if (!(await canViewProfile(session, profileId, activeProfileId))) {
+    redirect("/kids");
+  }
 
   const profile = await db.query.profiles.findFirst({
     where: eq(profiles.id, profileId),

@@ -7,7 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label";
 
 interface ParentalGateProps {
-  onPass: () => void;
+  // Receives the entered PIN; may return an error message (e.g. a
+  // server-side re-check failed) to keep the gate open and show it.
+  onPass: (pin: string) => string | void | Promise<string | void>;
   onFail?: () => void;
   correctPin: string;
   title?: string;
@@ -16,14 +18,18 @@ interface ParentalGateProps {
 
 export function ParentalGate({ onPass, onFail, correctPin, title, description }: ParentalGateProps) {
   const [pin, setPin] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (pin === correctPin) {
-      onPass();
+      const errorMessage = await onPass(pin);
+      if (typeof errorMessage === "string") {
+        setError(errorMessage);
+        setPin("");
+      }
     } else {
-      setError(true);
+      setError("Incorrect PIN. Try again.");
       setPin("");
       if (onFail) onFail();
     }
@@ -53,7 +59,7 @@ export function ParentalGate({ onPass, onFail, correctPin, title, description }:
                 autoFocus
                 required
               />
-              {error && <p className="text-destructive text-sm font-bold">Incorrect PIN. Try again.</p>}
+              {error && <p className="text-destructive text-sm font-bold">{error}</p>}
             </div>
           </div>
           <Button type="submit" className="w-full h-12 text-lg">Unlock Settings</Button>

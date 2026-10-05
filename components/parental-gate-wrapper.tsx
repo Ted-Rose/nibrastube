@@ -10,7 +10,9 @@ interface ParentalGateWrapperProps {
   correctPin: string;
   triggerText?: string;
   className?: string;
-  onVerified?: () => void;
+  // Receives the entered PIN after the client-side check; returning an
+  // error message keeps the gate open and shows it inside the modal.
+  onVerified?: (pin: string) => Promise<string | void> | string | void;
 }
 
 export function ParentalGateWrapper({ children, correctPin, triggerText, className, onVerified }: ParentalGateWrapperProps) {
@@ -22,9 +24,10 @@ export function ParentalGateWrapper({ children, correctPin, triggerText, classNa
         <div className="w-full max-w-sm">
           <ParentalGate 
             correctPin={correctPin}
-            onPass={() => {
+            onPass={async (enteredPin) => {
+              const error = await onVerified?.(enteredPin);
+              if (error) return error;
               setIsOpen(false);
-              if (onVerified) onVerified();
             }} 
             onFail={() => setIsOpen(false)}
             title="Parental Control"

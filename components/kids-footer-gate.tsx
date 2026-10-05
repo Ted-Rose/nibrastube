@@ -2,20 +2,20 @@
 
 import { ParentalGateWrapper } from "./parental-gate-wrapper";
 import { Button } from "./ui/button";
-import { unlockParentPortal } from "@/app/actions/safety";
+import { verifyParentPin } from "@/app/actions/safety";
 import { LockOpen } from "@phosphor-icons/react";
 
 interface KidsFooterGateProps {
-  correctPin: string;
+  defaultOpen?: boolean;
 }
 
-export function KidsFooterGate({ correctPin }: KidsFooterGateProps) {
+export function KidsFooterGate({ defaultOpen }: KidsFooterGateProps) {
   return (
     <ParentalGateWrapper
-      correctPin={correctPin}
+      defaultOpen={defaultOpen}
       onVerified={async (pin) => {
-         const result = await unlockParentPortal(pin);
-         return result?.error;
+        const result = await verifyParentPin(pin);
+        return result?.error;
       }}
     >
       <Button

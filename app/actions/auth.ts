@@ -2,11 +2,15 @@
 
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { encrypt, login as authLogin } from "@/lib/auth";
+import { login as authLogin, setParentUnlocked } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+
+export interface AuthFormState {
+  error?: string;
+}
 
 // `callback` is user-controlled — parse it against a dummy origin and
 // only honor it when it stays on that origin. A bare startsWith("/")
@@ -36,10 +40,15 @@ const signupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   name: z.string().min(2),
-  pin: z.string().optional(), // Pin is optional in schema, default handled in formData extraction
+  // 4-digit PIN; optional in schema, "0000" default applied on
+  // extraction below.
+  pin: z.string().regex(/^\d{4}$/).optional(),
 });
 
-export async function signup(formData: FormData): Promise<void> {
+export async function signup(
+  _prevState: AuthFormState | null,
+  formData: FormData
+): Promise<AuthFormState> {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const name = formData.get("name") as string;
@@ -48,7 +57,11 @@ export async function signup(formData: FormData): Promise<void> {
 
   const validated = signupSchema.safeParse({ email, password, name, pin });
   if (!validated.success) {
-    return;
+    return {
+      error:
+        validated.error.issues[0]?.message ??
+        "Please check your details and try again.",
+    };
   }
 
   // Check if user exists
@@ -57,7 +70,7 @@ export async function signup(formData: FormData): Promise<void> {
   });
 
   if (existingUser) {
-    return;
+    return { error: "An account with this email already exists." };
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -72,7 +85,10 @@ export async function signup(formData: FormData): Promise<void> {
     })
     .returning();
 
-  await authLogin({ id: newUser.id, email: newUser.email, name: newUser.name, parentPin: newUser.parentPin });
+  await authLogin({ id: newUser.id, email: newUser.email, name: newUser.name });
+  // Signing up already proves the password — treat the parent portal as
+  // unlocked on this device.
+  await setParentUnlocked();
   redirect(callback);
 }
 
@@ -81,14 +97,17 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
-export async function login(formData: FormData): Promise<void> {
+export async function login(
+  _prevState: AuthFormState | null,
+  formData: FormData
+): Promise<AuthFormState> {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const callback = safeCallback(formData.get("callback"));
 
   const validated = loginSchema.safeParse({ email, password });
   if (!validated.success) {
-    return;
+    return { error: "Please enter a valid email and password." };
   }
 
   const user = await db.query.users.findFirst({
@@ -96,10 +115,13 @@ export async function login(formData: FormData): Promise<void> {
   });
 
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-    return;
+    return { error: "Invalid email or password." };
   }
 
-  await authLogin({ id: user.id, email: user.email, name: user.name, parentPin: user.parentPin });
+  await authLogin({ id: user.id, email: user.email, name: user.name });
+  // A successful password login counts as proof of identity — unlock
+  // the parent portal on this device too.
+  await setParentUnlocked();
   redirect(callback);
 }
 

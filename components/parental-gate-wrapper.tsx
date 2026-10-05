@@ -3,23 +3,25 @@
 import { useState } from "react";
 import { ParentalGate } from "./parental-gate";
 import { Button } from "./ui/button";
-import { Lock, LockOpen, SpinnerGap } from "@phosphor-icons/react";
+import { Lock, SpinnerGap } from "@phosphor-icons/react";
 
 interface ParentalGateWrapperProps {
   children: React.ReactNode;
-  correctPin: string;
   triggerText?: string;
   className?: string;
-  // Receives the entered PIN after the client-side check; returning an
-  // error message keeps the gate open and shows it inside the modal.
+  // Auto-open the modal on mount (e.g. /kids?gate=1 after a /parent/*
+  // bounce). Remount via `key` to re-trigger on same-page navigations.
+  defaultOpen?: boolean;
+  // Server action that verifies the entered PIN; returning an error
+  // message keeps the gate open and shows it inside the modal.
   onVerified?: (pin: string) => Promise<string | void> | string | void;
 }
 
-export function ParentalGateWrapper({ children, correctPin, triggerText, className, onVerified }: ParentalGateWrapperProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export function ParentalGateWrapper({ children, triggerText, className, defaultOpen, onVerified }: ParentalGateWrapperProps) {
+  const [isOpen, setIsOpen] = useState(!!defaultOpen);
   const [verifying, setVerifying] = useState(false);
 
-  // onVerified is an async server action that re-checks the PIN and
+  // onVerified is an async server action that checks the PIN and
   // usually redirects — keep a full-screen spinner up while it runs so
   // the user isn't left staring at a frozen gate modal. On success the
   // spinner stays up deliberately: the redirect unmounts us anyway, and
@@ -34,7 +36,7 @@ export function ParentalGateWrapper({ children, correctPin, triggerText, classNa
     try {
       const error = await onVerified(enteredPin);
       if (error) {
-        // Server-side re-check failed — drop the overlay so the error
+        // Server-side check failed — drop the overlay so the error
         // can surface inside the still-open gate.
         setVerifying(false);
         return error;
@@ -56,11 +58,9 @@ export function ParentalGateWrapper({ children, correctPin, triggerText, classNa
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm">
             <ParentalGate
-              correctPin={correctPin}
               onPass={handlePass}
-              onFail={() => setIsOpen(false)}
               title="Parental Control"
-              description="Solving this will unlock restricted options."
+              description="Enter your PIN to unlock parent settings."
             />
             <Button
               variant="ghost"

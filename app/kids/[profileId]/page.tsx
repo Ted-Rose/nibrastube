@@ -2,7 +2,6 @@ import { db } from "@/lib/db";
 import {
   channels,
   profiles,
-  users,
   whitelistedChannels,
 } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -70,13 +69,6 @@ export default async function KidsPortalPage({
   });
 
   if (!profile) notFound();
-
-  // The gate PIN must work on kid-locked devices with no/expired session,
-  // so resolve it from the profile owner's row instead of the JWT payload.
-  const profileOwner = await db.query.users.findFirst({
-    where: eq(users.id, profile.parentId),
-    columns: { parentPin: true },
-  });
 
   // Single helper so tabs/sorts/drill-down links never drop each other's params
   const portalUrl = (overrides: Partial<KidsFeedParams> = {}) =>
@@ -317,11 +309,7 @@ export default async function KidsPortalPage({
       {/* Parental Gate to switch to Parent Portal altogether — inline so
           it can never overlap grid content */}
       <footer className="mt-16 flex justify-center pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        <KidsFooterGate
-          correctPin={
-            profileOwner?.parentPin ?? session?.user?.parentPin ?? "0000"
-          }
-        />
+        <KidsFooterGate />
       </footer>
     </div>
   );

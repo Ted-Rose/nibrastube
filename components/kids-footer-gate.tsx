@@ -2,6 +2,7 @@
 
 import { ParentalGateWrapper } from "./parental-gate-wrapper";
 import { Button } from "./ui/button";
+import { verifyParentPin } from "@/app/actions/safety";
 import { LockOpen } from "@phosphor-icons/react";
 
 interface KidsFooterGateProps {
@@ -10,7 +11,13 @@ interface KidsFooterGateProps {
 
 export function KidsFooterGate({ defaultOpen }: KidsFooterGateProps) {
   return (
-    <ParentalGateWrapper defaultOpen={defaultOpen}>
+    <ParentalGateWrapper
+      defaultOpen={defaultOpen}
+      onVerified={async (pin) => {
+        const result = await verifyParentPin(pin);
+        return result?.error;
+      }}
+    >
       <Button
         variant="ghost"
         size="touch"

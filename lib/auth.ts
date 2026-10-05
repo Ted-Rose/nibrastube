@@ -96,6 +96,18 @@ export async function refreshSessionCookie(
   });
 }
 
+// proxy.ts fallthrough for routes that didn't handle the session
+// themselves: refresh the ~1y session on activity so it effectively
+// never expires. Returns null when there is no session to refresh.
+export async function updateSession(request: NextRequest) {
+  const session = await getRequestSession(request);
+  if (!session) return;
+
+  const res = NextResponse.next();
+  await refreshSessionCookie(session, res);
+  return res;
+}
+
 // Browser-session cookie holding a signed JWT (scope "parent-unlock",
 // bound to the session user, 24h exp): set when the parent proves
 // identity (password or PIN), cleared by "Kids Corner"/logout or when

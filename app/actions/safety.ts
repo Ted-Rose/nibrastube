@@ -13,8 +13,11 @@ import {
 import { assertCanManageProfile } from "@/lib/profiles";
 
 export async function selectProfile(profileId: string) {
-  const session = await getSession();
   try {
+    const session = await getSession();
+    // Only profiles the signed-in parent owns or has shared access to can
+    // be locked onto a device; sends the user back to the picker instead
+    // of surfacing a raw error.
     await assertCanManageProfile(session, profileId);
   } catch {
     redirect("/kids");
@@ -23,7 +26,7 @@ export async function selectProfile(profileId: string) {
   const cookieStore = await cookies();
   cookieStore.set("activeProfileId", profileId, {
     path: "/",
-    maxAge: 60 * 60 * 24 * 365, // 1 year — informational only
+    maxAge: 60 * 60 * 24 * 365, // 1 year — matches the session lifetime
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -31,18 +34,15 @@ export async function selectProfile(profileId: string) {
   redirect(`/kids/${profileId}`);
 }
 
-interface VerifyPinState {
-  error?: string;
-}
-
-export async function verifyParentPin(
-  _prevState: VerifyPinState | null,
-  formData: FormData
-): Promise<VerifyPinState> {
+// Server-side PIN check for the parent gate — the PIN lives only in
+// the DB, never in the session JWT or on the client. Returns an error
+// string to keep the gate open; on success sets the signed
+// parentUnlocked cookie, lifts the kid lock, and redirects to the
+// parent dashboard.
+export async function verifyParentPin(pin: string) {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const pin = formData.get("pin");
   const user = await db.query.users.findFirst({
     where: eq(users.id, session.user.id),
     columns: { parentPin: true },
@@ -55,6 +55,9 @@ export async function verifyParentPin(
   }
 
   await setParentUnlocked();
+  // Unlocking the parent portal also lifts the kid lock — this device
+  // is now parent-controlled until "Kids Corner" re-locks it.
+  (await cookies()).delete("activeProfileId");
   redirect("/parent/dashboard");
 }
 

@@ -83,6 +83,10 @@ interface WatchExperienceProps {
   // Query string (incl. leading "?", or "") preserving the grid context —
   // view/channel/sort/q — the kid arrived from.
   returnQuery?: string;
+  // Playlist queues advance strictly in order — (i + 1) % length instead
+  // of the unwatched-first pickNextIndex — wrapping to the start at the
+  // end, matching the "never exit to portal" behavior.
+  sequential?: boolean;
   // Per-profile opt-in: swipe right/up = next video, left/down = previous.
   swipeEnabled: boolean;
 }
@@ -94,6 +98,7 @@ export function WatchExperience({
   playlist,
   startIndex,
   returnQuery = "",
+  sequential = false,
   swipeEnabled,
 }: WatchExperienceProps) {
   const router = useRouter();
@@ -303,7 +308,11 @@ export function WatchExperience({
     const advance = () => {
       if (advancingRef.current) return;
       advancingRef.current = true;
-      goTo(pickNextIndex(playlist.length, indexRef.current, statusAt));
+      goTo(
+        sequential
+          ? (indexRef.current + 1) % playlist.length
+          : pickNextIndex(playlist.length, indexRef.current, statusAt)
+      );
     };
 
     // Previous = the video the kid just came from (nav history stack),
@@ -505,6 +514,7 @@ export function WatchExperience({
     router,
     portalUrl,
     returnQuery,
+    sequential,
     statusAt,
     prefetchExits,
   ]);
@@ -544,7 +554,9 @@ export function WatchExperience({
     // the dialog can show which video the swipe would switch to.
     const target =
       dir === "next"
-        ? pickNextIndex(playlist.length, indexRef.current, statusAt)
+        ? sequential
+          ? (indexRef.current + 1) % playlist.length
+          : pickNextIndex(playlist.length, indexRef.current, statusAt)
         : peekPrevIndex();
     // pauseVideo() is an async postMessage, so hold the in-flight nav
     // guard until confirm/cancel releases it — otherwise the 500ms tick

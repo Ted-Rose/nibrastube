@@ -10,6 +10,7 @@ interface KidsSearchProps {
   profileId: string;
   view: KidsView;
   channel: string | null;
+  list?: string | null;
   sort: KidsSort;
   dir: KidsDir;
   query: string;
@@ -26,6 +27,7 @@ export function KidsSearch({
   profileId,
   view,
   channel,
+  list,
   sort,
   dir,
   query,
@@ -40,6 +42,7 @@ export function KidsSearch({
     const sp = new URLSearchParams();
     if (view !== "videos") sp.set("view", view);
     if (channel) sp.set("channel", channel);
+    if (view === "playlists" && list) sp.set("list", list);
     if (sort !== "status") sp.set("sort", sort);
     if (dir !== "asc") sp.set("dir", dir);
     if (q) sp.set("q", q);

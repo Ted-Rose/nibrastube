@@ -9,6 +9,7 @@ import { WatchExperience } from "@/components/watch-experience";
 import {
   getKidsVideos,
   getLikedVideos,
+  getPlaylistVideos,
   kidsFeedQuery,
   parseKidsFeedParams,
   watchStatus,
@@ -39,10 +40,14 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   if (!profile) notFound();
 
   // Autoplay playlist mirrors the grid the kid came from: same channel
-  // filter, search, and sort.
+  // filter, search, sort — or the kid-ordered playlist queue.
   const feed = parseKidsFeedParams(await searchParams);
-  let rows =
-    feed.view === "liked"
+  const playlistId = feed.view === "playlists" ? feed.list : null;
+  // Playlist queues advance in playlist order, not unwatched-first.
+  let sequential = playlistId !== null;
+  let rows = playlistId
+    ? await getPlaylistVideos(profileId, playlistId, { q: feed.q })
+    : feed.view === "liked"
       ? await getLikedVideos(profileId, { q: feed.q })
       : await getKidsVideos(profileId, {
           q: feed.q,
@@ -55,11 +60,23 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   if (currentIndex === -1) {
     // Stale link from a filtered view — fall back to the full list (still
     // sorted) instead of bouncing the kid out.
-    rows =
-      feed.view === "liked"
+    rows = playlistId
+      ? await getPlaylistVideos(profileId, playlistId)
+      : feed.view === "liked"
         ? await getLikedVideos(profileId)
         : await getKidsVideos(profileId, { sort: feed.sort, dir: feed.dir });
     currentIndex = rows.findIndex((r) => r.video.id === videoId);
+  }
+
+  if (currentIndex === -1 && playlistId) {
+    // The playlist was deleted or emptied mid-session — degrade to the
+    // full approved list rather than bouncing back to the portal.
+    rows = await getKidsVideos(profileId, {
+      sort: feed.sort,
+      dir: feed.dir,
+    });
+    currentIndex = rows.findIndex((r) => r.video.id === videoId);
+    sequential = false;
   }
 
   if (currentIndex === -1) {
@@ -94,6 +111,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
       playlist={playlist}
       startIndex={currentIndex}
       returnQuery={kidsFeedQuery(feed)}
+      sequential={sequential}
       swipeEnabled={profile.swipeEnabled}
     />
   );

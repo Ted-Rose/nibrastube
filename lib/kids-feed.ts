@@ -2,6 +2,8 @@ import { and, asc, count, desc, eq, ilike, inArray, isNotNull, sql } from "drizz
 import { db } from "@/lib/db";
 import {
   channels,
+  playlistItems,
+  playlists,
   videoReactions,
   videos,
   watchProgress,
@@ -9,7 +11,7 @@ import {
   whitelistedVideos,
 } from "@/lib/db/schema";
 
-export type KidsView = "videos" | "channels" | "liked";
+export type KidsView = "videos" | "channels" | "liked" | "playlists";
 export type VideoReaction = "like" | "dislike";
 export type KidsSort = "age" | "status";
 export type KidsDir = "asc" | "desc";
@@ -17,12 +19,16 @@ export type KidsDir = "asc" | "desc";
 export interface KidsFeedParams {
   view: KidsView;
   channel: string | null;
+  // Selected playlist id — only meaningful when view === "playlists".
+  list: string | null;
   sort: KidsSort;
   dir: KidsDir;
   q: string;
 }
 
 const CHANNEL_ID_RE = /^[\w-]+$/;
+const PLAYLIST_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Validates raw searchParams; bad values fall back to defaults.
 export function parseKidsFeedParams(
@@ -32,13 +38,18 @@ export function parseKidsFeedParams(
     (Array.isArray(v) ? v[0] : v) ?? "";
   const rawView = first(raw.view);
   const view: KidsView =
-    rawView === "channels" || rawView === "liked" ? rawView : "videos";
+    rawView === "channels" || rawView === "liked" || rawView === "playlists"
+      ? rawView
+      : "videos";
   const rawChannel = first(raw.channel);
   const channel =
     view === "channels" && CHANNEL_ID_RE.test(rawChannel) ? rawChannel : null;
+  const rawList = first(raw.list);
+  const list =
+    view === "playlists" && PLAYLIST_ID_RE.test(rawList) ? rawList : null;
   const sort: KidsSort = first(raw.sort) === "age" ? "age" : "status";
   const dir: KidsDir = first(raw.dir) === "desc" ? "desc" : "asc";
-  return { view, channel, sort, dir, q: first(raw.q) };
+  return { view, channel, list, sort, dir, q: first(raw.q) };
 }
 
 // Query string (with leading "?", or "") carrying every non-default param.
@@ -51,6 +62,7 @@ export function kidsFeedQuery(
   if (next.view !== "videos") sp.set("view", next.view);
   if (next.view === "channels" && next.channel)
     sp.set("channel", next.channel);
+  if (next.view === "playlists" && next.list) sp.set("list", next.list);
   if (next.sort !== "status") sp.set("sort", next.sort);
   if (next.dir !== "asc") sp.set("dir", next.dir);
   if (next.q) sp.set("q", next.q);
@@ -268,4 +280,101 @@ export async function getKidsChannels(
     (c) => !needle || c.title.toLowerCase().includes(needle)
   );
   return all.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+export interface KidsPlaylist {
+  id: string;
+  name: string;
+  videoCount: number;
+  coverThumbnail: string | null;
+}
+
+// Playlists for a profile with their VISIBLE item count (items whose video
+// is currently unpinned don't count) and a cover taken from the first
+// visible item — same unpin-hides semantics as getPlaylistVideos.
+export async function getPlaylists(
+  profileId: string
+): Promise<KidsPlaylist[]> {
+  return db
+    .select({
+      id: playlists.id,
+      name: playlists.name,
+      videoCount: count(whitelistedVideos.videoId),
+      coverThumbnail: sql<string | null>`(
+        array_agg(${videos.thumbnail} order by ${playlistItems.position} asc)
+        filter (where ${videos.thumbnail} is not null)
+      )[1]`,
+    })
+    .from(playlists)
+    .leftJoin(
+      playlistItems,
+      eq(playlistItems.playlistId, playlists.id)
+    )
+    .leftJoin(
+      whitelistedVideos,
+      and(
+        eq(whitelistedVideos.profileId, playlists.profileId),
+        eq(whitelistedVideos.videoId, playlistItems.videoId)
+      )
+    )
+    .leftJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .where(eq(playlists.profileId, profileId))
+    .groupBy(playlists.id, playlists.name, playlists.createdAt)
+    .orderBy(asc(playlists.createdAt));
+}
+
+// One playlist's videos in kid-defined order. Same { video, progress,
+// reaction } row shape as getKidsVideos. Rows inner-join
+// whitelisted_videos on the playlist's profile, so an unpinned video hides
+// (and returns at its old position on re-pin) and a playlist belonging to
+// another profile returns nothing.
+export async function getPlaylistVideos(
+  profileId: string,
+  playlistId: string,
+  { q }: { q?: string } = {}
+) {
+  const playlist = await db.query.playlists.findFirst({
+    where: and(
+      eq(playlists.id, playlistId),
+      eq(playlists.profileId, profileId)
+    ),
+  });
+  if (!playlist) return [];
+
+  return db
+    .select({
+      video: feedVideoCols,
+      progress: watchProgress,
+      reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
+    })
+    .from(playlistItems)
+    .innerJoin(videos, eq(videos.id, playlistItems.videoId))
+    .innerJoin(
+      whitelistedVideos,
+      and(
+        eq(whitelistedVideos.profileId, profileId),
+        eq(whitelistedVideos.videoId, playlistItems.videoId)
+      )
+    )
+    .leftJoin(
+      watchProgress,
+      and(
+        eq(watchProgress.profileId, profileId),
+        eq(watchProgress.videoId, playlistItems.videoId)
+      )
+    )
+    .leftJoin(
+      videoReactions,
+      and(
+        eq(videoReactions.profileId, profileId),
+        eq(videoReactions.videoId, playlistItems.videoId)
+      )
+    )
+    .where(
+      and(
+        eq(playlistItems.playlistId, playlistId),
+        q ? ilike(videos.title, `%${q}%`) : undefined
+      )
+    )
+    .orderBy(asc(playlistItems.position));
 }

@@ -26,6 +26,7 @@ export default function PusherListener({ profileId }: { profileId: string }) {
     channel.bind("video-pinned", scheduleRefresh);
     channel.bind("video-unpinned", scheduleRefresh);
     channel.bind("video-reacted", scheduleRefresh);
+    channel.bind("playlist-changed", scheduleRefresh);
 
     return () => {
       if (timer) clearTimeout(timer);

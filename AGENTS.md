@@ -190,6 +190,14 @@ release APK on `v*` tags.
 - Parent PIN is stored/compared in plaintext — acceptable for a family
   app, but don't build security-critical features on it.
 - `getPusherClient` has a hardcoded fallback Pusher key.
+- Dev machine sits behind a TLS-intercepting proxy (Netskope). Node-side
+  calls (axios → YouTube) need `NODE_EXTRA_CA_CERTS` (set in `~/.zshrc`);
+  Turbopack ignores that var — `.env` carries
+  `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1` so `next/font`'s
+  Google Fonts downloads validate. Without it every render retries the
+  font fetch and stalls for seconds. Do NOT move it to
+  `experimental.turbopackUseSystemTlsCerts` in next.config — the config
+  key broke tailwindcss module resolution (env var does not).
 - `/kids/<uuid>` is effectively a capability URL: `activeProfileId` is
   the profile UUID, so anyone who learns a UUID can self-set the cookie
   and view that feed without a session. Unguessable UUIDs keep the risk

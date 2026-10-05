@@ -2,6 +2,9 @@ import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { getSession } from "@/lib/auth";
+import { canViewProfile } from "@/lib/profiles";
 import { WatchExperience } from "@/components/watch-experience";
 import {
   getKidsVideos,
@@ -19,7 +22,16 @@ interface WatchPageProps {
 export default async function WatchPage({ params, searchParams }: WatchPageProps) {
   const { profileId, videoId } = await params;
 
-  // 1. Verify profile and video approval
+  // 1. Access check first — kid-locked to this profile or a parent who
+  //    owns/shares it — so 404-vs-redirect can't be used to probe whether
+  //    a profile UUID exists.
+  const session = await getSession();
+  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
+  if (!(await canViewProfile(session, profileId, activeProfileId))) {
+    redirect("/kids");
+  }
+
+  // 2. Verify profile and video approval
   const profile = await db.query.profiles.findFirst({
     where: eq(profiles.id, profileId),
   });

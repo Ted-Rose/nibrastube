@@ -13,8 +13,9 @@ export function KidsFooterGate({ correctPin }: KidsFooterGateProps) {
   return (
     <ParentalGateWrapper
       correctPin={correctPin}
-      onVerified={async () => {
-         await unlockParentPortal();
+      onVerified={async (pin) => {
+         const result = await unlockParentPortal(pin);
+         return result?.error;
       }}
     >
       <Button

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, boolean, integer, bigint, jsonb, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, boolean, integer, bigint, jsonb, primaryKey, date } from "drizzle-orm/pg-core";
 
 // Parent Users
 export const users = pgTable("users", {
@@ -123,6 +123,29 @@ export const watchProgress = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.profileId, table.videoId] }),
+  })
+);
+
+// One row per (profile, video, day): the kid-local date a video had any
+// watch activity. Append-only-per-day; lastSeenAt tracks intra-day
+// recency for ordering and "watched at 3:42 PM" labels.
+export const watchHistory = pgTable(
+  "watch_history",
+  {
+    profileId: uuid("profile_id")
+      .references(() => profiles.id, { onDelete: "cascade" })
+      .notNull(),
+    videoId: text("video_id")
+      .references(() => videos.id, { onDelete: "cascade" })
+      .notNull(),
+    watchedOn: date("watched_on", { mode: "string" }).notNull(), // YYYY-MM-DD
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.profileId, table.videoId, table.watchedOn],
+    }),
   })
 );
 

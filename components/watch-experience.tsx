@@ -36,6 +36,7 @@ interface YTPlayer {
   getDuration(): number;
   getPlayerState(): number;
   getVideoData(): { video_id?: string } | undefined;
+  getVideoUrl(): string;
   pauseVideo(): void;
   playVideo(): void;
 }
@@ -48,7 +49,10 @@ interface YTNamespace {
       width: string;
       height: string;
       playerVars?: Record<string, number>;
-      events?: { onStateChange?: (event: YTPlayerEvent) => void };
+      events?: {
+        onReady?: (event: { target: YTPlayer }) => void;
+        onStateChange?: (event: YTPlayerEvent) => void;
+      };
     }
   ) => YTPlayer;
   PlayerState: {
@@ -64,6 +68,19 @@ declare global {
     YT?: YTNamespace;
     onYouTubeIframeAPIReady?: () => void;
   }
+}
+
+// getVideoData() is undocumented — it is absent on some widget builds
+// and before the player is ready, so fall back to the documented
+// getVideoUrl() and parse its v= param.
+function loadedVideoId(p: YTPlayer): string | undefined {
+  if (typeof p.getVideoData === "function") {
+    return p.getVideoData()?.video_id;
+  }
+  if (typeof p.getVideoUrl === "function") {
+    return /[?&]v=([^&]+)/.exec(p.getVideoUrl())?.[1];
+  }
+  return undefined;
 }
 
 interface PlaylistVideo {
@@ -247,6 +264,7 @@ export function WatchExperience({
         durationSeconds: Math.floor(duration),
         completed: position >= duration * 0.95,
         sentAt: Date.now(),
+        day: new Date().toLocaleDateString("en-CA"), // en-CA → YYYY-MM-DD
       });
       if (useBeacon && navigator.sendBeacon) {
         navigator.sendBeacon(
@@ -342,6 +360,12 @@ export function WatchExperience({
 
     swipeNavRef.current = { next: advance, prev: goBack };
 
+    // The constructed player is kept here (not in playerRef) until its
+    // onReady fires — the API methods only exist then, and publishing
+    // the ref early let the 500ms tick and goTo() call them on a
+    // not-yet-ready player ("getVideoData is not a function").
+    let createdPlayer: YTPlayer | null = null;
+
     const createPlayer = () => {
       const container = containerRef.current;
       if (cancelled || !container || !window.YT?.Player) return;
@@ -357,7 +381,7 @@ export function WatchExperience({
       }
 
       const currentVideo = playlist[indexRef.current];
-      playerRef.current = new window.YT.Player(mountRef.current, {
+      createdPlayer = new window.YT.Player(mountRef.current, {
         videoId: currentVideo.id,
         width: "100%",
         height: "100%",
@@ -378,6 +402,23 @@ export function WatchExperience({
           ),
         },
         events: {
+          onReady: () => {
+            // Cleanup ran before the player finished initializing —
+            // it was already destroyed, so don't publish the ref.
+            if (cancelled || !createdPlayer) return;
+            playerRef.current = createdPlayer;
+            // A goTo() during init skipped its loadVideoById (the ref
+            // was still null) — catch up if the index moved meanwhile.
+            const want = playlist[indexRef.current];
+            if (want.id !== currentVideo.id) {
+              createdPlayer.loadVideoById({
+                videoId: want.id,
+                startSeconds: completedRef.current.has(want.id)
+                  ? 0
+                  : (want.startSeconds ?? 0),
+              });
+            }
+          },
           onStateChange: (event) => {
             if (event.data === window.YT?.PlayerState.PLAYING) {
               advancingRef.current = false;
@@ -434,7 +475,7 @@ export function WatchExperience({
     const tick = window.setInterval(() => {
       const p = playerRef.current;
       if (!p) return;
-      const loadedId = p.getVideoData()?.video_id;
+      const loadedId = loadedVideoId(p);
       const currentId = playlist[indexRef.current].id;
       if (loadedId !== lastLoadedId) {
         // A different video is cueing — playhead history from the
@@ -505,7 +546,11 @@ export function WatchExperience({
       document.removeEventListener("visibilitychange", onVisibilityChange);
       // Unmount (Back to Videos / House / route change) — last chance flush.
       flush(true);
-      playerRef.current?.destroy();
+      // createdPlayer also covers a player that never reached onReady
+      // (playerRef stays null in that case) — and its destroy() may not
+      // exist yet either.
+      createdPlayer?.destroy?.();
+      createdPlayer = null;
       playerRef.current = null;
     };
   }, [

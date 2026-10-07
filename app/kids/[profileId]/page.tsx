@@ -9,6 +9,7 @@ import { and, eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import {
   ArrowLeft,
+  ClockCounterClockwise,
   Heart,
   MonitorPlay,
   Play,
@@ -23,6 +24,7 @@ import PusherListener from "@/components/pusher-listener";
 import DailySyncPing from "@/components/daily-sync-ping";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
 import { KidsSearch } from "@/components/kids-search";
+import { KidsViewMenu } from "@/components/kids-view-menu";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { KidsSortSelect } from "@/components/kids-sort-select";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
@@ -30,6 +32,8 @@ import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
 import { PlaylistSortableList } from "@/components/playlist-sortable-list";
 import { PlaylistActionsMenu } from "@/components/playlist-actions-menu";
 import { NewPlaylistButton } from "@/components/new-playlist-button";
+import { HistoryView } from "@/components/history-view";
+import { HistoryDatePicker } from "@/components/history-date-picker";
 import { getSession } from "@/lib/auth";
 import { canViewProfile } from "@/lib/profiles";
 import { cookies } from "next/headers";
@@ -39,6 +43,7 @@ import {
   getLikedVideos,
   getPlaylists,
   getPlaylistVideos,
+  getWatchHistory,
   kidsFeedQuery,
   parseKidsFeedParams,
   type KidsFeedParams,
@@ -48,11 +53,6 @@ interface KidsPortalProps {
   params: Promise<{ profileId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
-
-const tabBase =
-  "flex items-center justify-center gap-2 sm:gap-3 rounded-full px-4 sm:px-6 py-2.5 sm:py-3 text-base sm:text-xl font-black transition-colors";
-const tabActive = "bg-primary text-white shadow-md";
-const tabInactive = "text-slate-500 hover:bg-slate-100";
 
 // Everything below the tab bar fetches feed rows and streams in under its
 // own Suspense boundary, so header + tabs paint while the (remote) DB work
@@ -90,11 +90,22 @@ async function FeedContent({
     view === "channels" && !drilledIn
       ? await getKidsChannels(profileId, { q: query })
       : [];
+  // Day-grouped watch history — carries watchedOn/lastSeenAt on top of the
+  // usual { video, progress, reaction } row shape.
+  const historyRows =
+    view === "history"
+      ? await getWatchHistory(profileId, {
+          q: query,
+          date: feed.date ?? undefined,
+        })
+      : [];
 
   // Playlists snapshot — feeds both playlists views and the shared
   // "Save to playlist" dialog behind every video card's ⋮ menu.
   const playlistRows =
-    view !== "channels" || drilledIn ? await getPlaylists(profileId) : [];
+    (view !== "channels" && view !== "history") || drilledIn
+      ? await getPlaylists(profileId)
+      : [];
 
   const playlist = inPlaylist
     ? (playlistRows.find((p) => p.id === list) ?? null)
@@ -173,8 +184,13 @@ async function FeedContent({
                      ? "Liked Videos"
                      : view === "playlists"
                        ? "Playlists"
-                       : "Approved Videos"}
+                       : view === "history"
+                         ? feed.date
+                           ? `History — ${feed.date}`
+                           : "History"
+                         : "Approved Videos"}
          </h2>
+         {view === "history" && <HistoryDatePicker date={feed.date} />}
          {inPlaylist && playlist && (
            <div className="flex items-center gap-3">
              {rows.length > 0 && (
@@ -256,6 +272,27 @@ async function FeedContent({
               feedQuery={kidsFeedQuery(feed)}
             />
           </SaveToPlaylistProvider>
+        )
+      ) : view === "history" ? (
+        historyRows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
+             <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
+                 <ClockCounterClockwise size={48} weight="fill" />
+             </div>
+             <p className="text-2xl font-bold text-slate-400">
+               {query
+                 ? "No videos found!"
+                 : feed.date
+                   ? "Nothing watched that day!"
+                   : "Watch a video and it'll show up here!"}
+             </p>
+          </div>
+        ) : (
+          <HistoryView
+            rows={historyRows}
+            profileId={profileId}
+            feedQuery={kidsFeedQuery(feed)}
+          />
         )
       ) : view === "channels" && !drilledIn ? (
         channelRows.length === 0 ? (
@@ -423,7 +460,9 @@ export default async function KidsPortalPage({
                   ? feed.list
                     ? "Search this playlist..."
                     : `Search ${profile.name}'s playlists...`
-                  : `Search ${profile.name}'s videos...`
+                  : view === "history"
+                    ? `Search ${profile.name}'s history...`
+                    : `Search ${profile.name}'s videos...`
             }
           />
 
@@ -447,68 +486,52 @@ export default async function KidsPortalPage({
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 sm:mt-10">
-        {/* View tabs */}
+        {/* View picker — the five feeds live in a burger menu so the row
+            stays one element wide on phones */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-8">
-          <div className="grid grid-cols-4 gap-1 rounded-full bg-white p-1 shadow-sm sm:inline-flex">
-            <Link
-              href={portalUrl({ view: "videos", channel: null })}
-              className={`${tabBase} ${view === "videos" ? tabActive : tabInactive}`}
-            >
-              <LinkPendingSpinner
-                size={24}
-                weight="bold"
-                fallback={<Play size={24} weight="fill" />}
-              />
-              Videos
-            </Link>
-            <Link
-              href={portalUrl({ view: "channels", channel: null })}
-              className={`${tabBase} ${view === "channels" ? tabActive : tabInactive}`}
-            >
-              <LinkPendingSpinner
-                size={24}
-                weight="bold"
-                fallback={<MonitorPlay size={24} weight="bold" />}
-              />
-              Channels
-            </Link>
-            <Link
-              href={portalUrl({ view: "liked", channel: null })}
-              className={`${tabBase} ${view === "liked" ? tabActive : tabInactive}`}
-            >
-              <LinkPendingSpinner
-                size={24}
-                weight="bold"
-                fallback={
-                  <Heart
-                    size={24}
-                    weight={view === "liked" ? "fill" : "bold"}
-                  />
-                }
-              />
-              Liked
-            </Link>
-            <Link
-              href={portalUrl({
-                view: "playlists",
-                channel: null,
-                list: null,
-              })}
-              className={`${tabBase} ${view === "playlists" ? tabActive : tabInactive}`}
-            >
-              <LinkPendingSpinner
-                size={24}
-                weight="bold"
-                fallback={
-                  <Playlist
-                    size={24}
-                    weight={view === "playlists" ? "fill" : "bold"}
-                  />
-                }
-              />
-              Playlists
-            </Link>
-          </div>
+          <KidsViewMenu
+            items={[
+              {
+                key: "videos",
+                label: "Videos",
+                href: portalUrl({ view: "videos", channel: null }),
+                active: view === "videos",
+              },
+              {
+                key: "channels",
+                label: "Channels",
+                href: portalUrl({ view: "channels", channel: null }),
+                active: view === "channels",
+              },
+              {
+                key: "liked",
+                label: "Liked",
+                href: portalUrl({ view: "liked", channel: null }),
+                active: view === "liked",
+              },
+              {
+                key: "playlists",
+                label: "Playlists",
+                href: portalUrl({
+                  view: "playlists",
+                  channel: null,
+                  list: null,
+                }),
+                active: view === "playlists",
+              },
+              {
+                key: "history",
+                label: "History",
+                href: portalUrl({
+                  view: "history",
+                  channel: null,
+                  list: null,
+                  date: null,
+                }),
+                active: view === "history",
+              },
+            ]}
+          />
           {showVideoGrid && (
             <KidsSortSelect
               value={`${feed.sort}:${feed.dir}`}

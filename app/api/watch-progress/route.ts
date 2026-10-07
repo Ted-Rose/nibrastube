@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { videos, watchProgress, whitelistedVideos } from "@/lib/db/schema";
+import { videos, watchHistory, watchProgress, whitelistedVideos } from "@/lib/db/schema";
 import { assertCanManageProfile } from "@/lib/profiles";
 
 const bodySchema = z.object({
@@ -14,6 +14,7 @@ const bodySchema = z.object({
   durationSeconds: z.number().int().min(0).nullable(),
   completed: z.boolean(),
   sentAt: z.number(), // client epoch ms — guards against out-of-order beacons
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // client-local date
 });
 
 export async function POST(request: NextRequest) {
@@ -75,6 +76,29 @@ export async function POST(request: NextRequest) {
       // Drop late/out-of-order beacons (e.g. periodic fetch landing after
       // a pagehide beacon): only apply if the payload is newer.
       setWhere: lt(watchProgress.watchedAt, sentAt),
+    });
+
+  // Per-day history row: re-watches land under every day they happened.
+  // `day` is the client-local date; old clients fall back to the sentAt
+  // UTC date. Client-controlled, but a kid can only write into their own
+  // history — harmless at this trust level.
+  const watchedOn = body.day ?? sentAt.toISOString().slice(0, 10);
+  await db
+    .insert(watchHistory)
+    .values({
+      profileId: body.profileId,
+      videoId: body.videoId,
+      watchedOn,
+      lastSeenAt: sentAt,
+    })
+    .onConflictDoUpdate({
+      target: [
+        watchHistory.profileId,
+        watchHistory.videoId,
+        watchHistory.watchedOn,
+      ],
+      set: { lastSeenAt: sql`excluded.last_seen_at` },
+      setWhere: lt(watchHistory.lastSeenAt, sentAt), // drop late beacons
     });
 
   return NextResponse.json({ ok: true });

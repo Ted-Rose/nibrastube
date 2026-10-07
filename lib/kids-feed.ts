@@ -6,12 +6,18 @@ import {
   playlists,
   videoReactions,
   videos,
+  watchHistory,
   watchProgress,
   whitelistedChannels,
   whitelistedVideos,
 } from "@/lib/db/schema";
 
-export type KidsView = "videos" | "channels" | "liked" | "playlists";
+export type KidsView =
+  | "videos"
+  | "channels"
+  | "liked"
+  | "playlists"
+  | "history";
 export type VideoReaction = "like" | "dislike";
 export type KidsSort = "age" | "status";
 export type KidsDir = "asc" | "desc";
@@ -21,6 +27,8 @@ export interface KidsFeedParams {
   channel: string | null;
   // Selected playlist id — only meaningful when view === "playlists".
   list: string | null;
+  // YYYY-MM-DD day filter — only meaningful when view === "history".
+  date: string | null;
   sort: KidsSort;
   dir: KidsDir;
   q: string;
@@ -29,6 +37,7 @@ export interface KidsFeedParams {
 const CHANNEL_ID_RE = /^[\w-]+$/;
 const PLAYLIST_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Validates raw searchParams; bad values fall back to defaults.
 export function parseKidsFeedParams(
@@ -38,7 +47,10 @@ export function parseKidsFeedParams(
     (Array.isArray(v) ? v[0] : v) ?? "";
   const rawView = first(raw.view);
   const view: KidsView =
-    rawView === "channels" || rawView === "liked" || rawView === "playlists"
+    rawView === "channels" ||
+    rawView === "liked" ||
+    rawView === "playlists" ||
+    rawView === "history"
       ? rawView
       : "videos";
   const rawChannel = first(raw.channel);
@@ -47,9 +59,16 @@ export function parseKidsFeedParams(
   const rawList = first(raw.list);
   const list =
     view === "playlists" && PLAYLIST_ID_RE.test(rawList) ? rawList : null;
+  const rawDate = first(raw.date);
+  // Malformed or future dates fall back to the all-days view.
+  const today = new Date().toLocaleDateString("en-CA");
+  const date =
+    view === "history" && DATE_RE.test(rawDate) && rawDate <= today
+      ? rawDate
+      : null;
   const sort: KidsSort = first(raw.sort) === "age" ? "age" : "status";
   const dir: KidsDir = first(raw.dir) === "desc" ? "desc" : "asc";
-  return { view, channel, list, sort, dir, q: first(raw.q) };
+  return { view, channel, list, date, sort, dir, q: first(raw.q) };
 }
 
 // Query string (with leading "?", or "") carrying every non-default param.
@@ -63,6 +82,7 @@ export function kidsFeedQuery(
   if (next.view === "channels" && next.channel)
     sp.set("channel", next.channel);
   if (next.view === "playlists" && next.list) sp.set("list", next.list);
+  if (next.view === "history" && next.date) sp.set("date", next.date);
   if (next.sort !== "status") sp.set("sort", next.sort);
   if (next.dir !== "asc") sp.set("dir", next.dir);
   if (next.q) sp.set("q", next.q);
@@ -198,6 +218,56 @@ export async function getLikedVideos(
       )
     )
     .orderBy(desc(videoReactions.reactedAt));
+}
+
+// Everything a profile watched, one row per (video, kid-local day), newest
+// day first then newest-first within the day. Same { video, progress,
+// reaction } row shape as getKidsVideos plus watchedOn/lastSeenAt, so the
+// watch page and card components reuse unchanged. Inner-joins
+// whitelisted_videos — an unpinned video hides and returns on re-pin.
+export async function getWatchHistory(
+  profileId: string,
+  { q, date }: { q?: string; date?: string } = {}
+) {
+  return db
+    .select({
+      video: feedVideoCols,
+      progress: watchProgress,
+      reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
+      watchedOn: watchHistory.watchedOn,
+      lastSeenAt: watchHistory.lastSeenAt,
+    })
+    .from(watchHistory)
+    .innerJoin(videos, eq(videos.id, watchHistory.videoId))
+    .innerJoin(
+      whitelistedVideos,
+      and(
+        eq(whitelistedVideos.profileId, watchHistory.profileId),
+        eq(whitelistedVideos.videoId, watchHistory.videoId)
+      )
+    )
+    .leftJoin(
+      watchProgress,
+      and(
+        eq(watchProgress.profileId, watchHistory.profileId),
+        eq(watchProgress.videoId, watchHistory.videoId)
+      )
+    )
+    .leftJoin(
+      videoReactions,
+      and(
+        eq(videoReactions.profileId, watchHistory.profileId),
+        eq(videoReactions.videoId, watchHistory.videoId)
+      )
+    )
+    .where(
+      and(
+        eq(watchHistory.profileId, profileId),
+        date ? eq(watchHistory.watchedOn, date) : undefined,
+        q ? ilike(videos.title, `%${q}%`) : undefined
+      )
+    )
+    .orderBy(desc(watchHistory.watchedOn), desc(watchHistory.lastSeenAt));
 }
 
 export interface KidsChannel {

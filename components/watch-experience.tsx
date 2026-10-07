@@ -247,6 +247,7 @@ export function WatchExperience({
         durationSeconds: Math.floor(duration),
         completed: position >= duration * 0.95,
         sentAt: Date.now(),
+        day: new Date().toLocaleDateString("en-CA"), // en-CA → YYYY-MM-DD
       });
       if (useBeacon && navigator.sendBeacon) {
         navigator.sendBeacon(

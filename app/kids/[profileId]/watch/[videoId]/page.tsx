@@ -10,6 +10,7 @@ import {
   getKidsVideos,
   getLikedVideos,
   getPlaylistVideos,
+  getWatchHistory,
   kidsFeedQuery,
   parseKidsFeedParams,
   watchStatus,
@@ -43,18 +44,25 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   // filter, search, sort — or the kid-ordered playlist queue.
   const feed = parseKidsFeedParams(await searchParams);
   const playlistId = feed.view === "playlists" ? feed.list : null;
-  // Playlist queues advance in playlist order, not unwatched-first.
-  let sequential = playlistId !== null;
+  const history = feed.view === "history";
+  // Playlist queues advance in playlist order, history in most-recent-first
+  // order — not unwatched-first.
+  let sequential = playlistId !== null || history;
   let rows = playlistId
     ? await getPlaylistVideos(profileId, playlistId, { q: feed.q })
-    : feed.view === "liked"
-      ? await getLikedVideos(profileId, { q: feed.q })
-      : await getKidsVideos(profileId, {
+    : history
+      ? await getWatchHistory(profileId, {
           q: feed.q,
-          channelId: feed.channel,
-          sort: feed.sort,
-          dir: feed.dir,
-        });
+          date: feed.date ?? undefined,
+        })
+      : feed.view === "liked"
+        ? await getLikedVideos(profileId, { q: feed.q })
+        : await getKidsVideos(profileId, {
+            q: feed.q,
+            channelId: feed.channel,
+            sort: feed.sort,
+            dir: feed.dir,
+          });
   let currentIndex = rows.findIndex((r) => r.video.id === videoId);
 
   if (currentIndex === -1) {
@@ -62,9 +70,14 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
     // sorted) instead of bouncing the kid out.
     rows = playlistId
       ? await getPlaylistVideos(profileId, playlistId)
-      : feed.view === "liked"
-        ? await getLikedVideos(profileId)
-        : await getKidsVideos(profileId, { sort: feed.sort, dir: feed.dir });
+      : history
+        ? await getWatchHistory(profileId)
+        : feed.view === "liked"
+          ? await getLikedVideos(profileId)
+          : await getKidsVideos(profileId, {
+              sort: feed.sort,
+              dir: feed.dir,
+            });
     currentIndex = rows.findIndex((r) => r.video.id === videoId);
   }
 

@@ -1,20 +1,16 @@
 import axios from "axios";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   channels,
   channelSyncExclusions,
   channelVideoExclusions,
   profiles,
-  videos,
   whitelistedChannels,
   whitelistedVideos,
 } from "@/lib/db/schema";
-import {
-  getUploadsPage,
-  getVideosBatch,
-  videoRowValues,
-} from "@/lib/youtube";
+import { getUploadsPage, getVideosBatch } from "@/lib/youtube";
+import { upsertVideoRows } from "@/lib/video-cache";
 
 const MAX_CHANNELS_PER_RUN = 50;
 const MAX_BACKFILL_PAGES_PER_RUN = 40; // ~2000 videos per run; resume via backfillPageToken
@@ -84,36 +80,7 @@ async function upsertVideosAndWhitelist(
   const details = await getVideosBatch(videoIds);
   if (details.length === 0) return 0;
 
-  await db
-    .insert(videos)
-    .values(details.map(videoRowValues))
-    .onConflictDoUpdate({
-      target: videos.id,
-      set: {
-        title: sql`excluded.title`,
-        thumbnail: sql`excluded.thumbnail`,
-        channelTitle: sql`excluded.channel_title`,
-        channelId: sql`excluded.channel_id`,
-        publishedAt: sql`excluded.published_at`,
-        durationSeconds: sql`excluded.duration_seconds`,
-        description: sql`excluded.description`,
-        tags: sql`excluded.tags`,
-        categoryId: sql`excluded.category_id`,
-        defaultLanguage: sql`excluded.default_language`,
-        defaultAudioLanguage: sql`excluded.default_audio_language`,
-        liveBroadcastContent: sql`excluded.live_broadcast_content`,
-        madeForKids: sql`excluded.made_for_kids`,
-        ageRestricted: sql`excluded.age_restricted`,
-        embeddable: sql`excluded.embeddable`,
-        privacyStatus: sql`excluded.privacy_status`,
-        hasCaptions: sql`excluded.has_captions`,
-        definition: sql`excluded.definition`,
-        viewCount: sql`excluded.view_count`,
-        likeCount: sql`excluded.like_count`,
-        fetchedAt: sql`excluded.fetched_at`,
-        raw: sql`excluded.raw`,
-      },
-    });
+  await upsertVideoRows(details);
 
   const excluded = await getExcludedVideoIds(
     profileId,

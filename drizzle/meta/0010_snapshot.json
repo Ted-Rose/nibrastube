@@ -1,9 +1,76 @@
 {
-  "id": "96153c02-08bd-4a09-8c52-5da896e6e880",
-  "prevId": "ea7f9231-2dfe-436c-9453-11389e5adef4",
+  "id": "658724a7-84d1-4af1-a1da-bbb94792375d",
+  "prevId": "96153c02-08bd-4a09-8c52-5da896e6e880",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.channel_sync_exclusions": {
+      "name": "channel_sync_exclusions",
+      "schema": "",
+      "columns": {
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel_id": {
+          "name": "channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "excluded_at": {
+          "name": "excluded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "channel_sync_exclusions_parent_id_users_id_fk": {
+          "name": "channel_sync_exclusions_parent_id_users_id_fk",
+          "tableFrom": "channel_sync_exclusions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "channel_sync_exclusions_channel_id_channels_id_fk": {
+          "name": "channel_sync_exclusions_channel_id_channels_id_fk",
+          "tableFrom": "channel_sync_exclusions",
+          "tableTo": "channels",
+          "columnsFrom": [
+            "channel_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "channel_sync_exclusions_parent_id_channel_id_pk": {
+          "name": "channel_sync_exclusions_parent_id_channel_id_pk",
+          "columns": [
+            "parent_id",
+            "channel_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.channel_video_exclusions": {
       "name": "channel_video_exclusions",
       "schema": "",

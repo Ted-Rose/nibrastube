@@ -82,13 +82,13 @@ export function VideoCardMenu({
         <Menu.Trigger
           aria-label="Video options"
           className={cn(
-            "absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full transition-all",
+            "absolute top-2 right-0.5 z-10 flex h-10 w-10 items-center justify-center rounded-full transition-all",
             variant === "overlay"
               ? "text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.7)] hover:scale-110"
               : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
           )}
         >
-          <DotsThreeVertical size={20} weight="bold" />
+          <DotsThreeVertical size={26} weight="bold" />
         </Menu.Trigger>
         <Menu.Portal>
           <Menu.Positioner sideOffset={8} align="end" className="z-50">

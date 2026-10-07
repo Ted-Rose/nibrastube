@@ -221,3 +221,8 @@ release APK on `v*` tags.
 - `.env` active `DATABASE_URL` is the `ai_agent` DB user, which has no
   SELECT on app tables. For read-only DB inspection use the commented
   `avnadmin` URL above it (Aiven prod; localhost URL is dev).
+- The Aiven DB has a small connection limit — when the dev server is
+  running it can exhaust slots, so `npm run db:migrate` (or psql) may
+  fail mid-run with "remaining connection slots are reserved" or a
+  bare exit 1 with no error text. Just retry; migrate is idempotent
+  and resumes cleanly.

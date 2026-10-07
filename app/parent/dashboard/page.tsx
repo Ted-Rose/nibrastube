@@ -5,7 +5,13 @@ import { getSession } from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
 import { and, count, desc, eq, isNotNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { searchChannels, searchYouTube } from "@/lib/youtube";
+import {
+  searchChannels,
+  searchYouTube,
+  type SearchPage,
+  type YouTubeChannel,
+  type YouTubeVideo,
+} from "@/lib/youtube";
 import { pinVideo } from "@/app/actions/pinning";
 import { approveChannel, unapproveChannel } from "@/app/actions/channels";
 import { Button } from "@/components/ui/button";
@@ -14,13 +20,18 @@ import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { DashboardSearch } from "@/components/dashboard-search";
 import { PinnedVideosPanel } from "@/components/pinned-videos-panel";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
+import { CaretLeft, CaretRight, Check, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
 import DailySyncPing from "@/components/daily-sync-ping";
 
 interface DashboardProps {
-  searchParams: Promise<{ q?: string; profileId?: string; type?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    profileId?: string;
+    type?: string;
+    pageToken?: string;
+  }>;
 }
 
 function SidebarCardFallback({
@@ -176,6 +187,55 @@ async function ApprovedChannelsCard({
   );
 }
 
+// YouTube's search API paginates via opaque page tokens rather than page
+// numbers, so prev/next are Links carrying ?pageToken= — the same URL-driven
+// flow as the search form. New searches (and type/profile switches) simply
+// omit the param, landing back on page 1.
+function SearchPagination({
+  query,
+  searchType,
+  profileId,
+  prevPageToken,
+  nextPageToken,
+}: {
+  query: string;
+  searchType: "videos" | "channels";
+  profileId: string;
+  prevPageToken?: string;
+  nextPageToken?: string;
+}) {
+  if (!prevPageToken && !nextPageToken) return null;
+  const pageHref = (token: string) =>
+    `/parent/dashboard?profileId=${profileId}&q=${encodeURIComponent(query)}&type=${searchType}&pageToken=${encodeURIComponent(token)}`;
+
+  return (
+    <div className="flex items-center justify-center gap-4 mt-8">
+      {prevPageToken && (
+        <Link href={pageHref(prevPageToken)}>
+          <Button variant="outline" size="touch">
+            <LinkPendingSpinner
+              fallback={<CaretLeft className="mr-2" />}
+              className="mr-2"
+            />
+            Previous
+          </Button>
+        </Link>
+      )}
+      {nextPageToken && (
+        <Link href={pageHref(nextPageToken)}>
+          <Button variant="outline" size="touch">
+            Next
+            <LinkPendingSpinner
+              fallback={<CaretRight className="ml-2" />}
+              className="ml-2"
+            />
+          </Button>
+        </Link>
+      )}
+    </div>
+  );
+}
+
 // YouTube search + the pinned/approved lookups the result buttons need all
 // run here, inside Suspense — the page shell paints instantly and only this
 // region waits on the YouTube API.
@@ -184,16 +244,22 @@ async function SearchResults({
   searchType,
   profileId,
   profileName,
+  pageToken,
 }: {
   query: string;
   searchType: "videos" | "channels";
   profileId: string;
   profileName: string;
+  pageToken?: string;
 }) {
-  const [videoResults, channelResults, pinnedRelations, approvedRelations] =
+  const [videoPage, channelPage, pinnedRelations, approvedRelations] =
     await Promise.all([
-      searchType === "videos" ? searchYouTube(query) : Promise.resolve([]),
-      searchType === "channels" ? searchChannels(query) : Promise.resolve([]),
+      searchType === "videos"
+        ? searchYouTube(query, pageToken)
+        : Promise.resolve<SearchPage<YouTubeVideo>>({ items: [] }),
+      searchType === "channels"
+        ? searchChannels(query, pageToken)
+        : Promise.resolve<SearchPage<YouTubeChannel>>({ items: [] }),
       db
         .select({ videoId: whitelistedVideos.videoId })
         .from(whitelistedVideos)
@@ -203,6 +269,11 @@ async function SearchResults({
         .from(whitelistedChannels)
         .where(eq(whitelistedChannels.profileId, profileId)),
     ]);
+  const videoResults = videoPage.items;
+  const channelResults = channelPage.items;
+  // Only one of the two searches ran — merge its tokens.
+  const prevPageToken = videoPage.prevPageToken ?? channelPage.prevPageToken;
+  const nextPageToken = videoPage.nextPageToken ?? channelPage.nextPageToken;
   const pinnedVideoIds = new Set(pinnedRelations.map((r) => r.videoId));
   const approvedChannelIds = new Set(
     approvedRelations.map((r) => r.channelId)
@@ -210,26 +281,74 @@ async function SearchResults({
 
   if (searchType === "channels") {
     return (
+      <>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {channelResults.map((channel) => {
+            const isApproved = approvedChannelIds.has(channel.id);
+            return (
+              <Card key={channel.id} className="overflow-hidden group hover:ring-2 hover:ring-primary/40 transition-all flex flex-col">
+                <CardHeader className="p-4 flex-1">
+                  <div className="flex items-center gap-4">
+                    <img src={channel.thumbnail} className="w-16 h-16 object-cover rounded-full shadow-sm" alt={channel.title} />
+                    <CardTitle className="text-base line-clamp-2 leading-snug">{channel.title}</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardFooter className="p-4 pt-0">
+                  {isApproved ? (
+                    <Button disabled className="w-full bg-green-100 text-green-700 hover:bg-green-100 border-green-200">
+                      <Check size={18} className="mr-2" /> Approved
+                    </Button>
+                  ) : (
+                    <form action={approveChannel.bind(null, profileId, channel.id)} className="w-full">
+                      <SubmitButton variant="outline" size="touch" pendingLabel="Approving…" className="w-full hover:bg-primary hover:text-white transition-colors">
+                        Approve Channel for {profileName}
+                      </SubmitButton>
+                    </form>
+                  )}
+                </CardFooter>
+              </Card>
+            );
+          })}
+        </div>
+        <SearchPagination
+          query={query}
+          searchType={searchType}
+          profileId={profileId}
+          prevPageToken={prevPageToken}
+          nextPageToken={nextPageToken}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {channelResults.map((channel) => {
-          const isApproved = approvedChannelIds.has(channel.id);
+        {videoResults.map((video) => {
+          const isPinned = pinnedVideoIds.has(video.id);
           return (
-            <Card key={channel.id} className="overflow-hidden group hover:ring-2 hover:ring-primary/40 transition-all flex flex-col">
-              <CardHeader className="p-4 flex-1">
-                <div className="flex items-center gap-4">
-                  <img src={channel.thumbnail} className="w-16 h-16 object-cover rounded-full shadow-sm" alt={channel.title} />
-                  <CardTitle className="text-base line-clamp-2 leading-snug">{channel.title}</CardTitle>
+            <Card key={video.id} className="overflow-hidden group hover:ring-2 hover:ring-primary/40 transition-all flex flex-col">
+              <div className="relative aspect-video">
+                <img src={video.thumbnail} className="w-full h-full object-cover" alt={video.title} />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                   <a href={`https://youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer" className="text-white bg-black/60 p-2 rounded-full hover:bg-black/80 transition-colors">
+                      <Video size={32} />
+                   </a>
                 </div>
+              </div>
+              <CardHeader className="p-4 flex-1">
+                <CardTitle className="text-sm line-clamp-2 leading-snug">{video.title}</CardTitle>
+                <CardDescription className="text-xs">{video.channelTitle}</CardDescription>
               </CardHeader>
               <CardFooter className="p-4 pt-0">
-                {isApproved ? (
+                {isPinned ? (
                   <Button disabled className="w-full bg-green-100 text-green-700 hover:bg-green-100 border-green-200">
-                    <Check size={18} className="mr-2" /> Approved
+                    <PushPin size={18} className="mr-2" /> Approved
                   </Button>
                 ) : (
-                  <form action={approveChannel.bind(null, profileId, channel.id)} className="w-full">
-                    <SubmitButton variant="outline" size="touch" pendingLabel="Approving…" className="w-full hover:bg-primary hover:text-white transition-colors">
-                      Approve Channel for {profileName}
+                  <form action={pinVideo.bind(null, profileId, video.id)} className="w-full">
+                    <SubmitButton variant="outline" size="touch" pendingLabel="Pinning…" className="w-full hover:bg-primary hover:text-white transition-colors">
+                      Pin to {profileName}
                     </SubmitButton>
                   </form>
                 )}
@@ -238,44 +357,14 @@ async function SearchResults({
           );
         })}
       </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-      {videoResults.map((video) => {
-        const isPinned = pinnedVideoIds.has(video.id);
-        return (
-          <Card key={video.id} className="overflow-hidden group hover:ring-2 hover:ring-primary/40 transition-all flex flex-col">
-            <div className="relative aspect-video">
-              <img src={video.thumbnail} className="w-full h-full object-cover" alt={video.title} />
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                 <a href={`https://youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer" className="text-white bg-black/60 p-2 rounded-full hover:bg-black/80 transition-colors">
-                    <Video size={32} />
-                 </a>
-              </div>
-            </div>
-            <CardHeader className="p-4 flex-1">
-              <CardTitle className="text-sm line-clamp-2 leading-snug">{video.title}</CardTitle>
-              <CardDescription className="text-xs">{video.channelTitle}</CardDescription>
-            </CardHeader>
-            <CardFooter className="p-4 pt-0">
-              {isPinned ? (
-                <Button disabled className="w-full bg-green-100 text-green-700 hover:bg-green-100 border-green-200">
-                  <PushPin size={18} className="mr-2" /> Approved
-                </Button>
-              ) : (
-                <form action={pinVideo.bind(null, profileId, video.id)} className="w-full">
-                  <SubmitButton variant="outline" size="touch" pendingLabel="Pinning…" className="w-full hover:bg-primary hover:text-white transition-colors">
-                    Pin to {profileName}
-                  </SubmitButton>
-                </form>
-              )}
-            </CardFooter>
-          </Card>
-        );
-      })}
-    </div>
+      <SearchPagination
+        query={query}
+        searchType={searchType}
+        profileId={profileId}
+        prevPageToken={prevPageToken}
+        nextPageToken={nextPageToken}
+      />
+    </>
   );
 }
 
@@ -283,7 +372,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const { q, profileId, type } = await searchParams;
+  const { q, profileId, type, pageToken } = await searchParams;
   const query = q || "";
   const searchType = type === "channels" ? "channels" : "videos";
   const selectedProfileId = profileId;
@@ -395,7 +484,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
 
           {query ? (
             <Suspense
-              key={`${searchType}:${query}`}
+              key={`${searchType}:${query}:${pageToken ?? ""}`}
               fallback={<SearchResultsFallback />}
             >
               <SearchResults
@@ -403,6 +492,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                 searchType={searchType}
                 profileId={activeProfile.id}
                 profileName={activeProfile.name}
+                pageToken={pageToken}
               />
             </Suspense>
           ) : (

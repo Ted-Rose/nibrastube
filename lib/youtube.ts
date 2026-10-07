@@ -34,6 +34,12 @@ export interface UploadsPage {
   nextPageToken?: string;
 }
 
+export interface SearchPage<T> {
+  items: T[];
+  nextPageToken?: string;
+  prevPageToken?: string;
+}
+
 // Everything we persist into the `videos` table from one videos.list item.
 // Fields are null when the API didn't return them.
 export interface FullVideoDetails extends YouTubeVideo {
@@ -223,29 +229,37 @@ export function channelRowValues(c: ChannelDetails) {
   };
 }
 
-export async function searchYouTube(query: string): Promise<YouTubeVideo[]> {
+export async function searchYouTube(
+  query: string,
+  pageToken?: string
+): Promise<SearchPage<YouTubeVideo>> {
   if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
 
   const response = await axios.get(`${BASE_URL}/search`, {
     params: {
       part: "snippet",
-      maxResults: 12,
+      maxResults: 20,
       q: query,
       type: "video",
+      pageToken,
       key: API_KEY,
     },
   });
 
-  return response.data.items.map((item: YTSearchItem) => ({
-    id: item.id.videoId,
-    title: item.snippet.title,
-    thumbnail: pickThumbnail(item.snippet.thumbnails),
-    channelTitle: item.snippet.channelTitle,
-    publishedAt: item.snippet.publishedAt
-      ? new Date(item.snippet.publishedAt)
-      : null,
-    durationSeconds: null, // search results don't include contentDetails
-  }));
+  return {
+    items: response.data.items.map((item: YTSearchItem) => ({
+      id: item.id.videoId,
+      title: item.snippet.title,
+      thumbnail: pickThumbnail(item.snippet.thumbnails),
+      channelTitle: item.snippet.channelTitle,
+      publishedAt: item.snippet.publishedAt
+        ? new Date(item.snippet.publishedAt)
+        : null,
+      durationSeconds: null, // search results don't include contentDetails
+    })),
+    nextPageToken: response.data.nextPageToken,
+    prevPageToken: response.data.prevPageToken,
+  };
 }
 
 export async function getVideoDetails(
@@ -265,24 +279,32 @@ export async function getVideoDetails(
   return mapVideoItem(item);
 }
 
-export async function searchChannels(query: string): Promise<YouTubeChannel[]> {
+export async function searchChannels(
+  query: string,
+  pageToken?: string
+): Promise<SearchPage<YouTubeChannel>> {
   if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
 
   const response = await axios.get(`${BASE_URL}/search`, {
     params: {
       part: "snippet",
-      maxResults: 12,
+      maxResults: 20,
       q: query,
       type: "channel",
+      pageToken,
       key: API_KEY,
     },
   });
 
-  return response.data.items.map((item: YTSearchItem) => ({
-    id: item.id.channelId,
-    title: item.snippet.title,
-    thumbnail: pickThumbnail(item.snippet.thumbnails),
-  }));
+  return {
+    items: response.data.items.map((item: YTSearchItem) => ({
+      id: item.id.channelId,
+      title: item.snippet.title,
+      thumbnail: pickThumbnail(item.snippet.thumbnails),
+    })),
+    nextPageToken: response.data.nextPageToken,
+    prevPageToken: response.data.prevPageToken,
+  };
 }
 
 export async function getChannelDetails(channelId: string): Promise<ChannelDetails | null> {

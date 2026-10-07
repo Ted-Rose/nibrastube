@@ -47,20 +47,35 @@ export function ParentalGate({ onPass, title, description }: ParentalGateProps) 
           <div className="text-center space-y-4">
             <div className="space-y-2">
               <Label htmlFor="pin" className="sr-only">Parent PIN</Label>
-              <Input
-                id="pin"
-                name="pin"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]{4}"
-                maxLength={4}
-                placeholder="****"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                className={`text-center text-3xl h-16 tracking-[1em] font-mono ${error ? "border-destructive ring-destructive" : ""}`}
-                autoFocus
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="pin"
+                  name="pin"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{4}"
+                  maxLength={4}
+                  autoComplete="off"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                  className={`h-16 text-transparent caret-transparent ${error ? "border-destructive ring-destructive" : ""}`}
+                  autoFocus
+                  required
+                />
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 flex items-center justify-center gap-6 text-3xl"
+                >
+                  {[0, 1, 2, 3].map((i) => (
+                    <span
+                      key={i}
+                      className={i < pin.length ? "" : "text-muted-foreground/30"}
+                    >
+                      ★
+                    </span>
+                  ))}
+                </div>
+              </div>
               {error && <p className="text-destructive text-sm font-bold">{error}</p>}
             </div>
           </div>

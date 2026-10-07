@@ -3,10 +3,11 @@ import { db } from "@/lib/db";
 import { channels, channelSyncExclusions, profiles, videos, whitelistedChannels, whitelistedVideos } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
-import { and, count, desc, eq, isNotNull } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { searchChannels, searchYouTube } from "@/lib/youtube";
 import { pinVideo } from "@/app/actions/pinning";
+import { refreshStaleVideos } from "@/app/actions/refresh";
 import { approveChannel, setChannelSyncExcluded, unapproveChannel } from "@/app/actions/channels";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
@@ -20,7 +21,13 @@ import Link from "next/link";
 import DailySyncPing from "@/components/daily-sync-ping";
 
 interface DashboardProps {
-  searchParams: Promise<{ q?: string; profileId?: string; type?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    profileId?: string;
+    type?: string;
+    refreshed?: string;
+    removed?: string;
+  }>;
 }
 
 function SidebarCardFallback({
@@ -58,20 +65,41 @@ function SearchResultsFallback() {
 async function PinnedVideosCard({
   profileId,
   profileName,
+  returnTo,
+  refreshed,
+  removed,
 }: {
   profileId: string;
   profileName: string;
+  returnTo: string;
+  refreshed: number | null;
+  removed: number;
 }) {
-  const pinnedVideos = await db
-    .select({
-      id: videos.id,
-      title: videos.title,
-      thumbnail: videos.thumbnail,
-    })
-    .from(whitelistedVideos)
-    .innerJoin(videos, eq(whitelistedVideos.videoId, videos.id))
-    .where(eq(whitelistedVideos.profileId, profileId))
-    .orderBy(desc(whitelistedVideos.pinnedAt));
+  const [pinnedVideos, [stale]] = await Promise.all([
+    db
+      .select({
+        id: videos.id,
+        title: videos.title,
+        thumbnail: videos.thumbnail,
+      })
+      .from(whitelistedVideos)
+      .innerJoin(videos, eq(whitelistedVideos.videoId, videos.id))
+      .where(eq(whitelistedVideos.profileId, profileId))
+      .orderBy(desc(whitelistedVideos.pinnedAt)),
+    // Whitelisted videos cached before the rich-metadata columns existed
+    // — refreshable via the button below.
+    db
+      .select({ n: count() })
+      .from(whitelistedVideos)
+      .innerJoin(videos, eq(whitelistedVideos.videoId, videos.id))
+      .where(
+        and(
+          eq(whitelistedVideos.profileId, profileId),
+          isNull(videos.fetchedAt)
+        )
+      ),
+  ]);
+  const staleCount = stale?.n ?? 0;
 
   return (
     <Card>
@@ -84,6 +112,14 @@ async function PinnedVideosCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="px-0">
+        {refreshed !== null && (
+          <p className="px-6 pb-4 text-xs text-muted-foreground">
+            Refreshed details for {refreshed} video
+            {refreshed === 1 ? "" : "s"}.
+            {removed > 0 &&
+              ` Removed ${removed} no longer playable on YouTube.`}
+          </p>
+        )}
         <div className="max-h-[400px] overflow-y-auto px-6">
           {pinnedVideos.length === 0 && (
             <p className="text-sm text-muted-foreground italic">
@@ -93,6 +129,25 @@ async function PinnedVideosCard({
           <PinnedVideosPanel videos={pinnedVideos} profileId={profileId} />
         </div>
       </CardContent>
+      {staleCount > 0 && (
+        <CardFooter className="px-6 pt-0">
+          <form
+            action={refreshStaleVideos.bind(null, profileId)}
+            className="w-full"
+          >
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <SubmitButton
+              variant="outline"
+              size="touch"
+              pendingLabel="Refreshing…"
+              className="w-full"
+            >
+              Refresh {staleCount} video{staleCount === 1 ? "" : "s"} missing
+              details
+            </SubmitButton>
+          </form>
+        </CardFooter>
+      )}
     </Card>
   );
 }
@@ -309,7 +364,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const { q, profileId, type } = await searchParams;
+  const { q, profileId, type, refreshed, removed } = await searchParams;
   const query = q || "";
   const searchType = type === "channels" ? "channels" : "videos";
   const selectedProfileId = profileId;
@@ -377,6 +432,9 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
             <PinnedVideosCard
               profileId={activeProfile.id}
               profileName={activeProfile.name}
+              returnTo={dashboardHref(searchType)}
+              refreshed={refreshed == null ? null : Number(refreshed) | 0}
+              removed={Number(removed) | 0}
             />
           </Suspense>
 

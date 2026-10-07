@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "videos:refresh": "tsx --env-file=.env scripts/refresh-videos.ts",
     "cap:sync": "cap sync android"
   },
   "dependencies": {
@@ -56,6 +57,7 @@
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^4.2.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   },
   "overrides": {

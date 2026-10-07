@@ -23,6 +23,11 @@ npm run lint        # eslint (eslint-config-next)
 npm run format      # prettier --write (uses prettier-plugin-tailwindcss)
 npm run db:generate # drizzle-kit generate → new migration in drizzle/
 npm run db:migrate  # drizzle-kit migrate
+npm run videos:refresh -- --dry-run   # re-fetch videos rows missing
+                                    # YouTube fields (filters: --stale
+                                    # --missing cols --ids --channel
+                                    # --whitelisted --all --where;
+                                    # --prune deletes YT-dead videos)
 ```
 
 No test suite exists — verify with `typecheck` + `lint` + manual run.

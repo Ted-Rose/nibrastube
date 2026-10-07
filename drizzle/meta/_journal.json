@@ -57,6 +57,13 @@
       "when": 1790941130909,
       "tag": "0007_cloudy_starhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791214002984,
+      "tag": "0008_brave_cassandra_nova",
+      "breakpoints": true
     }
   ]
 }

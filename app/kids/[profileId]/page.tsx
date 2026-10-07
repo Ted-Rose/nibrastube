@@ -12,6 +12,7 @@ import {
   Heart,
   MonitorPlay,
   Play,
+  Playlist,
   House,
   SpinnerGap,
   UserSwitch,
@@ -25,6 +26,10 @@ import { KidsSearch } from "@/components/kids-search";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { KidsSortSelect } from "@/components/kids-sort-select";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
+import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
+import { PlaylistSortableList } from "@/components/playlist-sortable-list";
+import { PlaylistActionsMenu } from "@/components/playlist-actions-menu";
+import { NewPlaylistButton } from "@/components/new-playlist-button";
 import { getSession } from "@/lib/auth";
 import { canViewProfile } from "@/lib/profiles";
 import { cookies } from "next/headers";
@@ -32,6 +37,8 @@ import {
   getKidsChannels,
   getKidsVideos,
   getLikedVideos,
+  getPlaylists,
+  getPlaylistVideos,
   kidsFeedQuery,
   parseKidsFeedParams,
   type KidsFeedParams,
@@ -57,8 +64,9 @@ async function FeedContent({
   profileId: string;
   feed: KidsFeedParams;
 }) {
-  const { view, channel, q: query } = feed;
+  const { view, channel, q: query, list } = feed;
   const drilledIn = view === "channels" && channel !== null;
+  const inPlaylist = view === "playlists" && list !== null;
   const showVideoGrid = view === "videos" || drilledIn;
 
   // Single helper so tabs/sorts/drill-down links never drop each other's params
@@ -68,18 +76,39 @@ async function FeedContent({
   const rows =
     view === "liked"
       ? await getLikedVideos(profileId, { q: query })
-      : showVideoGrid
-        ? await getKidsVideos(profileId, {
-            q: query,
-            channelId: channel,
-            sort: feed.sort,
-            dir: feed.dir,
-          })
-        : [];
+      : inPlaylist
+        ? await getPlaylistVideos(profileId, list, { q: query })
+        : showVideoGrid
+          ? await getKidsVideos(profileId, {
+              q: query,
+              channelId: channel,
+              sort: feed.sort,
+              dir: feed.dir,
+            })
+          : [];
   const channelRows =
     view === "channels" && !drilledIn
       ? await getKidsChannels(profileId, { q: query })
       : [];
+
+  // Playlists snapshot — feeds both playlists views and the shared
+  // "Save to playlist" dialog behind every video card's ⋮ menu.
+  const playlistRows =
+    view !== "channels" || drilledIn ? await getPlaylists(profileId) : [];
+
+  const playlist = inPlaylist
+    ? (playlistRows.find((p) => p.id === list) ?? null)
+    : null;
+  if (inPlaylist && !playlist) {
+    // Deleted or another profile's playlist id — drop back to the list.
+    redirect(portalUrl({ list: null }));
+  }
+
+  // Search on the playlists tab filters playlist cards by name.
+  const needle = query.toLowerCase();
+  const visiblePlaylists = playlistRows.filter(
+    (p) => !needle || p.name.toLowerCase().includes(needle)
+  );
 
   let channelTitle: string | null = null;
   let channelApproved = false;
@@ -117,21 +146,118 @@ async function FeedContent({
         </div>
       )}
 
+      {inPlaylist && playlist && (
+        <div className="mb-6">
+          <Link
+            href={portalUrl({ list: null })}
+            className="inline-flex items-center gap-2 text-lg font-bold text-slate-500 hover:text-slate-800 transition-colors"
+          >
+            <ArrowLeft size={20} weight="bold" />
+            All playlists
+            <LinkPendingSpinner size={20} weight="bold" />
+          </Link>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-8">
          <h2 className="text-3xl font-black text-slate-900 tracking-tight">
            {drilledIn
              ? channelTitle
-             : query
-               ? `Results for "${query}"`
-               : view === "channels"
-                 ? "Channels"
-                 : view === "liked"
-                   ? "Liked Videos"
-                   : "Approved Videos"}
+             : inPlaylist
+               ? (playlist?.name ?? "Playlist")
+               : query
+                 ? `Results for "${query}"`
+                 : view === "channels"
+                   ? "Channels"
+                   : view === "liked"
+                     ? "Liked Videos"
+                     : view === "playlists"
+                       ? "Playlists"
+                       : "Approved Videos"}
          </h2>
+         {inPlaylist && playlist && (
+           <div className="flex items-center gap-3">
+             {rows.length > 0 && (
+               <Link
+                 href={`/kids/${profileId}/watch/${rows[0].video.id}${kidsFeedQuery(feed)}`}
+                 className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
+               >
+                 <Play size={20} weight="fill" />
+                 Play all
+                 <LinkPendingSpinner size={20} weight="bold" />
+               </Link>
+             )}
+             <PlaylistActionsMenu
+               profileId={profileId}
+               playlistId={playlist.id}
+               name={playlist.name}
+             />
+           </div>
+         )}
       </div>
 
-      {view === "channels" && !drilledIn ? (
+      {view === "playlists" && !list ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+          {visiblePlaylists.map((p) => (
+            <Link key={p.id} href={portalUrl({ list: p.id })} className="group">
+              <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
+                <LinkPendingSpinner
+                  size={24}
+                  weight="bold"
+                  className="absolute right-5 top-5 z-10 text-slate-400"
+                />
+                {p.coverThumbnail ? (
+                  <div className="aspect-video">
+                    <img
+                      src={p.coverThumbnail}
+                      className="w-full h-full object-cover"
+                      alt={p.name}
+                    />
+                  </div>
+                ) : (
+                  <div className="aspect-video bg-primary/10 flex items-center justify-center text-primary">
+                    <Playlist size={56} weight="fill" />
+                  </div>
+                )}
+                <CardContent className="p-6">
+                  <h3 className="text-xl font-bold line-clamp-2 leading-tight text-slate-900 group-hover:underline">
+                    {p.name}
+                  </h3>
+                  <p className="text-slate-500 mt-2 font-medium">
+                    {p.videoCount} {p.videoCount === 1 ? "video" : "videos"}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+          <NewPlaylistButton profileId={profileId} />
+        </div>
+      ) : inPlaylist && playlist ? (
+        rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
+             <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
+                 <Playlist size={48} weight="fill" />
+             </div>
+             <p className="text-2xl font-bold text-slate-400">
+               {query
+                 ? "No videos found!"
+                 : "No videos yet! Tap ⋮ on a video to add it."}
+             </p>
+          </div>
+        ) : (
+          <SaveToPlaylistProvider
+            profileId={profileId}
+            playlists={playlistRows}
+          >
+            <PlaylistSortableList
+              profileId={profileId}
+              playlistId={playlist.id}
+              rows={rows}
+              feedQuery={kidsFeedQuery(feed)}
+            />
+          </SaveToPlaylistProvider>
+        )
+      ) : view === "channels" && !drilledIn ? (
         channelRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
              <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
@@ -199,11 +325,16 @@ async function FeedContent({
            </p>
         </div>
       ) : (
-        <KidsVideoGrid
-          rows={rows}
+        <SaveToPlaylistProvider
           profileId={profileId}
-          feedQuery={kidsFeedQuery(feed)}
-        />
+          playlists={playlistRows}
+        >
+          <KidsVideoGrid
+            rows={rows}
+            profileId={profileId}
+            feedQuery={kidsFeedQuery(feed)}
+          />
+        </SaveToPlaylistProvider>
       )}
     </>
   );
@@ -281,13 +412,18 @@ export default async function KidsPortalPage({
             profileId={profileId}
             view={view}
             channel={channel}
+            list={feed.list}
             sort={feed.sort}
             dir={feed.dir}
             query={query}
             placeholder={
               view === "channels" && !drilledIn
                 ? `Search ${profile.name}'s channels...`
-                : `Search ${profile.name}'s videos...`
+                : view === "playlists"
+                  ? feed.list
+                    ? "Search this playlist..."
+                    : `Search ${profile.name}'s playlists...`
+                  : `Search ${profile.name}'s videos...`
             }
           />
 
@@ -313,7 +449,7 @@ export default async function KidsPortalPage({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 sm:mt-10">
         {/* View tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-8">
-          <div className="grid grid-cols-3 gap-1 rounded-full bg-white p-1 shadow-sm sm:inline-flex">
+          <div className="grid grid-cols-4 gap-1 rounded-full bg-white p-1 shadow-sm sm:inline-flex">
             <Link
               href={portalUrl({ view: "videos", channel: null })}
               className={`${tabBase} ${view === "videos" ? tabActive : tabInactive}`}
@@ -351,6 +487,26 @@ export default async function KidsPortalPage({
                 }
               />
               Liked
+            </Link>
+            <Link
+              href={portalUrl({
+                view: "playlists",
+                channel: null,
+                list: null,
+              })}
+              className={`${tabBase} ${view === "playlists" ? tabActive : tabInactive}`}
+            >
+              <LinkPendingSpinner
+                size={24}
+                weight="bold"
+                fallback={
+                  <Playlist
+                    size={24}
+                    weight={view === "playlists" ? "fill" : "bold"}
+                  />
+                }
+              />
+              Playlists
             </Link>
           </div>
           {showVideoGrid && (

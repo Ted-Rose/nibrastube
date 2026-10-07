@@ -1,4 +1,6 @@
 import { and, eq, inArray, or } from "drizzle-orm";
+import { cookies } from "next/headers";
+import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { profiles, sharedAccess } from "@/lib/db/schema";
 
@@ -31,6 +33,17 @@ export async function assertCanManageProfile(
   });
   if (!shared) throw new Error("Not authorized for this profile");
   return profile;
+}
+
+/**
+ * Kid-scope writes (playlists, reactions, watch progress): allowed when the
+ * device is kid-locked to this profile (activeProfileId cookie match) OR a
+ * managing parent session exists. Throws like assertCanManageProfile.
+ */
+export async function assertCanEditKidData(profileId: string) {
+  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
+  if (activeProfileId === profileId) return;
+  await assertCanManageProfile(await getSession(), profileId);
 }
 
 /**

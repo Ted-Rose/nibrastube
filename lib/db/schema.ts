@@ -164,6 +164,37 @@ export const channelVideoExclusions = pgTable(
   })
 );
 
+// Kid-created playlists, scoped to a profile.
+export const playlists = pgTable("playlists", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .references(() => profiles.id, { onDelete: "cascade" })
+    .notNull(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Ordered playlist membership. Rows survive unpinning (no FK to
+// whitelisted_videos); reads inner-join the whitelist so an unpinned
+// item hides and silently returns on re-pin — same rule as
+// video_reactions/watch_progress.
+export const playlistItems = pgTable(
+  "playlist_items",
+  {
+    playlistId: uuid("playlist_id")
+      .references(() => playlists.id, { onDelete: "cascade" })
+      .notNull(),
+    videoId: text("video_id")
+      .references(() => videos.id, { onDelete: "cascade" })
+      .notNull(),
+    position: integer("position").notNull(), // compact 0..n-1
+    addedAt: timestamp("added_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.playlistId, table.videoId] }),
+  })
+);
+
 // Daily sync dedup lock: one row per UTC day means the sync already ran
 export const dailySyncs = pgTable("daily_syncs", {
   syncDate: text("sync_date").primaryKey(), // UTC date, YYYY-MM-DD

@@ -52,6 +52,7 @@ export function KidsVideoGrid({
             key={video.id}
             href={`/kids/${profileId}/watch/${video.id}${feedQuery}`}
             video={video}
+            profileId={profileId}
             progress={progress}
             reaction={reaction}
           />

@@ -1,20 +1,20 @@
 import { Suspense } from "react";
 import { db } from "@/lib/db";
-import { channels, videos, whitelistedChannels, whitelistedVideos } from "@/lib/db/schema";
+import { channels, channelSyncExclusions, profiles, videos, whitelistedChannels, whitelistedVideos } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
 import { and, count, desc, eq, isNotNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { searchChannels, searchYouTube } from "@/lib/youtube";
 import { pinVideo } from "@/app/actions/pinning";
-import { approveChannel, unapproveChannel } from "@/app/actions/channels";
+import { approveChannel, setChannelSyncExcluded, unapproveChannel } from "@/app/actions/channels";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { DashboardSearch } from "@/components/dashboard-search";
 import { PinnedVideosPanel } from "@/components/pinned-videos-panel";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
+import { Check, Pause, Play, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
 import DailySyncPing from "@/components/daily-sync-ping";
@@ -104,25 +104,39 @@ async function ApprovedChannelsCard({
   profileId: string;
   profileName: string;
 }) {
-  const [approvedChannels, channelPinCounts] = await Promise.all([
-    db
-      .select({ whitelist: whitelistedChannels, channel: channels })
-      .from(whitelistedChannels)
-      .innerJoin(channels, eq(whitelistedChannels.channelId, channels.id))
-      .where(eq(whitelistedChannels.profileId, profileId)),
-    db
-      .select({ channelId: whitelistedVideos.viaChannelId, total: count() })
-      .from(whitelistedVideos)
-      .where(
-        and(
-          eq(whitelistedVideos.profileId, profileId),
-          isNotNull(whitelistedVideos.viaChannelId)
+  const [approvedChannels, channelPinCounts, syncExclusions] =
+    await Promise.all([
+      db
+        .select({ whitelist: whitelistedChannels, channel: channels })
+        .from(whitelistedChannels)
+        .innerJoin(channels, eq(whitelistedChannels.channelId, channels.id))
+        .where(eq(whitelistedChannels.profileId, profileId)),
+      db
+        .select({ channelId: whitelistedVideos.viaChannelId, total: count() })
+        .from(whitelistedVideos)
+        .where(
+          and(
+            eq(whitelistedVideos.profileId, profileId),
+            isNotNull(whitelistedVideos.viaChannelId)
+          )
         )
-      )
-      .groupBy(whitelistedVideos.viaChannelId),
-  ]);
+        .groupBy(whitelistedVideos.viaChannelId),
+      // Exclusions are keyed by the profile's owner, not the viewing
+      // parent, so shared-access profiles show the owner's pause state.
+      db
+        .select({ channelId: channelSyncExclusions.channelId })
+        .from(channelSyncExclusions)
+        .innerJoin(
+          profiles,
+          eq(channelSyncExclusions.parentId, profiles.parentId)
+        )
+        .where(eq(profiles.id, profileId)),
+    ]);
   const pinCountByChannel = new Map(
     channelPinCounts.map((r) => [r.channelId, r.total])
+  );
+  const pausedChannelIds = new Set(
+    syncExclusions.map((r) => r.channelId)
   );
 
   return (
@@ -142,7 +156,9 @@ async function ApprovedChannelsCard({
               No channels approved yet. Search for channels above.
             </p>
           )}
-          {approvedChannels.map(({ whitelist, channel }) => (
+          {approvedChannels.map(({ whitelist, channel }) => {
+            const paused = pausedChannelIds.has(channel.id);
+            return (
             <div key={channel.id} className="flex gap-3 group items-center">
               {channel.thumbnail ? (
                 <img src={channel.thumbnail} className="w-10 h-10 object-cover rounded-full shadow-sm" alt="" />
@@ -157,19 +173,29 @@ async function ApprovedChannelsCard({
                   {pinCountByChannel.get(channel.id) ?? 0} videos
                   {whitelist.lastSyncAt && ` · synced ${whitelist.lastSyncAt.toLocaleDateString()}`}
                 </p>
-                {!whitelist.backfillComplete && (
-                  <p className="text-[11px] text-primary flex items-center gap-1">
-                    <SpinnerGap size={12} className="animate-spin" /> Syncing…
-                  </p>
+                {paused ? (
+                  <p className="text-[11px] text-amber-600">Paused · sync paused for all profiles</p>
+                ) : (
+                  !whitelist.backfillComplete && (
+                    <p className="text-[11px] text-primary flex items-center gap-1">
+                      <SpinnerGap size={12} className="animate-spin" /> Syncing…
+                    </p>
+                  )
                 )}
               </div>
+              <form action={setChannelSyncExcluded.bind(null, channel.id, !paused)}>
+                <SubmitButton variant="ghost" size="icon-touch" aria-label={paused ? `Resume sync for ${channel.title}` : `Pause sync for ${channel.title}`} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  {paused ? <Play size={20} /> : <Pause size={20} />}
+                </SubmitButton>
+              </form>
               <form action={unapproveChannel.bind(null, profileId, channel.id)}>
                 <SubmitButton variant="ghost" size="icon-touch" aria-label={`Unapprove ${channel.title}`} className="text-destructive opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                   <Trash size={20} />
                 </SubmitButton>
               </form>
             </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>

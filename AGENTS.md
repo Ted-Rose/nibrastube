@@ -117,6 +117,8 @@ release APK on `v*` tags.
   `lastSyncAt`
 - `channel_video_exclusions` — tombstones so unpinning a channel-synced
   video isn't undone by the next sync
+- `channel_sync_exclusions` — (parentId, channelId) mutes: channel sync
+  skips the channel for all profiles owned by that parent
 - `watch_progress` — (profileId, videoId) resume position + `completed`
 - `daily_syncs` — one row per UTC date = dedup lock for the daily sync
 - `shared_access` + `invites` — second-parent access via token links
@@ -153,6 +155,9 @@ release APK on `v*` tags.
   uploads until it hits a known videoId. Manual unpin of a synced video →
   tombstone; un-approving a channel removes its `viaChannelId` pins and
   clears its tombstones. YouTube quota errors abort the run early.
+  `channel_sync_exclusions` are keyed by profile owner; paused channels
+  are filtered in `syncAllChannels` and abort mid-flight via the
+  approval re-check, and approving a paused channel skips the backfill.
 - **Real-time:** after any whitelist change, trigger Pusher on channel
   `profile-<profileId>` with `video-pinned`/`video-unpinned`;
   `PusherListener` calls `router.refresh()`. Import `pusherServer`

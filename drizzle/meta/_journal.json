@@ -64,6 +64,13 @@
       "when": 1791214002984,
       "tag": "0008_brave_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791374590891,
+      "tag": "0009_spooky_silhouette",
+      "breakpoints": true
     }
   ]
 }

@@ -6,13 +6,18 @@ import { after } from "next/server";
 import { db } from "@/lib/db";
 import {
   channels,
+  channelSyncExclusions,
   channelVideoExclusions,
+  profiles,
   videos,
   whitelistedChannels,
   whitelistedVideos,
 } from "@/lib/db/schema";
 import { getSession, requireParentUnlocked } from "@/lib/auth";
-import { assertCanManageProfile } from "@/lib/profiles";
+import {
+  assertCanManageProfile,
+  getManageableProfiles,
+} from "@/lib/profiles";
 import { channelRowValues, getChannelDetails } from "@/lib/youtube";
 import { backfillChannel } from "@/lib/channel-sync";
 
@@ -52,7 +57,9 @@ export async function approveChannel(profileId: string, channelId: string) {
     .onConflictDoNothing();
 
   // 3. Backfill existing uploads in the background; the daily sync resumes
-  //    via backfillPageToken if this doesn't finish.
+  //    via backfillPageToken if this doesn't finish. Skipped entirely when
+  //    the profile's owner has paused sync for this channel — approving a
+  //    paused channel contributes no videos until resumed.
   after(async () => {
     try {
       const channel = await db.query.channels.findFirst({
@@ -64,13 +71,76 @@ export async function approveChannel(profileId: string, channelId: string) {
           eq(whitelistedChannels.channelId, channelId)
         ),
       });
-      if (channel && whitelist) {
+      const profile = await db.query.profiles.findFirst({
+        where: eq(profiles.id, profileId),
+      });
+      const exclusion = profile
+        ? await db.query.channelSyncExclusions.findFirst({
+            where: and(
+              eq(channelSyncExclusions.parentId, profile.parentId),
+              eq(channelSyncExclusions.channelId, channelId)
+            ),
+          })
+        : undefined;
+      if (channel && whitelist && profile && !exclusion) {
         await backfillChannel(profileId, { whitelist, channel });
       }
     } catch (err) {
       console.error(`Backfill failed for channel ${channelId}:`, err);
     }
   });
+
+  revalidatePath(`/parent/dashboard`);
+}
+
+/**
+ * Pause/resume automatic sync for a channel, scoped to the owner(s) of
+ * the profiles this parent manages that whitelist it. One exclusion row
+ * per owner mutes the channel for every kid under that owner; a shared-
+ * access parent writes the owner's row — exactly the profiles they see.
+ */
+export async function setChannelSyncExcluded(
+  channelId: string,
+  excluded: boolean
+) {
+  const session = await getSession();
+  if (!session) return;
+  await requireParentUnlocked();
+
+  const manageable = await getManageableProfiles(session.user.id);
+  const manageableIds = new Set(manageable.map((p) => p.id));
+  const rows = await db
+    .select({
+      profileId: whitelistedChannels.profileId,
+      ownerId: profiles.parentId,
+    })
+    .from(whitelistedChannels)
+    .innerJoin(profiles, eq(whitelistedChannels.profileId, profiles.id))
+    .where(eq(whitelistedChannels.channelId, channelId));
+  const ownerIds = [
+    ...new Set(
+      rows
+        .filter((r) => manageableIds.has(r.profileId))
+        .map((r) => r.ownerId)
+    ),
+  ];
+  if (ownerIds.length === 0) return; // channel not approved under us
+
+  if (excluded) {
+    await db
+      .insert(channelSyncExclusions)
+      .values(ownerIds.map((parentId) => ({ parentId, channelId })))
+      .onConflictDoNothing();
+  } else {
+    await db
+      .delete(channelSyncExclusions)
+      .where(
+        and(
+          inArray(channelSyncExclusions.parentId, ownerIds),
+          eq(channelSyncExclusions.channelId, channelId)
+        )
+      );
+  }
 
   revalidatePath(`/parent/dashboard`);
 }

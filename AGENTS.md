@@ -204,3 +204,15 @@ release APK on `v*` tags.
   low — this is the accepted model.
 - YouTube Data API quota is finite (10k units/day); searches are 100
   units each — prefer `videos`/`playlistItems` endpoints in sync code.
+- Dev server runs on **port 3100** (`.vscode/launch.json` frees the port
+  then runs `npm run dev -- -p 3100`) — VSCode stop leaves orphaned
+  `next-server` processes holding the port + `.next/dev/lock`, so
+  re-launching without the kill prefix caused EADDRINUSE. A stray
+  `p_projects/yarn.lock` (parent dir, no package.json) once made
+  Turbopack infer that 3.8 GB dir as workspace root → slow boots; it was
+  deleted — do NOT set `turbopack.root` in next.config to fix this, it
+  breaks tailwindcss resolution. If weird resolution errors appear,
+  `rm -rf .next` (cache poisoning persists across restarts).
+- `.env` active `DATABASE_URL` is the `ai_agent` DB user, which has no
+  SELECT on app tables. For read-only DB inspection use the commented
+  `avnadmin` URL above it (Aiven prod; localhost URL is dev).

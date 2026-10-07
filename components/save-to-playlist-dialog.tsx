@@ -26,6 +26,8 @@ import type { KidsPlaylist } from "@/lib/kids-feed";
 
 interface SaveToPlaylistContextValue {
   openFor: (videoId: string) => void;
+  // Up to 5 most recently updated playlists — the ⋮ menu's quick-add list.
+  recentPlaylists: KidsPlaylist[];
 }
 
 const SaveToPlaylistContext =
@@ -38,7 +40,8 @@ export function useSaveToPlaylist() {
 }
 
 // One dialog + one playlists snapshot shared by every video card's ⋮ menu
-// on the portal grid. Wrap it around anything rendering VideoCardMenu.
+// on the portal grid (the menus also read recentPlaylists for quick-add).
+// Wrap it around anything rendering VideoCardMenu.
 export function SaveToPlaylistProvider({
   profileId,
   playlists,
@@ -86,6 +89,9 @@ export function SaveToPlaylistProvider({
     ...playlists,
     ...extra.filter((p) => !playlists.some((q) => q.id === p.id)),
   ];
+  const recentPlaylists = [...all]
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+    .slice(0, 5);
 
   const toggle = async (playlistId: string) => {
     if (!videoId || !members || busy) return;
@@ -124,6 +130,7 @@ export function SaveToPlaylistProvider({
           name: playlist.name,
           videoCount: 0,
           coverThumbnail: null,
+          updatedAt: new Date(),
         },
       ]);
       setNewName("");
@@ -137,7 +144,7 @@ export function SaveToPlaylistProvider({
   };
 
   return (
-    <SaveToPlaylistContext.Provider value={{ openFor }}>
+    <SaveToPlaylistContext.Provider value={{ openFor, recentPlaylists }}>
       {children}
       <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Portal>

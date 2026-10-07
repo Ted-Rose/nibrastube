@@ -287,6 +287,9 @@ export interface KidsPlaylist {
   name: string;
   videoCount: number;
   coverThumbnail: string | null;
+  // Last item add, or creation time for empty playlists — orders the
+  // ⋮ menu's "recent playlists" quick-add list.
+  updatedAt: Date;
 }
 
 // Playlists for a profile with their VISIBLE item count (items whose video
@@ -304,6 +307,9 @@ export async function getPlaylists(
         array_agg(${videos.thumbnail} order by ${playlistItems.position} asc)
         filter (where ${videos.thumbnail} is not null)
       )[1]`,
+      updatedAt: sql<Date>`coalesce(
+        max(${playlistItems.addedAt}), ${playlists.createdAt}
+      )`,
     })
     .from(playlists)
     .leftJoin(

@@ -132,6 +132,7 @@ function SortableRow({
           profileId={profileId}
           videoId={row.video.id}
           playlistId={playlistId}
+          variant="inline"
         />
       </div>
     </li>

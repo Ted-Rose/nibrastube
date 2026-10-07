@@ -1,9 +1,11 @@
 import axios from "axios";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   channels,
+  channelSyncExclusions,
   channelVideoExclusions,
+  profiles,
   whitelistedChannels,
   whitelistedVideos,
 } from "@/lib/db/schema";
@@ -42,16 +44,28 @@ async function getExcludedVideoIds(profileId: string, videoIds: string[]) {
   return new Set(rows.map((r) => r.videoId));
 }
 
-// An un-approve can land while a backfill/poll is mid-flight; without this
-// check the in-flight sync keeps inserting pins unapproveChannel deleted.
-async function isChannelApproved(profileId: string, channelId: string) {
+// An un-approve or a sync pause can land while a backfill/poll is
+// mid-flight; without this check the in-flight sync keeps inserting pins
+// unapproveChannel deleted (or keeps fetching a channel the parent muted).
+async function isChannelSyncEnabled(profileId: string, channelId: string) {
   const row = await db.query.whitelistedChannels.findFirst({
     where: and(
       eq(whitelistedChannels.profileId, profileId),
       eq(whitelistedChannels.channelId, channelId)
     ),
   });
-  return !!row;
+  if (!row) return false;
+  const profile = await db.query.profiles.findFirst({
+    where: eq(profiles.id, profileId),
+  });
+  if (!profile) return false;
+  const exclusion = await db.query.channelSyncExclusions.findFirst({
+    where: and(
+      eq(channelSyncExclusions.parentId, profile.parentId),
+      eq(channelSyncExclusions.channelId, channelId)
+    ),
+  });
+  return !exclusion;
 }
 
 // Fetch full metadata, upsert into `videos`, then insert whitelist rows
@@ -75,9 +89,9 @@ async function upsertVideosAndWhitelist(
   const toInsert = details.filter((v) => !excluded.has(v.id));
   if (toInsert.length === 0) return 0;
 
-  // Re-check approval right before pinning so a concurrent un-approve can't
-  // be overwritten by this batch.
-  if (!(await isChannelApproved(profileId, channelId))) return 0;
+  // Re-check approval right before pinning so a concurrent un-approve or
+  // sync pause can't be overwritten by this batch.
+  if (!(await isChannelSyncEnabled(profileId, channelId))) return 0;
 
   await db
     .insert(whitelistedVideos)
@@ -127,7 +141,7 @@ export async function backfillChannel(
   let added = 0;
 
   for (let page = 0; page < MAX_BACKFILL_PAGES_PER_RUN; page++) {
-    if (!(await isChannelApproved(profileId, channel.id))) break;
+    if (!(await isChannelSyncEnabled(profileId, channel.id))) break;
     const result = await getUploadsPage(channel.uploadsPlaylistId, pageToken);
     added += await upsertVideosAndWhitelist(
       profileId,
@@ -168,6 +182,7 @@ export async function pollChannel(
 ): Promise<number> {
   const { channel } = row;
   if (!channel.uploadsPlaylistId) return 0;
+  if (!(await isChannelSyncEnabled(profileId, channel.id))) return 0;
 
   const newIds: string[] = [];
   let pageToken: string | undefined;
@@ -202,15 +217,18 @@ export async function pollChannel(
       ? await upsertVideosAndWhitelist(profileId, channel.id, newIds)
       : 0;
 
-  await db
-    .update(whitelistedChannels)
-    .set({ lastSyncAt: new Date() })
-    .where(
-      and(
-        eq(whitelistedChannels.profileId, profileId),
-        eq(whitelistedChannels.channelId, channel.id)
-      )
-    );
+  // A pause can land during the API loop; keep lastSyncAt frozen if so.
+  if (await isChannelSyncEnabled(profileId, channel.id)) {
+    await db
+      .update(whitelistedChannels)
+      .set({ lastSyncAt: new Date() })
+      .where(
+        and(
+          eq(whitelistedChannels.profileId, profileId),
+          eq(whitelistedChannels.channelId, channel.id)
+        )
+      );
+  }
 
   if (added > 0) await triggerPinned(profileId, channel.id);
   return added;
@@ -226,6 +244,15 @@ export async function syncAllChannels(): Promise<number> {
     .select({ whitelist: whitelistedChannels, channel: channels })
     .from(whitelistedChannels)
     .innerJoin(channels, eq(whitelistedChannels.channelId, channels.id))
+    .innerJoin(profiles, eq(whitelistedChannels.profileId, profiles.id))
+    .leftJoin(
+      channelSyncExclusions,
+      and(
+        eq(channelSyncExclusions.parentId, profiles.parentId),
+        eq(channelSyncExclusions.channelId, whitelistedChannels.channelId)
+      )
+    )
+    .where(isNull(channelSyncExclusions.channelId))
     .orderBy(asc(whitelistedChannels.lastSyncAt))
     .limit(MAX_CHANNELS_PER_RUN);
 

@@ -105,6 +105,25 @@ export const whitelistedChannels = pgTable(
   })
 );
 
+// Channels a parent has muted: sync never fetches uploads for these
+// (profile owner) + channel pairs. Survives un-approve/re-approve —
+// a muted channel stays muted.
+export const channelSyncExclusions = pgTable(
+  "channel_sync_exclusions",
+  {
+    parentId: uuid("parent_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    channelId: text("channel_id")
+      .references(() => channels.id, { onDelete: "cascade" })
+      .notNull(),
+    excludedAt: timestamp("excluded_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.parentId, table.channelId] }),
+  })
+);
+
 // Watch progress per (profile, video): latest position wins, one row upserted
 export const watchProgress = pgTable(
   "watch_progress",

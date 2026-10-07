@@ -39,6 +39,15 @@ const PLAYLIST_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// DATE_RE alone passes impossible dates like 2026-02-30, which Postgres
+// then rejects — a hand-edited ?date= would 500 the page. Roundtrip
+// through Date to confirm the day actually exists on the calendar.
+function isCalendarDate(s: string): boolean {
+  if (!DATE_RE.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
 // Validates raw searchParams; bad values fall back to defaults.
 export function parseKidsFeedParams(
   raw: Record<string, string | string[] | undefined>
@@ -63,7 +72,7 @@ export function parseKidsFeedParams(
   // Malformed or future dates fall back to the all-days view.
   const today = new Date().toLocaleDateString("en-CA");
   const date =
-    view === "history" && DATE_RE.test(rawDate) && rawDate <= today
+    view === "history" && isCalendarDate(rawDate) && rawDate <= today
       ? rawDate
       : null;
   const sort: KidsSort = first(raw.sort) === "age" ? "age" : "status";

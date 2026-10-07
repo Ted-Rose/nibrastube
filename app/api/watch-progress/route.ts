@@ -14,7 +14,9 @@ const bodySchema = z.object({
   durationSeconds: z.number().int().min(0).nullable(),
   completed: z.boolean(),
   sentAt: z.number(), // client epoch ms — guards against out-of-order beacons
-  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // client-local date
+  // z.iso.date (not a bare regex) so impossible dates like 2026-02-30
+  // get a 400 instead of a Postgres date/time-out-of-range 500.
+  day: z.iso.date().optional(), // client-local date
 });
 
 export async function POST(request: NextRequest) {

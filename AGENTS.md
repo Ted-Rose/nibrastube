@@ -22,7 +22,11 @@ npm run typecheck   # tsc --noEmit — run before finishing any change
 npm run lint        # eslint (eslint-config-next)
 npm run format      # prettier --write (uses prettier-plugin-tailwindcss)
 npm run db:generate # drizzle-kit generate → new migration in drizzle/
-npm run db:migrate  # drizzle-kit migrate
+npm run db:migrate  # drizzle-kit migrate — MUST run as the avnadmin DB
+                    # user; ai_agent lacks DDL rights and fails silently
+                    # (exit 1). Always invoke as:
+                    #   DATABASE_URL="$(grep -m1 avnadmin .env | cut -d= -f2-)" \
+                    #     npm run db:migrate
 npm run videos:refresh -- --dry-run   # re-fetch videos rows missing
                                     # YouTube fields (filters: --stale
                                     # --missing cols --ids --channel
@@ -224,10 +228,16 @@ release APK on `v*` tags.
   breaks tailwindcss resolution. If weird resolution errors appear,
   `rm -rf .next` (cache poisoning persists across restarts).
 - `.env` active `DATABASE_URL` is the `ai_agent` DB user, which has no
-  SELECT on app tables. For read-only DB inspection use the commented
-  `avnadmin` URL above it (Aiven prod; localhost URL is dev).
-- The Aiven DB has a small connection limit — when the dev server is
-  running it can exhaust slots, so `npm run db:migrate` (or psql) may
+  SELECT on app tables and no DDL rights — `npm run db:migrate` under it
+  exits 1 with no error text. For migrations and read-only DB inspection
+  use the `avnadmin` URL in `.env` (grab it with
+  `grep -m1 avnadmin .env | cut -d= -f2-` — works whether that line is
+  commented out or active). Aiven prod; localhost URL is dev.
+- The Aiven DB has a small connection limit (max_connections=20) — the
+  dev server can exhaust slots, so `npm run db:migrate` (or psql) may
   fail mid-run with "remaining connection slots are reserved" or a
-  bare exit 1 with no error text. Just retry; migrate is idempotent
-  and resumes cleanly.
+  bare exit 1 with no error text. Stop the dev server
+  (`lsof -ti:3100 | xargs kill`) to free slots, or just retry — migrate
+  is idempotent and resumes cleanly.
+- `npm` may be missing from PATH in non-interactive shells (`npm:
+  command not found`); prepend `export PATH="/opt/homebrew/bin:$PATH"`.

@@ -1051,7 +1051,7 @@ reason under "Future".
 
 | WP | Implemented | Reviewed | Fix rounds | Merged | Notes |
 |---|---|---|---|---|---|
-| WP1 refactor views | ☐ | ☐ | 0 | ☐ | |
+| WP1 refactor views | ☐ | ☐ | 0 | ☐ | QA profile: Rock `9a020c45-2201-4ac5-9ca1-5924cdd59075` |
 | WP2 header + tabs + gate | ☐ | ☐ | 0 | ☐ | |
 | WP3 type-ahead search | ☐ | ☐ | 0 | ☐ | |
 | WP4 card polish | ☐ | ☐ | 0 | ☐ | |

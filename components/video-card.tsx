@@ -78,7 +78,7 @@ export function VideoCard({
             <div
               className={cn(
                 "absolute inset-0 flex items-center justify-center",
-                "opacity-0 transition duration-200",
+                "opacity-0 motion-safe:transition motion-safe:duration-200",
                 "group-hover:opacity-100 group-focus-visible:opacity-100",
                 "motion-safe:scale-75 motion-safe:group-hover:scale-100",
                 "motion-safe:group-focus-visible:scale-100"
@@ -112,8 +112,9 @@ export function VideoCard({
           <CardContent className={compact ? "p-4" : "p-6"}>
             <h3
               className={cn(
-                "font-bold line-clamp-2 leading-tight text-slate-900 group-hover:underline",
-                compact ? "text-base sm:text-lg" : "text-xl"
+                "font-bold line-clamp-2 text-slate-900 group-hover:underline",
+                compact ? "text-base sm:text-lg" : "text-xl",
+                "leading-tight"
               )}
             >
               {video.title}

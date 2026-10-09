@@ -2,8 +2,8 @@
 // above it. Returns null when there's nothing to show (unknown or
 // zero-length duration).
 export function formatDuration(seconds: number | null): string | null {
-  if (!seconds) return null;
-  const total = Math.round(seconds);
+  const total = Math.round(seconds ?? 0);
+  if (!total) return null;
   const s = total % 60;
   const m = Math.floor(total / 60) % 60;
   const h = Math.floor(total / 3600);

@@ -72,7 +72,8 @@ function SortableRow({
     >
       <div
         className={cn(
-          "relative flex items-center gap-3 sm:gap-4 rounded-3xl bg-white p-3 pr-14 sm:p-4 sm:pr-16 shadow-md transition motion-safe:hover:-translate-y-0.5",
+          "relative flex items-center gap-3 sm:gap-4 rounded-3xl bg-white p-3 pr-14 sm:p-4 sm:pr-16 shadow-md transition",
+          !isDragging && "motion-safe:hover:-translate-y-0.5",
           isDragging && "shadow-xl ring-4 ring-primary/20"
         )}
       >

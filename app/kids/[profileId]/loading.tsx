@@ -1,3 +1,5 @@
+import { VideoGridSkeleton } from "@/components/video-grid-skeleton";
+
 export default function KidsPortalLoading() {
   return (
     <div className="min-h-screen bg-[#F0F4FF]">
@@ -11,20 +13,7 @@ export default function KidsPortalLoading() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 sm:mt-10">
         <div className="h-12 w-72 max-w-full rounded-full bg-white shadow-sm animate-pulse mb-8" />
         <div className="h-9 w-56 rounded-lg bg-slate-200/70 animate-pulse mb-8" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className="rounded-[32px] bg-white shadow-lg overflow-hidden animate-pulse"
-            >
-              <div className="aspect-video bg-slate-100" />
-              <div className="p-5 space-y-3">
-                <div className="h-5 w-4/5 rounded bg-slate-100" />
-                <div className="h-4 w-2/5 rounded bg-slate-100" />
-              </div>
-            </div>
-          ))}
-        </div>
+        <VideoGridSkeleton />
       </main>
     </div>
   );

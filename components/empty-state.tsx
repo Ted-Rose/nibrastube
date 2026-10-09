@@ -22,7 +22,7 @@ export function EmptyState({
       {action && (
         <Link
           href={action.href}
-          className="mt-8 inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
+          className="mt-8 inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-lg font-black text-white shadow-md focus-visible:ring-4 focus-visible:ring-primary/40 focus-visible:outline-none motion-safe:transition-transform motion-safe:hover:scale-105"
         >
           {action.label}
           <LinkPendingSpinner size={20} weight="bold" />

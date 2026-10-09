@@ -133,6 +133,10 @@ export function KidsHeader({ row1, tabs }: KidsHeaderProps) {
       <div className="mx-auto max-w-7xl px-4 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-6">
         <div
           ref={row1Ref}
+          // Deliberate trade-off: while collapsed the row-1 controls
+          // leave the a11y tree and tab order — they're translated
+          // off-screen, so keeping them focusable would be worse.
+          // Scrolling up (or focusing search) restores them.
           inert={collapsed}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

@@ -32,7 +32,7 @@ export function KidsViewTabs({ tabs }: { tabs: KidsViewTab[] }) {
   return (
     <nav
       aria-label="Views"
-      className="grid grid-cols-5 gap-1 pb-2 sm:flex sm:gap-2 sm:pb-3"
+      className="grid grid-cols-5 gap-0.5 pb-2 sm:flex sm:gap-2 sm:pb-3"
     >
       {tabs.map((tab) => (
         <Link

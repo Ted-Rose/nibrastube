@@ -82,8 +82,11 @@ export function KidsHeader({ row1, tabs }: KidsHeaderProps) {
     };
 
     // Rotating to sm+ (or resizing a desktop window) must never strand a
-    // hidden row 1.
+    // hidden row 1; the stale travel counters go too, so a resize can't
+    // re-collapse on the first scroll tick.
     const onMqChange = () => {
+      s.downTravel = 0;
+      s.upTravel = 0;
       if (!mq.matches && s.collapsed) {
         s.collapsed = false;
         setCollapsed(false);

@@ -20,10 +20,14 @@ export function KidsVideoGrid({
   rows,
   profileId,
   feedQuery,
+  eagerCount = 4,
 }: {
   rows: FeedRow[];
   profileId: string;
   feedQuery: string;
+  // Thumbnails of the first `eagerCount` cards load eagerly — they're the
+  // ones visible without scrolling.
+  eagerCount?: number;
 }) {
   const [visible, setVisible] = useState(PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -47,7 +51,7 @@ export function KidsVideoGrid({
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-        {rows.slice(0, visible).map(({ video, progress, reaction }) => (
+        {rows.slice(0, visible).map(({ video, progress, reaction }, i) => (
           <VideoCard
             key={video.id}
             href={`/kids/${profileId}/watch/${video.id}${feedQuery}`}
@@ -55,6 +59,7 @@ export function KidsVideoGrid({
             profileId={profileId}
             progress={progress}
             reaction={reaction}
+            eager={i < eagerCount}
           />
         ))}
       </div>
@@ -65,7 +70,7 @@ export function KidsVideoGrid({
             onClick={() =>
               setVisible((v) => Math.min(v + PAGE_SIZE, rows.length))
             }
-            className="rounded-full bg-white px-8 py-3 text-lg font-bold text-slate-500 shadow-sm hover:text-slate-800 transition-colors"
+            className="rounded-full bg-white px-8 py-3 text-lg font-bold text-slate-500 shadow-sm hover:text-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
           >
             Show more videos
           </button>

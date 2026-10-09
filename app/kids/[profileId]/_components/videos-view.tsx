@@ -95,7 +95,7 @@ export async function VideosView({
         actions={
           <KidsSortSelect
             value={`${feed.sort}:${feed.dir}`}
-            className="w-full sm:w-auto"
+            className="w-full sm:w-auto sm:ml-auto"
           />
         }
       />

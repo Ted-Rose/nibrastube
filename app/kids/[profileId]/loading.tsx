@@ -11,13 +11,17 @@ export default function KidsPortalLoading() {
             <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-slate-100 animate-pulse" />
             <div className="w-11 h-11 rounded-full bg-slate-100 animate-pulse" />
           </div>
-          <div className="grid grid-cols-5 gap-1 pb-2 sm:flex sm:gap-2 sm:pb-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-14 sm:h-11 sm:w-24 rounded-2xl sm:rounded-full bg-slate-100 animate-pulse"
-              />
-            ))}
+          <div className="grid grid-cols-5 gap-0.5 pb-2 sm:flex sm:gap-2 sm:pb-3">
+            {/* sm+ widths approximate the real content-width pills
+                (icon + label in kids-view-tabs.tsx) */}
+            {["sm:w-28", "sm:w-32", "sm:w-24", "sm:w-28", "sm:w-28"].map(
+              (w, i) => (
+                <div
+                  key={i}
+                  className={`h-[52px] sm:h-11 ${w} rounded-2xl sm:rounded-full bg-slate-100 animate-pulse`}
+                />
+              ),
+            )}
           </div>
         </div>
       </header>

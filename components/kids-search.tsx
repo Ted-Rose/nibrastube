@@ -30,10 +30,15 @@ export function KidsSearch({ query, placeholder }: KidsSearchProps) {
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [value, setValue] = useState(query);
-  // Last q this component submitted. When the URL commits it back
-  // (query === submitted) newer typing must survive; only a commit that
-  // isn't ours is an external change worth adopting.
+  // Last q this component submitted or adopted — the intent the URL is
+  // committed to or navigating towards. The committed URL alone can't
+  // be the skip check: an in-flight navigation may be heading away from
+  // it, so re-submitting its still-current q must re-navigate.
   const [submitted, setSubmitted] = useState(query);
+  // Submitted q values whose navigations haven't committed yet. A
+  // commit matching one is our own navigation resolving — drop it and
+  // keep the user's typing; any other commit is external and adopted.
+  const [pendingSubs, setPendingSubs] = useState<string[]>([]);
   const [prevQuery, setPrevQuery] = useState(query);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,24 +58,28 @@ export function KidsSearch({ query, placeholder }: KidsSearchProps) {
 
   if (query !== prevQuery) {
     setPrevQuery(query);
-    if (query !== submitted) {
+    if (pendingSubs.includes(query)) {
+      setPendingSubs((subs) => subs.filter((s) => s !== query));
+    } else {
       setValue(query);
       setSubmitted(query);
+      setPendingSubs([]);
     }
   }
 
   const navigate = (raw: string) => {
     const q = raw.trim();
+    if (submitted === q) return;
     setSubmitted(q);
-    if ((urlRef.current.searchParams.get("q") ?? "") === q) return;
+    setPendingSubs((subs) => [...subs, q]);
     const sp = new URLSearchParams(
       urlRef.current.searchParams.toString(),
     );
     if (q) sp.set("q", q);
     else sp.delete("q");
     const qs = sp.toString();
-    const url = qs ? `${urlRef.current.pathname}?${qs}` :
-      urlRef.current.pathname;
+    const base = urlRef.current.pathname;
+    const url = qs ? `${base}?${qs}` : base;
     startTransition(() => {
       router.replace(url, { scroll: false });
     });

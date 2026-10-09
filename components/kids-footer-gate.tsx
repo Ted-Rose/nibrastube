@@ -31,7 +31,7 @@ export function KidsFooterGate({
           aria-label="Parent settings"
           className="text-slate-400 hover:text-primary"
         >
-          <LockSimple size={24} weight="bold" />
+          <LockSimple size={24} weight="bold" className="size-6" />
         </Button>
       ) : (
         <Button

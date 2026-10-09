@@ -11,11 +11,20 @@ import {
 } from "@/lib/kids-feed";
 import { EmptyState } from "@/components/empty-state";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
-import { KidsSortSelect } from "@/components/kids-sort-select";
+import { KidsSortChips } from "@/components/kids-sort-chips";
 import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
 import { BackLink } from "./back-link";
 import { FeedHeader } from "./feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
+
+// Sort chip order — default (status:asc) first. kidsFeedQuery drops
+// default sort/dir values, so the default chip's href stays clean.
+const SORT_OPTIONS = [
+  { sort: "status", dir: "asc", label: "Not watched" },
+  { sort: "status", dir: "desc", label: "Watched" },
+  { sort: "age", dir: "desc", label: "Newest" },
+  { sort: "age", dir: "asc", label: "Oldest" },
+] as const;
 
 // The Videos tab and the channel drill-in (view=channels&channel=…) —
 // both render the whitelisted-videos grid, the drill-in filtered to one
@@ -39,6 +48,13 @@ export async function VideosView({
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu.
   const playlistRows = await getPlaylists(profileId);
+
+  const sortOptions = SORT_OPTIONS.map((o) => ({
+    key: `${o.sort}:${o.dir}`,
+    label: o.label,
+    href: kidsPortalUrl(profileId, feed, { sort: o.sort, dir: o.dir }),
+    active: o.sort === feed.sort && o.dir === feed.dir,
+  }));
 
   let channelTitle: string | null = null;
   let channelApproved = false;
@@ -92,12 +108,7 @@ export async function VideosView({
 
       <FeedHeader
         title={feedTitle(feed, { channelTitle })}
-        actions={
-          <KidsSortSelect
-            value={`${feed.sort}:${feed.dir}`}
-            className="w-full sm:w-auto sm:ml-auto"
-          />
-        }
+        actions={<KidsSortChips options={sortOptions} />}
       />
 
       {rows.length === 0 ? (

@@ -6,9 +6,9 @@ import { useTransition } from "react";
 import { SpinnerGap } from "@phosphor-icons/react";
 import { LinkPendingSpinner } from "./link-pending-spinner";
 
-// Date picker for the History tab — updates the ?date= URL param like
-// KidsSortSelect does for sort/dir. Picking a day server-filters the
-// history rows; "All days" clears the filter.
+// Date picker for the History tab — does for ?date= what the sort
+// chips do for ?sort/?dir. Picking a day server-filters the history
+// rows; "All days" clears the filter.
 export function HistoryDatePicker({ date }: { date: string | null }) {
   const router = useRouter();
   const pathname = usePathname();

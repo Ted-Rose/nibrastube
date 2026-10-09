@@ -61,7 +61,10 @@ export async function VideosView({
     }
   }
 
-  const EmptyIcon = query ? KIDS_VIEWS[feed.view].icon : Play;
+  // A channel drill-in renders the videos grid, so its search-empty
+  // icon is the videos icon (Play), not the channels one.
+  const EmptyIcon =
+    query && channel === null ? KIDS_VIEWS[feed.view].icon : Play;
   const emptyMessage = query
     ? "No videos found!"
     : channelApproved

@@ -45,7 +45,7 @@ export default async function KidsPortalPage({
   }
 
   const feed = parseKidsFeedParams(await searchParams);
-  const { view, channel, q: query } = feed;
+  const { view, q: query } = feed;
 
   // Access check before the existence check so a signed-in parent can't
   // use 404-vs-redirect to probe whether a profile UUID exists.
@@ -102,12 +102,6 @@ export default async function KidsPortalPage({
             </Link>
             <div className="min-w-0 flex-1">
               <KidsSearch
-                profileId={profileId}
-                view={view}
-                channel={channel}
-                list={feed.list}
-                sort={feed.sort}
-                dir={feed.dir}
                 query={query}
                 placeholder={searchPlaceholder(feed, profile.name)}
               />

@@ -20,7 +20,11 @@ export function KidsTileCard({
   thumbnail?: string | null;
   variant: "cover" | "avatar";
 }) {
-  const caption = `${count} ${count === 1 ? "video" : "videos"}`;
+  const caption = (
+    <>
+      {count} {count === 1 ? "video" : "videos"}
+    </>
+  );
 
   if (variant === "avatar") {
     return (

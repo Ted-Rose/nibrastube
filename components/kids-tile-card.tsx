@@ -28,8 +28,11 @@ export function KidsTileCard({
 
   if (variant === "avatar") {
     return (
-      <Link href={href} className="group">
-        <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
+      <Link
+        href={href}
+        className="group block rounded-[32px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+      >
+        <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] bg-white transition-transform duration-300 motion-safe:group-hover:-translate-y-2 motion-safe:active:scale-[0.98]">
           <LinkPendingSpinner
             size={24}
             weight="bold"
@@ -40,7 +43,9 @@ export function KidsTileCard({
               <img
                 src={thumbnail}
                 className="w-24 h-24 rounded-full object-cover border-4 border-slate-100"
-                alt={title}
+                alt=""
+                loading="lazy"
+                decoding="async"
               />
             ) : (
               <div className="w-24 h-24 rounded-full bg-primary/10 text-primary border-4 border-slate-100 flex items-center justify-center text-4xl font-black">
@@ -60,8 +65,11 @@ export function KidsTileCard({
   }
 
   return (
-    <Link href={href} className="group">
-      <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
+    <Link
+      href={href}
+      className="group block rounded-[32px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+    >
+      <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] bg-white transition-transform duration-300 motion-safe:group-hover:-translate-y-2 motion-safe:active:scale-[0.98]">
         <LinkPendingSpinner
           size={24}
           weight="bold"
@@ -72,7 +80,9 @@ export function KidsTileCard({
             <img
               src={thumbnail}
               className="w-full h-full object-cover"
-              alt={title}
+              alt=""
+              loading="lazy"
+              decoding="async"
             />
           </div>
         ) : (

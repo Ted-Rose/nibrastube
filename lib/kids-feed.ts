@@ -99,6 +99,16 @@ export function kidsFeedQuery(
   return qs ? `?${qs}` : "";
 }
 
+// Kids portal path for a feed — the single helper so tabs, sorts,
+// drill-down and empty-state links never drop each other's params.
+export function kidsPortalUrl(
+  profileId: string,
+  feed: KidsFeedParams,
+  overrides: Partial<KidsFeedParams> = {}
+): string {
+  return `/kids/${profileId}${kidsFeedQuery(feed, overrides)}`;
+}
+
 export type WatchStatus = 0 | 1 | 2; // 0 new, 1 started, 2 watched
 
 // Only the columns the feed grid and the watch-page playlist actually

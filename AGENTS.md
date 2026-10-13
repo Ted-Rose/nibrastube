@@ -70,8 +70,11 @@ app/
   parent/dashboard/             Search YouTube, pin videos, approve channels
   parent/profiles/              Manage kids + send invites
   kids/                         "Who's watching?" profile picker
-  kids/[profileId]/             Whitelisted video grid + internal search
-  kids/[profileId]/watch/[id]/  Watch page → <WatchExperience>
+  kids/[profileId]/             Kids portal — 5 feed tabs, sticky header,
+                                debounced search; streams via Suspense
+    _components/                Route-private view code: per-view server
+                                components, KIDS_VIEWS table, feed-header
+  kids/[profileId]/watch/[videoId]/  Watch page → <WatchExperience>
   actions/                      Server actions (auth, profiles, pinning,
                                 channels, invites, safety)
   api/sync-channels/            Daily channel sync trigger (GET + POST)
@@ -81,8 +84,19 @@ components/
   watch-experience.tsx          YouTube IFrame player: auto-advance, resume,
                                 rogue-video snapback, progress beacons
   fullscreen-player.tsx         Fullscreen wrapper w/ iOS CSS-overlay fallback
-  parental-gate*.tsx            4-digit Parent PIN modal
-  kids-footer-gate.tsx          PIN gate for switching to parent area
+  parental-gate*.tsx            4-digit Parent PIN modal (portals to
+                                document.body — header transform/filter
+                                would clip an inline fixed overlay)
+  kids-footer-gate.tsx          PIN gate trigger — "footer" button on
+                                /kids, "icon" lock in the kids header
+  kids-header.tsx               Sticky frosted 2-row kids header; row 1
+                                collapses on phone scroll (transform only)
+  kids-view-tabs.tsx            Always-visible 5-tab strip for the feeds
+  kids-sort-chips.tsx           Link-based sort chips (rewrite ?sort/?dir)
+  video-shelf.tsx               Horizontal snap-scroll card shelf
+  empty-state.tsx               Shared kids empty-state card + CTA link
+  kids-tile-card.tsx            Channel/playlist tile ("avatar"/"cover")
+  video-grid-skeleton.tsx       Grid + shelf skeletons (Suspense fallbacks)
   pusher-listener.tsx           Subscribes `profile-<id>`, router.refresh() on events
   daily-sync-ping.tsx           Once/day/device POST to /api/sync-channels
   pwa-register.tsx              Registers public/sw.js
@@ -95,6 +109,7 @@ lib/
   db/schema.ts                  All tables (single file)
   db/index.ts                   pg Pool → drizzle client
   utils.ts                      cn() (clsx + tailwind-merge)
+  format.ts                     formatDuration() → "m:ss"/"h:mm:ss" labels
 public/sw.js                    PWA service worker (cache-first static only)
 scripts/generate-icons.mjs      Regenerates PWA icons in public/icons/
 android/                      Capacitor 8 Android project (generated,
@@ -174,6 +189,36 @@ release APK on `v*` tags.
 - **Watch progress:** client flushes on pause/end/pagehide (sendBeacon)
   and every ~10s while playing; server upserts guarded by `sentAt` so
   late beacons can't overwrite newer positions. `completed` ≥95%.
+- **Kids portal chrome:** the feed page has no footer — the parent gate
+  is the lock icon in `KidsHeader` (`KidsFooterGate` with
+  `variant="icon"`); the `/kids` picker keeps the labelled "footer"
+  variant. The PIN modal and its verifying spinner portal to
+  `document.body` — rendered inline inside the header, its
+  backdrop-filter and collapse transform would clip the fixed overlay.
+- **Kids search is type-ahead:** `KidsSearch` debounces input 300 ms,
+  then `router.replace`s inside `startTransition` (`scroll: false`) —
+  a native GET form would be a full navigation with no pending state.
+  Only `q` changes; the URL is rebuilt from the live `searchParams`,
+  so view/channel/list/date/sort/dir survive untouched.
+- **Home shelves:** the plain Videos tab (no `q`, no `channel`) renders
+  "Continue watching", "Picked for you", "New for you", "Your
+  playlists" and "Liked" shelves above the All-videos grid, streaming
+  in their own Suspense boundary; empty shelves don't render.
+  Watch-page autoplay rebuilds its queue from the card href's feed
+  params, so shelf cards carry the params that reproduce the right
+  queue — the home feed for the video shelves, `view=foryou` for the
+  Picked-for-you shelf, `view=liked` for the Liked shelf (playlist
+  tiles deep-link to their drill-in).
+- **Kids feed code is route-private:** `app/kids/[profileId]/_components/`
+  holds the per-view server components (`videos-view`, `channels-view`,
+  `liked-view`, `playlists-view` + `playlist-detail-view`,
+  `history-feed-view`, `foryou-view`), `home-shelves`, `back-link`, the
+  `KIDS_VIEWS` config table (labels, icons, titles, placeholders) and
+  `feed-header`. `feed-content.tsx` picks the view; everything below
+  the header streams under Suspense. `foryou` is a sixth feed with NO
+  tab — it's reached via the "Picked for you" home shelf's see-all
+  link (and its cards' `?view=foryou` autoplay context); a 6th phone
+  tab was rejected for cramped tap targets.
 
 ## Conventions
 

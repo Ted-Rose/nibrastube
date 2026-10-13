@@ -1,4 +1,13 @@
+"use client";
+
+import { useParams } from "next/navigation";
+import { ViewTransition } from "react";
+
 export default function WatchLoading() {
+  // The navigation commits this loading UI first, so the morph has to
+  // continue here: the player-sized box carries the same `video-<id>`
+  // name as the grid thumbnail and the real player container.
+  const { videoId } = useParams<{ videoId: string }>();
   return (
     <div className="min-h-screen bg-black flex flex-col">
       <div className="bg-slate-900/80 px-3 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 flex items-center justify-between gap-2 border-b border-slate-800">
@@ -7,7 +16,17 @@ export default function WatchLoading() {
         <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 animate-pulse" />
       </div>
       <div className="flex-1 flex items-center justify-center p-4 md:p-10">
-        <div className="w-full max-w-6xl aspect-video rounded-[32px] border-4 border-slate-800 bg-slate-900 animate-pulse" />
+        <ViewTransition name={`video-${videoId}`}>
+          <div className="w-full max-w-6xl aspect-video rounded-[32px] border-4 border-slate-800 bg-slate-900 overflow-hidden">
+            {videoId && (
+              <img
+                src={`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`}
+                className="w-full h-full object-cover animate-pulse"
+                alt=""
+              />
+            )}
+          </div>
+        </ViewTransition>
       </div>
       <div className="bg-slate-900/50 p-4 sm:p-8 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-[max(2rem,env(safe-area-inset-bottom))] flex items-center justify-center gap-3">
         <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-3xl bg-slate-800 animate-pulse" />

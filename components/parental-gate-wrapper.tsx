@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { ParentalGate } from "./parental-gate";
 import { Button } from "./ui/button";
 import { Lock, SpinnerGap } from "@phosphor-icons/react";
@@ -17,9 +18,25 @@ interface ParentalGateWrapperProps {
   onVerified?: (pin: string) => Promise<string | void> | string | void;
 }
 
+// The overlays portal to document.body: rendered inline inside the kids
+// header, its backdrop-filter and collapse transform make the header
+// the containing block for fixed descendants, so the modal would be
+// clipped to the header strip. `isOpen` can be true during SSR (?gate=1
+// passes defaultOpen from the server), so the portal can't gate on
+// isOpen alone — the mounted flag below reads false on the server and
+// during hydration, then flips client-side with no mismatch.
+const subscribeMounted = () => () => {};
+const getMounted = () => true;
+const getUnmounted = () => false;
+
 export function ParentalGateWrapper({ children, triggerText, className, defaultOpen, onVerified }: ParentalGateWrapperProps) {
   const [isOpen, setIsOpen] = useState(!!defaultOpen);
   const [verifying, setVerifying] = useState(false);
+  const mounted = useSyncExternalStore(
+    subscribeMounted,
+    getMounted,
+    getUnmounted,
+  );
 
   // onVerified is an async server action that checks the PIN and
   // usually redirects — keep a full-screen spinner up while it runs so
@@ -49,28 +66,39 @@ export function ParentalGateWrapper({ children, triggerText, className, defaultO
 
   return (
     <>
-      {verifying && (
-        <div role="status" aria-live="polite" className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center">
-          <SpinnerGap size={48} className="animate-spin text-white" />
-        </div>
-      )}
+      {mounted &&
+        verifying &&
+        createPortal(
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center"
+          >
+            <SpinnerGap size={48} className="animate-spin text-white" />
+          </div>,
+          document.body,
+        )}
       {isOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm">
-            <ParentalGate
-              onPass={handlePass}
-              title="Parental Control"
-              description="Enter your PIN to unlock parent settings."
-            />
-            <Button
-              variant="ghost"
-              className="w-full mt-4 h-10 text-white hover:bg-white/10"
-              onClick={() => setIsOpen(false)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
+        mounted &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm">
+              <ParentalGate
+                onPass={handlePass}
+                title="Parental Control"
+                description="Enter your PIN to unlock parent settings."
+              />
+              <Button
+                variant="ghost"
+                className="w-full mt-4 h-10 text-white hover:bg-white/10"
+                onClick={() => setIsOpen(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>,
+          document.body,
+        )
       ) : (
         <div className={className} onClick={() => setIsOpen(true)}>
           {children || (

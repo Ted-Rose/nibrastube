@@ -4,10 +4,13 @@ Feature branch prefix: `feature/` (e.g. `feature/kids-for-you`).
 
 ## Goal
 
-A **For You** tab on the kids portal (`/kids/[profileId]`) that ranks the
-profile's *already-whitelisted* videos by predicted interest, so a kid
-opening the portal sees the videos most likely to be wanted right now —
-instead of a flat "not watched, newest first" wall of thousands.
+A **For You** surface on the kids portal (`/kids/[profileId]`) that
+ranks the profile's *already-whitelisted* videos by predicted
+interest, so a kid opening the portal sees the videos most likely to
+be wanted right now — instead of a flat "not watched, newest first"
+wall of thousands. Shipped as a "Picked for you" home shelf plus the
+`?view=foryou` feed it deep-links to — NOT a sixth tab (six tiles
+cramped the phone tab strip).
 
 Hard invariant: **recommendations never leave the whitelist.** The output
 is a reordering of `whitelisted_videos`, not a new content source. No
@@ -51,7 +54,7 @@ A channel-affinity score alone gets most of the value.
 `tags` 77% (6045/7836 — backfillable via `npm run videos:refresh`).
 
 **Key implication:** >93% of each whitelist is unwatched. Discovery —
-not inventory — is the problem this tab solves.
+not inventory — is the problem this surface solves.
 
 ## Facts established by codebase investigation
 
@@ -59,9 +62,10 @@ not inventory — is the problem this tab solves.
   `KidsFeedParams` field parsed by `parseKidsFeedParams` and serialized
   by `kidsFeedQuery` (`lib/kids-feed.ts`); adding a view means touching
   the `KidsView` union, the parse whitelist, `KIDS_VIEWS`
-  (`_components/view-config.tsx`), the tabs array
-  (`app/kids/[profileId]/page.tsx`), `FeedContent`, and one branch in
-  the watch page — exactly the precedent `history` set.
+  (`_components/view-config.tsx`), `FeedContent`, and one branch in
+  the watch page — exactly the precedent `history` set. Tab exposure
+  is optional on top: `foryou` ships reachable via a home shelf's
+  see-all link instead of the tabs array.
 - **Every feed query returns `{ video: feedVideoCols, progress,
   reaction }`** — `KidsVideoGrid`, the card ⋮ menu, and the watch-page
   playlist all consume that shape. `getRecommendedVideos` returns it
@@ -75,7 +79,7 @@ not inventory — is the problem this tab solves.
   `canViewProfile`; recommendations are reads over the same tables.
 - **Pusher needs nothing new** — `PusherListener` already
   `router.refresh()`es on whitelist/reaction events, which re-ranks the
-  tab on next render.
+  picks on next render.
 - **No schema change required for v1.** All signals exist:
   `watch_history` (recency-weighted frequency per channel),
   `watch_progress` (completed / in-progress), `video_reactions`
@@ -103,8 +107,8 @@ video_score(v) =
 
 Tie-break: `published_at desc nulls last` (same as the "Newest" sort).
 **Cold start is free:** a profile with no history has all-zero
-affinities, so the ordering collapses to newest-first — the tab still
-works on day one.
+affinities, so the ordering collapses to newest-first — the picks
+still work on day one.
 
 **Cap at ~60 rows.** The whitelist is thousands deep; kids never scroll
 that far, and `feedVideoCols` exists precisely because full `videos`
@@ -173,13 +177,18 @@ Server component, mirrors `liked-view.tsx`: `FeedHeader` + `EmptyState`
 
 Add `case "foryou": return <ForYouView … />`.
 
-### 5. `app/kids/[profileId]/page.tsx` (modify)
+### 5. `app/kids/[profileId]/_components/home-shelves.tsx` (modify)
 
-Add `["foryou", { view: "foryou", channel: null, list: null, date:
-null }]` to the tabs array — **first position** so it reads as the
-home feed. Keep `"videos"` as the URL default for v1 (a bare
-`/kids/<id>` still lands on the full grid); flipping the default is a
-one-line follow-up once the ranking proves itself.
+Add a **"Picked for you"** shelf between "Continue watching" and "New
+for you": `getRecommendedVideos(profileId, { limit: 20 })` in the
+existing `Promise.all`, `seeAllHref` → `?view=foryou`, cards carry the
+`view=foryou` feed params (Liked-shelf precedent) so watch-page
+autoplay rebuilds the ranked queue. NO sixth tab — six tiles would
+cramp the phone tab strip (`grid-cols-5` stays); promotion to a tab is
+a one-line tabs-array addition in `page.tsx` once the ranking proves
+itself. Keep `"videos"` as the URL default for v1 (a bare `/kids/<id>`
+still lands on the full grid); flipping the default is likewise a
+one-line follow-up.
 
 ### 6. `app/kids/[profileId]/watch/[videoId]/page.tsx` (modify, small)
 
@@ -194,16 +203,16 @@ right.
 | Case | Behavior |
 |---|---|
 | No watch history yet | All affinities 0 → newest-first ordering (same as "Newest" sort) |
-| Disliked video | Excluded from the tab entirely |
+| Disliked video | Excluded from the picks entirely |
 | Video on a disliked channel | Heavy demotion (−20), not exclusion — sibling content may differ |
 | Completed video | 25% of its channel affinity — rewatchable favorites surface below fresh picks |
-| Started-not-finished | +8 flat → effectively pinned near the top ("continue watching") |
+| Started-not-finished | +8 flat boost ("continue watching" also has its own home shelf) |
 | Liked video / channel | +4 / +5 boost |
 | Video unpinned | Hidden via `whitelisted_videos` inner join; returns on re-pin |
 | Tie scores | `published_at desc` — deterministic, stable across refreshes |
 | `?q=` / `?channel=` / `?sort=` | `q` filters titles as usual; channel/sort params are ignored in foryou |
 | Autoplay from a pick | Tier-picked unwatched-first through the ranked list (existing `pickNextIndex`) |
-| Who sees it | Anyone who can view `/kids/<id>` — same gate as every tab |
+| Who sees it | Anyone who can view `/kids/<id>` — same gate as every feed |
 
 ## Out of scope / future
 
@@ -229,8 +238,10 @@ right.
 
 1. `npm run typecheck` and `npm run lint` pass.
 2. `npm run dev` (port 3100), on a kid-locked profile:
-   - `/kids/{id}?view=foryou` → tab bar shows **For You** first; grid
-     renders with thumbnails, ⋮ menus, resume badges.
+   - `/kids/{id}` home → a "Picked for you" shelf sits between
+     "Continue watching" and "New for you"; See-all →
+     `/kids/{id}?view=foryou` shows the full ranked grid with
+     thumbnails, ⋮ menus, resume badges.
    - On Rock (richest history): top rows should be unwatched videos
      from Mud Stamp Films / Kid Crew / John Deere Kids / Cooking with
      Carter — verify against
@@ -241,9 +252,9 @@ right.
    - Start a video, leave mid-way → it appears near the top on next
      visit.
    - Tap a pick → watch page plays it; auto-advance continues through
-     the ranked list; "Back" returns to the For You tab.
+     the ranked list; "Back" returns to the Picked-for-you feed.
    - Unpin a recommended video in the parent dashboard → it leaves the
-     tab (Pusher refresh); re-pin → it returns.
+     picks (Pusher refresh); re-pin → it returns.
    - `?q=` filters by title; `?view=videos` unchanged.
 3. SQL sanity-check the ranking directly: run the CTE query in psql for
    Rock's profile id and eyeball that the top 20 channels match the

@@ -100,9 +100,10 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
     currentIndex = rows.findIndex((r) => r.video.id === videoId);
   }
 
-  if (currentIndex === -1 && playlistId) {
-    // The playlist was deleted or emptied mid-session — degrade to the
-    // full approved list rather than bouncing back to the portal.
+  if (currentIndex === -1 && (playlistId || feed.view === "foryou")) {
+    // The playlist was deleted or emptied mid-session, or the video
+    // re-ranked below the For-You cap — degrade to the full approved
+    // list rather than bouncing back to the portal.
     rows = await getKidsVideos(profileId, {
       sort: feed.sort,
       dir: feed.dir,

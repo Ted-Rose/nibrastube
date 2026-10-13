@@ -1,4 +1,20 @@
-import { and, asc, count, desc, eq, ilike, inArray, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
+import { cache } from "react";
 import { db } from "@/lib/db";
 import {
   channels,
@@ -99,6 +115,16 @@ export function kidsFeedQuery(
   return qs ? `?${qs}` : "";
 }
 
+// Kids portal path for a feed — the single helper so tabs, sorts,
+// drill-down and empty-state links never drop each other's params.
+export function kidsPortalUrl(
+  profileId: string,
+  feed: KidsFeedParams,
+  overrides: Partial<KidsFeedParams> = {}
+): string {
+  return `/kids/${profileId}${kidsFeedQuery(feed, overrides)}`;
+}
+
 export type WatchStatus = 0 | 1 | 2; // 0 new, 1 started, 2 watched
 
 // Only the columns the feed grid and the watch-page playlist actually
@@ -190,14 +216,110 @@ export async function getKidsVideos(
     .orderBy(...orderBy);
 }
 
+// Whitelisted videos the kid started but hasn't finished (and hasn't
+// 👎'd), most recently watched first — the home "Continue watching"
+// shelf. Same { video, progress, reaction } row shape as getKidsVideos;
+// progress is an inner join because the shelf only lists started rows.
+export async function getContinueWatching(
+  profileId: string,
+  { limit = 20 }: { limit?: number } = {}
+) {
+  return db
+    .select({
+      video: feedVideoCols,
+      progress: watchProgress,
+      reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
+    })
+    .from(whitelistedVideos)
+    .innerJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .innerJoin(
+      watchProgress,
+      and(
+        eq(watchProgress.profileId, whitelistedVideos.profileId),
+        eq(watchProgress.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .leftJoin(
+      videoReactions,
+      and(
+        eq(videoReactions.profileId, whitelistedVideos.profileId),
+        eq(videoReactions.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .where(
+      and(
+        eq(whitelistedVideos.profileId, profileId),
+        gt(watchProgress.positionSeconds, 0),
+        eq(watchProgress.completed, false),
+        or(
+          isNull(videoReactions.reaction),
+          ne(videoReactions.reaction, "dislike")
+        )
+      )
+    )
+    .orderBy(desc(watchProgress.watchedAt))
+    .limit(limit);
+}
+
+// Recently pinned whitelisted videos the kid hasn't finished or 👎'd —
+// the home "New for you" shelf. The completed/disliked checks are
+// null-safe because progress and reactions are left joins. Ordered by
+// pin day then publish date: a channel backfill pins hundreds of rows
+// within seconds, newest upload first, so a plain `pinnedAt desc` would
+// surface the channel's OLDEST uploads.
+export async function getNewForYou(
+  profileId: string,
+  { limit = 20, days = 14 }: { limit?: number; days?: number } = {}
+) {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  return db
+    .select({
+      video: feedVideoCols,
+      progress: watchProgress,
+      reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
+    })
+    .from(whitelistedVideos)
+    .innerJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .leftJoin(
+      watchProgress,
+      and(
+        eq(watchProgress.profileId, whitelistedVideos.profileId),
+        eq(watchProgress.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .leftJoin(
+      videoReactions,
+      and(
+        eq(videoReactions.profileId, whitelistedVideos.profileId),
+        eq(videoReactions.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .where(
+      and(
+        eq(whitelistedVideos.profileId, profileId),
+        gte(whitelistedVideos.pinnedAt, cutoff),
+        or(isNull(watchProgress.completed), eq(watchProgress.completed, false)),
+        or(
+          isNull(videoReactions.reaction),
+          ne(videoReactions.reaction, "dislike")
+        )
+      )
+    )
+    .orderBy(
+      sql`date_trunc('day', ${whitelistedVideos.pinnedAt}) desc`,
+      sql`${videos.publishedAt} desc nulls last`
+    )
+    .limit(limit);
+}
+
 // Videos the kid tapped 👍 on, newest reaction first. Inner-joins
 // whitelisted_videos so an unpinned favorite hides until re-pinned.
 // Same { video, progress, reaction } row shape as getKidsVideos.
 export async function getLikedVideos(
   profileId: string,
-  { q }: { q?: string } = {}
+  { q, limit }: { q?: string; limit?: number } = {}
 ) {
-  return db
+  const query = db
     .select({
       video: feedVideoCols,
       progress: watchProgress,
@@ -227,6 +349,7 @@ export async function getLikedVideos(
       )
     )
     .orderBy(desc(videoReactions.reactedAt));
+  return limit === undefined ? query : query.limit(limit);
 }
 
 // Everything a profile watched, one row per (video, kid-local day), newest
@@ -374,7 +497,9 @@ export interface KidsPlaylist {
 // Playlists for a profile with their VISIBLE item count (items whose video
 // is currently unpinned don't count) and a cover taken from the first
 // visible item — same unpin-hides semantics as getPlaylistVideos.
-export async function getPlaylists(
+// cache() shares one query per request across separate Suspense
+// boundaries (the home shelves and the view's own grid/menu snapshot).
+export const getPlaylists = cache(async function getPlaylists(
   profileId: string
 ): Promise<KidsPlaylist[]> {
   return db
@@ -406,7 +531,7 @@ export async function getPlaylists(
     .where(eq(playlists.profileId, profileId))
     .groupBy(playlists.id, playlists.name, playlists.createdAt)
     .orderBy(asc(playlists.createdAt));
-}
+});
 
 // One playlist's videos in kid-defined order. Same { video, progress,
 // reaction } row shape as getKidsVideos. Rows inner-join

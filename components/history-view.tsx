@@ -80,12 +80,14 @@ export function HistoryView({
                 <Link
                   key={video.id}
                   href={`/kids/${profileId}/watch/${video.id}${feedQuery}`}
-                  className="group flex items-center gap-4 rounded-3xl bg-white p-3 shadow-sm transition-transform hover:-translate-y-0.5"
+                  className="group flex items-center gap-4 rounded-3xl bg-white p-3 shadow-sm transition-transform motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
                 >
                   <div className="relative w-32 sm:w-40 shrink-0">
                     <img
                       src={video.thumbnail}
-                      alt={video.title}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
                       className="aspect-video w-full rounded-2xl object-cover"
                     />
                     <LinkPendingSpinner
@@ -115,7 +117,7 @@ export function HistoryView({
               <button
                 type="button"
                 onClick={() => toggle(watchedOn)}
-                className="mt-3 rounded-full bg-white px-5 py-2 text-base font-bold text-slate-500 shadow-sm hover:text-slate-800 transition-colors"
+                className="mt-3 rounded-full bg-white px-5 py-2 text-base font-bold text-slate-500 shadow-sm hover:text-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
               >
                 {isOpen ? "Show less" : `Show all ${dayRows.length}`}
               </button>

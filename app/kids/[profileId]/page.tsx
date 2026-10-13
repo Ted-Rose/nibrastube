@@ -1,388 +1,33 @@
 import { Suspense } from "react";
 import { db } from "@/lib/db";
-import {
-  channels,
-  profiles,
-  whitelistedChannels,
-} from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { profiles } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
-import {
-  ArrowLeft,
-  ClockCounterClockwise,
-  Heart,
-  MonitorPlay,
-  Play,
-  Playlist,
-  House,
-  SpinnerGap,
-  UserSwitch,
-} from "@phosphor-icons/react/dist/ssr";
+import { UserSwitch } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
 import PusherListener from "@/components/pusher-listener";
 import DailySyncPing from "@/components/daily-sync-ping";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
+import { KidsHeader } from "@/components/kids-header";
 import { KidsSearch } from "@/components/kids-search";
-import { KidsViewMenu } from "@/components/kids-view-menu";
-import { KidsVideoGrid } from "@/components/kids-video-grid";
-import { KidsSortSelect } from "@/components/kids-sort-select";
+import { KidsViewTabs } from "@/components/kids-view-tabs";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
-import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
-import { PlaylistSortableList } from "@/components/playlist-sortable-list";
-import { PlaylistActionsMenu } from "@/components/playlist-actions-menu";
-import { NewPlaylistButton } from "@/components/new-playlist-button";
-import { HistoryView } from "@/components/history-view";
-import { HistoryDatePicker } from "@/components/history-date-picker";
+import { VideoGridSkeleton } from "@/components/video-grid-skeleton";
 import { getSession } from "@/lib/auth";
 import { canViewProfile } from "@/lib/profiles";
 import { cookies } from "next/headers";
 import {
-  getKidsChannels,
-  getKidsVideos,
-  getLikedVideos,
-  getPlaylists,
-  getPlaylistVideos,
-  getWatchHistory,
-  kidsFeedQuery,
+  kidsPortalUrl,
   parseKidsFeedParams,
   type KidsFeedParams,
+  type KidsView,
 } from "@/lib/kids-feed";
+import { FeedContent } from "./_components/feed-content";
+import { KIDS_VIEWS, searchPlaceholder } from "./_components/view-config";
 
 interface KidsPortalProps {
   params: Promise<{ profileId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
-}
-
-// Everything below the tab bar fetches feed rows and streams in under its
-// own Suspense boundary, so header + tabs paint while the (remote) DB work
-// is still in flight.
-async function FeedContent({
-  profileId,
-  feed,
-}: {
-  profileId: string;
-  feed: KidsFeedParams;
-}) {
-  const { view, channel, q: query, list } = feed;
-  const drilledIn = view === "channels" && channel !== null;
-  const inPlaylist = view === "playlists" && list !== null;
-  const showVideoGrid = view === "videos" || drilledIn;
-
-  // Single helper so tabs/sorts/drill-down links never drop each other's params
-  const portalUrl = (overrides: Partial<KidsFeedParams> = {}) =>
-    `/kids/${profileId}${kidsFeedQuery(feed, overrides)}`;
-
-  const rows =
-    view === "liked"
-      ? await getLikedVideos(profileId, { q: query })
-      : inPlaylist
-        ? await getPlaylistVideos(profileId, list, { q: query })
-        : showVideoGrid
-          ? await getKidsVideos(profileId, {
-              q: query,
-              channelId: channel,
-              sort: feed.sort,
-              dir: feed.dir,
-            })
-          : [];
-  const channelRows =
-    view === "channels" && !drilledIn
-      ? await getKidsChannels(profileId, { q: query })
-      : [];
-  // Day-grouped watch history — carries watchedOn/lastSeenAt on top of the
-  // usual { video, progress, reaction } row shape.
-  const historyRows =
-    view === "history"
-      ? await getWatchHistory(profileId, {
-          q: query,
-          date: feed.date ?? undefined,
-        })
-      : [];
-
-  // Playlists snapshot — feeds both playlists views and the shared
-  // "Save to playlist" dialog behind every video card's ⋮ menu.
-  const playlistRows =
-    (view !== "channels" && view !== "history") || drilledIn
-      ? await getPlaylists(profileId)
-      : [];
-
-  const playlist = inPlaylist
-    ? (playlistRows.find((p) => p.id === list) ?? null)
-    : null;
-  if (inPlaylist && !playlist) {
-    // Deleted or another profile's playlist id — drop back to the list.
-    redirect(portalUrl({ list: null }));
-  }
-
-  // Search on the playlists tab filters playlist cards by name.
-  const needle = query.toLowerCase();
-  const visiblePlaylists = playlistRows.filter(
-    (p) => !needle || p.name.toLowerCase().includes(needle)
-  );
-
-  let channelTitle: string | null = null;
-  let channelApproved = false;
-  if (drilledIn) {
-    channelTitle =
-      rows[0]?.video.channelTitle ??
-      (
-        await db.query.channels.findFirst({
-          where: eq(channels.id, channel),
-        })
-      )?.title ??
-      "Channel";
-    if (rows.length === 0) {
-      channelApproved = !!(await db.query.whitelistedChannels.findFirst({
-        where: and(
-          eq(whitelistedChannels.profileId, profileId),
-          eq(whitelistedChannels.channelId, channel)
-        ),
-      }));
-    }
-  }
-
-  return (
-    <>
-      {drilledIn && (
-        <div className="mb-6">
-          <Link
-            href={portalUrl({ channel: null })}
-            className="inline-flex items-center gap-2 text-lg font-bold text-slate-500 hover:text-slate-800 transition-colors"
-          >
-            <ArrowLeft size={20} weight="bold" />
-            All channels
-            <LinkPendingSpinner size={20} weight="bold" />
-          </Link>
-        </div>
-      )}
-
-      {inPlaylist && playlist && (
-        <div className="mb-6">
-          <Link
-            href={portalUrl({ list: null })}
-            className="inline-flex items-center gap-2 text-lg font-bold text-slate-500 hover:text-slate-800 transition-colors"
-          >
-            <ArrowLeft size={20} weight="bold" />
-            All playlists
-            <LinkPendingSpinner size={20} weight="bold" />
-          </Link>
-        </div>
-      )}
-
-      <div className="flex items-center justify-between mb-8">
-         <h2 className="text-3xl font-black text-slate-900 tracking-tight">
-           {drilledIn
-             ? channelTitle
-             : inPlaylist
-               ? (playlist?.name ?? "Playlist")
-               : query
-                 ? `Results for "${query}"`
-                 : view === "channels"
-                   ? "Channels"
-                   : view === "liked"
-                     ? "Liked Videos"
-                     : view === "playlists"
-                       ? "Playlists"
-                       : view === "history"
-                         ? feed.date
-                           ? `History — ${feed.date}`
-                           : "History"
-                         : "Approved Videos"}
-         </h2>
-         {view === "history" && <HistoryDatePicker date={feed.date} />}
-         {inPlaylist && playlist && (
-           <div className="flex items-center gap-3">
-             {rows.length > 0 && (
-               <Link
-                 href={`/kids/${profileId}/watch/${rows[0].video.id}${kidsFeedQuery(feed)}`}
-                 className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
-               >
-                 <Play size={20} weight="fill" />
-                 Play all
-                 <LinkPendingSpinner size={20} weight="bold" />
-               </Link>
-             )}
-             <PlaylistActionsMenu
-               profileId={profileId}
-               playlistId={playlist.id}
-               name={playlist.name}
-             />
-           </div>
-         )}
-      </div>
-
-      {view === "playlists" && !list ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-          {visiblePlaylists.map((p) => (
-            <Link key={p.id} href={portalUrl({ list: p.id })} className="group">
-              <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
-                <LinkPendingSpinner
-                  size={24}
-                  weight="bold"
-                  className="absolute right-5 top-5 z-10 text-slate-400"
-                />
-                {p.coverThumbnail ? (
-                  <div className="aspect-video">
-                    <img
-                      src={p.coverThumbnail}
-                      className="w-full h-full object-cover"
-                      alt={p.name}
-                    />
-                  </div>
-                ) : (
-                  <div className="aspect-video bg-primary/10 flex items-center justify-center text-primary">
-                    <Playlist size={56} weight="fill" />
-                  </div>
-                )}
-                <CardContent className="p-6">
-                  <h3 className="text-xl font-bold line-clamp-2 leading-tight text-slate-900 group-hover:underline">
-                    {p.name}
-                  </h3>
-                  <p className="text-slate-500 mt-2 font-medium">
-                    {p.videoCount} {p.videoCount === 1 ? "video" : "videos"}
-                  </p>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-          <NewPlaylistButton profileId={profileId} />
-        </div>
-      ) : inPlaylist && playlist ? (
-        rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
-             <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
-                 <Playlist size={48} weight="fill" />
-             </div>
-             <p className="text-2xl font-bold text-slate-400">
-               {query
-                 ? "No videos found!"
-                 : "No videos yet! Tap ⋮ on a video to add it."}
-             </p>
-          </div>
-        ) : (
-          <SaveToPlaylistProvider
-            profileId={profileId}
-            playlists={playlistRows}
-          >
-            <PlaylistSortableList
-              profileId={profileId}
-              playlistId={playlist.id}
-              rows={rows}
-              feedQuery={kidsFeedQuery(feed)}
-            />
-          </SaveToPlaylistProvider>
-        )
-      ) : view === "history" ? (
-        historyRows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
-             <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
-                 <ClockCounterClockwise size={48} weight="fill" />
-             </div>
-             <p className="text-2xl font-bold text-slate-400">
-               {query
-                 ? "No videos found!"
-                 : feed.date
-                   ? "Nothing watched that day!"
-                   : "Watch a video and it'll show up here!"}
-             </p>
-          </div>
-        ) : (
-          <HistoryView
-            rows={historyRows}
-            profileId={profileId}
-            feedQuery={kidsFeedQuery(feed)}
-          />
-        )
-      ) : view === "channels" && !drilledIn ? (
-        channelRows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
-             <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
-                 <MonitorPlay size={48} weight="fill" />
-             </div>
-             <p className="text-2xl font-bold text-slate-400">
-               {query
-                 ? "No channels found!"
-                 : "Ask Mom or Dad to approve some channels!"}
-             </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {channelRows.map((c) => (
-              <Link key={c.id} href={portalUrl({ channel: c.id })} className="group">
-                <Card className="relative overflow-hidden border-0 shadow-lg rounded-[32px] group-hover:-translate-y-2 transition-transform duration-300 bg-white">
-                  <LinkPendingSpinner
-                    size={24}
-                    weight="bold"
-                    className="absolute right-5 top-5 text-slate-400"
-                  />
-                  <CardContent className="p-8 flex flex-col items-center text-center gap-4">
-                    {c.thumbnail ? (
-                      <img
-                        src={c.thumbnail}
-                        className="w-24 h-24 rounded-full object-cover border-4 border-slate-100"
-                        alt={c.title}
-                      />
-                    ) : (
-                      <div className="w-24 h-24 rounded-full bg-primary/10 text-primary border-4 border-slate-100 flex items-center justify-center text-4xl font-black">
-                        {c.title.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="text-xl font-bold line-clamp-2 leading-tight text-slate-900 group-hover:underline">
-                        {c.title}
-                      </h3>
-                      <p className="text-slate-500 mt-2 font-medium">
-                        {c.videoCount} {c.videoCount === 1 ? "video" : "videos"}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        )
-      ) : rows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
-           <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
-               {view === "liked" ? (
-                 <Heart size={48} weight="fill" />
-               ) : (
-                 <Play size={48} weight="fill" />
-               )}
-           </div>
-           <p className="text-2xl font-bold text-slate-400">
-             {query
-               ? "No videos found!"
-               : view === "liked"
-                 ? "No liked videos yet! Tap the 👍 while watching."
-                 : channelApproved
-                   ? "Videos are on the way!"
-                   : "Ask Mom or Dad to pick some videos!"}
-           </p>
-        </div>
-      ) : (
-        <SaveToPlaylistProvider
-          profileId={profileId}
-          playlists={playlistRows}
-        >
-          <KidsVideoGrid
-            rows={rows}
-            profileId={profileId}
-            feedQuery={kidsFeedQuery(feed)}
-          />
-        </SaveToPlaylistProvider>
-      )}
-    </>
-  );
-}
-
-function FeedFallback() {
-  return (
-    <div className="flex items-center justify-center py-32 text-slate-300">
-      <SpinnerGap size={48} className="animate-spin" />
-    </div>
-  );
 }
 
 export default async function KidsPortalPage({
@@ -400,8 +45,7 @@ export default async function KidsPortalPage({
   }
 
   const feed = parseKidsFeedParams(await searchParams);
-  const { view, channel, q: query } = feed;
-  const drilledIn = view === "channels" && channel !== null;
+  const { view, q: query } = feed;
 
   // Access check before the existence check so a signed-in parent can't
   // use 404-vs-redirect to probe whether a profile UUID exists.
@@ -416,140 +60,87 @@ export default async function KidsPortalPage({
 
   if (!profile) notFound();
 
-  // Single helper so tabs/sorts/drill-down links never drop each other's params
-  const portalUrl = (overrides: Partial<KidsFeedParams> = {}) =>
-    `/kids/${profileId}${kidsFeedQuery(feed, overrides)}`;
-
-  const showVideoGrid = view === "videos" || drilledIn;
+  const tabs = (
+    [
+      ["videos", { view: "videos", channel: null }],
+      ["channels", { view: "channels", channel: null }],
+      ["liked", { view: "liked", channel: null }],
+      ["playlists", { view: "playlists", channel: null, list: null }],
+      [
+        "history",
+        { view: "history", channel: null, list: null, date: null },
+      ],
+    ] as const satisfies readonly (readonly [
+      KidsView,
+      Partial<KidsFeedParams>,
+    ])[]
+  ).map(([key, overrides]) => ({
+    key,
+    label: KIDS_VIEWS[key].label,
+    href: kidsPortalUrl(profileId, feed, overrides),
+    active: view === key,
+  }));
 
   return (
     <div className="min-h-screen bg-[#F0F4FF]">
       <PusherListener profileId={profileId} />
       <DailySyncPing />
-      {/* Kids Header */}
-      <header className="bg-white border-b-4 border-slate-100 px-4 sm:px-6 pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-3">
-          <div className="flex items-center gap-3">
-             <Link
-               href="/kids"
-               aria-label="Switch profile"
-               // /kids is auth-conditional: proxy.ts 307-redirects it to
-               // /login on locked kid devices. A prefetched redirect
-               // pollutes the router's segment cache and can replay on
-               // later navigations — always resolve it fresh on click.
-               prefetch={false}
-               className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-900"
-             >
-               <House size={32} weight="bold" />
-             </Link>
-             <span className="text-xl font-black text-slate-900 hidden md:block">NibrasTube</span>
-          </div>
-
-          <KidsSearch
-            profileId={profileId}
-            view={view}
-            channel={channel}
-            list={feed.list}
-            sort={feed.sort}
-            dir={feed.dir}
-            query={query}
-            placeholder={
-              view === "channels" && !drilledIn
-                ? `Search ${profile.name}'s channels...`
-                : view === "playlists"
-                  ? feed.list
-                    ? "Search this playlist..."
-                    : `Search ${profile.name}'s playlists...`
-                  : view === "history"
-                    ? `Search ${profile.name}'s history...`
-                    : `Search ${profile.name}'s videos...`
-            }
-          />
-
-          <Link
-            href="/kids"
-            aria-label="Switch profile"
-            prefetch={false}
-            className="group flex items-center gap-3 rounded-2xl hover:opacity-80 transition-opacity"
-          >
-             <span className="text-xl font-black text-slate-700 hidden sm:block">{profile.name}</span>
-             <div className="relative">
-               <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-white border-4 border-primary shadow-sm flex items-center justify-center text-2xl sm:text-3xl">
-                  {profile.avatar}
+      {/* Kids Header — row 1 (search, profile, parent gate) collapses
+          into the tab strip on phones; see KidsHeader */}
+      <KidsHeader
+        row1={
+          <>
+            <Link
+              href={`/kids/${profileId}`}
+              className="hidden shrink-0 rounded-lg px-1 py-2 text-xl font-black text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40 md:block"
+            >
+              <LinkPendingSpinner
+                size={20}
+                weight="bold"
+                fallback={<>NibrasTube</>}
+              />
+            </Link>
+            <div className="min-w-0 flex-1">
+              <KidsSearch
+                query={query}
+                placeholder={searchPlaceholder(feed, profile.name)}
+              />
+            </div>
+            <Link
+              href="/kids"
+              aria-label="Switch profile"
+              // /kids is auth-conditional: proxy.ts 307-redirects it to
+              // /login on locked kid devices. A prefetched redirect
+              // pollutes the router's segment cache and can replay on
+              // later navigations — always resolve it fresh on click.
+              prefetch={false}
+              className="group flex shrink-0 items-center gap-3 rounded-2xl transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+            >
+               <span className="text-xl font-black text-slate-700 hidden sm:block">{profile.name}</span>
+               <div className="relative">
+                 <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-white border-4 border-primary shadow-sm flex items-center justify-center text-2xl sm:text-3xl">
+                    {profile.avatar}
+                 </div>
+                 <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-sm">
+                   <LinkPendingSpinner
+                     size={14}
+                     weight="bold"
+                     fallback={<UserSwitch size={14} weight="bold" />}
+                   />
+                 </div>
                </div>
-               <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-sm">
-                 <UserSwitch size={14} weight="bold" />
-               </div>
-             </div>
-          </Link>
-        </div>
-      </header>
+            </Link>
+            <KidsFooterGate variant="icon" />
+          </>
+        }
+        tabs={<KidsViewTabs tabs={tabs} />}
+      />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 sm:mt-10">
-        {/* View picker — the five feeds live in a burger menu so the row
-            stays one element wide on phones */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-8">
-          <KidsViewMenu
-            items={[
-              {
-                key: "videos",
-                label: "Videos",
-                href: portalUrl({ view: "videos", channel: null }),
-                active: view === "videos",
-              },
-              {
-                key: "channels",
-                label: "Channels",
-                href: portalUrl({ view: "channels", channel: null }),
-                active: view === "channels",
-              },
-              {
-                key: "liked",
-                label: "Liked",
-                href: portalUrl({ view: "liked", channel: null }),
-                active: view === "liked",
-              },
-              {
-                key: "playlists",
-                label: "Playlists",
-                href: portalUrl({
-                  view: "playlists",
-                  channel: null,
-                  list: null,
-                }),
-                active: view === "playlists",
-              },
-              {
-                key: "history",
-                label: "History",
-                href: portalUrl({
-                  view: "history",
-                  channel: null,
-                  list: null,
-                  date: null,
-                }),
-                active: view === "history",
-              },
-            ]}
-          />
-          {showVideoGrid && (
-            <KidsSortSelect
-              value={`${feed.sort}:${feed.dir}`}
-              className="w-full sm:w-auto sm:ml-auto"
-            />
-          )}
-        </div>
-
-        <Suspense fallback={<FeedFallback />}>
+        <Suspense fallback={<VideoGridSkeleton />}>
           <FeedContent profileId={profileId} feed={feed} />
         </Suspense>
       </main>
-
-      {/* Parental Gate to switch to Parent Portal altogether — inline so
-          it can never overlap grid content */}
-      <footer className="mt-16 flex justify-center pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        <KidsFooterGate />
-      </footer>
     </div>
   );
 }

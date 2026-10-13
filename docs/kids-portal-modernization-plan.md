@@ -1052,10 +1052,10 @@ reason under "Future".
 | WP | Implemented | Reviewed | Fix rounds | Merged | Notes |
 |---|---|---|---|---|---|
 | WP1 refactor views | ☑ | ☑ | 1 | ☑ | QA profile: Rock `9a020c45-2201-4ac5-9ca1-5924cdd59075`; merged ae0c64c |
-| WP2 header + tabs + gate | ☐ | ☐ | 0 | ☐ | |
-| WP3 type-ahead search | ☐ | ☐ | 0 | ☐ | |
-| WP4 card polish | ☐ | ☐ | 0 | ☐ | |
-| WP5 sort chips | ☐ | ☐ | 0 | ☐ | |
+| WP2 header + tabs + gate | ☑ | ☑ | 1 | ☑ | portal fix expanded Owns to parental-gate-wrapper.tsx; merged 04e9f3f |
+| WP3 type-ahead search | ☑ | ☑ | 2 | ☑ | merged 0116400 |
+| WP4 card polish | ☑ | ☑ | 1 | ☑ | merged 259a0d3 |
+| WP5 sort chips | ☑ | ☑ | 0 | ☑ | merged 4de0235; stale feed-header comment fixed on integration |
 | WP6 home shelves | ☐ | ☐ | 0 | ☐ | |
 | WP7 view transitions (spike) | ☐ | ☐ | 0 | ☐ go / ☐ no-go | |
 | WP8 docs | ☐ | ☐ | 0 | ☐ | |

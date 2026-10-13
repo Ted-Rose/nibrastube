@@ -16,8 +16,28 @@ export function FullscreenPlayer({ children }: { children: React.ReactNode }) {
     const el = ref.current;
     if (!el || document.fullscreenElement) return;
 
+    // React keeps view-transition-name on this element while a share
+    // morph is animating; a fullscreen element joins the top layer
+    // above the ::view-transition-* overlay and would hide it, so wait
+    // the morph out — bounded in case the name is never restored. The
+    // mount call usually already lands after React restores the name
+    // (it defers passive effects to transition.finished); this guard
+    // mainly covers a gesture retry while the morph is still running.
+    let morphDeadline = 0;
+    let morphTimer: ReturnType<typeof setTimeout> | null = null;
+
     const requestFs = () => {
       if (userExitedRef.current) return;
+      // undefined on browsers without view-transition-name support —
+      // don't treat that as an in-flight morph.
+      const vtName = el.style.viewTransitionName;
+      if (typeof vtName === "string" && vtName !== "" && vtName !== "none") {
+        if (!morphDeadline) morphDeadline = Date.now() + 2000;
+        if (Date.now() < morphDeadline) {
+          morphTimer = setTimeout(requestFs, 100);
+          return;
+        }
+      }
       // iOS/Safari PWA doesn't support fullscreen on arbitrary elements —
       // fall back to a CSS overlay that fills the viewport.
       if (!el.requestFullscreen) {
@@ -52,6 +72,7 @@ export function FullscreenPlayer({ children }: { children: React.ReactNode }) {
     document.addEventListener("fullscreenchange", onFsChange);
 
     return () => {
+      if (morphTimer) clearTimeout(morphTimer);
       window.removeEventListener("pointerdown", onInteract);
       window.removeEventListener("keydown", onInteract);
       document.removeEventListener("fullscreenchange", onFsChange);

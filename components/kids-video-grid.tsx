@@ -60,6 +60,9 @@ export function KidsVideoGrid({
             progress={progress}
             reaction={reaction}
             eager={i < eagerCount}
+            // The grid renders each video once, so it owns the unique
+            // video-<id> view-transition name that morphs into the player.
+            vt
           />
         ))}
       </div>

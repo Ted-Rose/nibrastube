@@ -1056,7 +1056,7 @@ reason under "Future".
 | WP3 type-ahead search | ☑ | ☑ | 2 | ☑ | merged 0116400 |
 | WP4 card polish | ☑ | ☑ | 1 | ☑ | merged 259a0d3 |
 | WP5 sort chips | ☑ | ☑ | 0 | ☑ | merged 4de0235; stale feed-header comment fixed on integration |
-| WP6 home shelves | ☐ | ☐ | 0 | ☐ | |
-| WP7 view transitions (spike) | ☐ | ☐ | 0 | ☐ go / ☐ no-go | |
-| WP8 docs | ☐ | ☐ | 0 | ☐ | |
+| WP6 home shelves | ☑ | ☑ | 0 | ☑ | merged 78aebdf |
+| WP7 view transitions (spike) | ☑ | ☑ | 1 | ☐ go / ☐ no-go | fullscreen race fixed in 890af4f; awaiting re-review |
+| WP8 docs | ☑ | ☑ | 0 | ☑ | merged 4b970df; .env wording left as-is per user |
 | Final QA + PR | ☐ | ☐ | 0 | ☐ PR opened | |

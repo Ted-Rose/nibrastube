@@ -16,20 +16,39 @@ export function FullscreenPlayer({ children }: { children: React.ReactNode }) {
     const el = ref.current;
     if (!el || document.fullscreenElement) return;
 
-    // React keeps view-transition-name on this element while a share
-    // morph is animating; a fullscreen element joins the top layer
-    // above the ::view-transition-* overlay and would hide it, so wait
-    // the morph out — bounded in case the name is never restored. The
-    // mount call usually already lands after React restores the name
-    // (it defers passive effects to transition.finished); this guard
-    // mainly covers a gesture retry while the morph is still running.
+    // A fullscreen element joins the top layer ABOVE the
+    // ::view-transition-* pseudos — entering while a share morph is
+    // animating hides it (hard cut), and the iOS `fixed inset-0`
+    // fallback would re-layout the morph target after the transition
+    // captured its max-w-6xl geometry. So defer until no transition is
+    // in flight.
+    let disposed = false;
     let morphDeadline = 0;
     let morphTimer: ReturnType<typeof setTimeout> | null = null;
 
     const requestFs = () => {
-      if (userExitedRef.current) return;
-      // undefined on browsers without view-transition-name support —
-      // don't treat that as an in-flight morph.
+      if (disposed || userExitedRef.current) return;
+      // Primary signal: this React build (next/dist/compiled/react-dom)
+      // stores the in-flight ViewTransition on
+      // `document.__reactViewTransition` and clears it once `finished`
+      // settles — settled either way (finished or skipped) the pseudo
+      // tree is gone. Re-running requestFs on settle also covers a
+      // newer transition having started meanwhile.
+      const viewTransition = (
+        document as Document & {
+          __reactViewTransition?: { finished?: Promise<unknown> } | null;
+        }
+      ).__reactViewTransition;
+      const finished = viewTransition && viewTransition.finished;
+      if (finished && typeof finished.then === "function") {
+        finished.then(requestFs, requestFs);
+        return;
+      }
+      // Fallback: React also applies view-transition-name to this
+      // element for the duration of a morph, so a set name likewise
+      // means "wait" — poll briefly, bounded in case the name is never
+      // restored. undefined on browsers without view-transition-name
+      // support — don't treat that as an in-flight morph.
       const vtName = el.style.viewTransitionName;
       if (typeof vtName === "string" && vtName !== "" && vtName !== "none") {
         if (!morphDeadline) morphDeadline = Date.now() + 2000;
@@ -72,6 +91,7 @@ export function FullscreenPlayer({ children }: { children: React.ReactNode }) {
     document.addEventListener("fullscreenchange", onFsChange);
 
     return () => {
+      disposed = true;
       if (morphTimer) clearTimeout(morphTimer);
       window.removeEventListener("pointerdown", onInteract);
       window.removeEventListener("keydown", onInteract);

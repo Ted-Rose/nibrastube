@@ -16,8 +16,23 @@ export function FullscreenPlayer({ children }: { children: React.ReactNode }) {
     const el = ref.current;
     if (!el || document.fullscreenElement) return;
 
+    // React keeps view-transition-name on this element for the duration
+    // of a share morph; a fullscreen element joins the top layer above
+    // the ::view-transition-* overlay and would hide the animation, so
+    // wait the morph out — bounded in case the name is never restored.
+    let morphDeadline = 0;
+    let morphTimer: ReturnType<typeof setTimeout> | null = null;
+
     const requestFs = () => {
       if (userExitedRef.current) return;
+      const vtName = el.style.viewTransitionName;
+      if (vtName !== "" && vtName !== "none") {
+        if (!morphDeadline) morphDeadline = Date.now() + 2000;
+        if (Date.now() < morphDeadline) {
+          morphTimer = setTimeout(requestFs, 100);
+          return;
+        }
+      }
       // iOS/Safari PWA doesn't support fullscreen on arbitrary elements —
       // fall back to a CSS overlay that fills the viewport.
       if (!el.requestFullscreen) {
@@ -52,6 +67,7 @@ export function FullscreenPlayer({ children }: { children: React.ReactNode }) {
     document.addEventListener("fullscreenchange", onFsChange);
 
     return () => {
+      if (morphTimer) clearTimeout(morphTimer);
       window.removeEventListener("pointerdown", onInteract);
       window.removeEventListener("keydown", onInteract);
       document.removeEventListener("fullscreenchange", onFsChange);

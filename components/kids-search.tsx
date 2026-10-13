@@ -36,8 +36,10 @@ export function KidsSearch({ query, placeholder }: KidsSearchProps) {
   // it, so re-submitting its still-current q must re-navigate.
   const [submitted, setSubmitted] = useState(query);
   // Submitted q values whose navigations haven't committed yet. A
-  // commit matching one is our own navigation resolving — drop it and
-  // keep the user's typing; any other commit is external and adopted.
+  // commit matching one is our own navigation resolving — a commit of
+  // q implies every earlier entry resolved or was superseded, so drop
+  // up to and including the match and keep the user's typing; any
+  // other commit is external and adopted.
   const [pendingSubs, setPendingSubs] = useState<string[]>([]);
   const [prevQuery, setPrevQuery] = useState(query);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -59,7 +61,7 @@ export function KidsSearch({ query, placeholder }: KidsSearchProps) {
   if (query !== prevQuery) {
     setPrevQuery(query);
     if (pendingSubs.includes(query)) {
-      setPendingSubs((subs) => subs.filter((s) => s !== query));
+      setPendingSubs((subs) => subs.slice(subs.indexOf(query) + 1));
     } else {
       setValue(query);
       setSubmitted(query);

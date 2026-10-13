@@ -7,7 +7,7 @@ export default function KidsPortalLoading() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center gap-2 py-2 sm:gap-3">
             <div className="hidden h-7 w-28 rounded-lg bg-slate-100 animate-pulse md:block" />
-            <div className="h-11 min-w-0 flex-1 rounded-full bg-slate-100 animate-pulse sm:h-14 sm:max-w-2xl" />
+            <div className="h-11 min-w-0 flex-1 rounded-full bg-slate-100 animate-pulse sm:h-14" />
             <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-slate-100 animate-pulse" />
             <div className="w-11 h-11 rounded-full bg-slate-100 animate-pulse" />
           </div>

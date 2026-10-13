@@ -17,7 +17,8 @@ export type KidsView =
   | "channels"
   | "liked"
   | "playlists"
-  | "history";
+  | "history"
+  | "foryou";
 export type VideoReaction = "like" | "dislike";
 export type KidsSort = "age" | "status";
 export type KidsDir = "asc" | "desc";
@@ -59,7 +60,8 @@ export function parseKidsFeedParams(
     rawView === "channels" ||
     rawView === "liked" ||
     rawView === "playlists" ||
-    rawView === "history"
+    rawView === "history" ||
+    rawView === "foryou"
       ? rawView
       : "videos";
   const rawChannel = first(raw.channel);
@@ -277,6 +279,135 @@ export async function getWatchHistory(
       )
     )
     .orderBy(desc(watchHistory.watchedOn), desc(watchHistory.lastSeenAt));
+}
+
+// "For You" — the profile's whitelisted videos ranked by predicted
+// interest. Scoring (see docs/kids-recommendations-plan.md):
+//   channel_affinity = Σ per watch_history row on that channel:
+//     3 if watched_on ≥ today−7, 2 if ≥ today−30, else 1
+//   video_score = affinity × (0.25 if completed else 1)
+//     + 8 if in-progress-not-completed   ("continue watching")
+//     + 5 if the channel has any 'like'
+//     + 4 if the video itself is 'liked'
+//     − 20 if the channel has a 'dislike'
+//   disliked videos are excluded entirely.
+// No history → all affinities 0 → ordering collapses to newest-first,
+// so the tab still works on day one. Same { video, progress, reaction }
+// row shape as getKidsVideos; inner-joins whitelisted_videos so unpin
+// hides and re-pin returns. sort/dir/channel/list/date are ignored —
+// the ranking IS the sort; only q filters titles. Capped at `limit`
+// rows: the whitelist runs thousands deep and kids never scroll that
+// far.
+export async function getRecommendedVideos(
+  profileId: string,
+  { q, limit = 60 }: { q?: string; limit?: number } = {}
+) {
+  // Per-channel watch recency/frequency — the dominant signal.
+  const channelAffinity = db.$with("channel_affinity").as(
+    db
+      .select({
+        channelId: videos.channelId,
+        affinity: sql<number>`sum(case
+          when ${watchHistory.watchedOn} >= current_date - 7 then 3
+          when ${watchHistory.watchedOn} >= current_date - 30 then 2
+          else 1 end)`.as("affinity"),
+      })
+      .from(watchHistory)
+      .innerJoin(videos, eq(videos.id, watchHistory.videoId))
+      .where(
+        and(
+          eq(watchHistory.profileId, profileId),
+          isNotNull(videos.channelId)
+        )
+      )
+      .groupBy(videos.channelId)
+  );
+
+  // Per-channel like/dislike flags — reactions live on videos, so roll
+  // them up to the channel they were published on.
+  const channelFlags = db.$with("channel_flags").as(
+    db
+      .select({
+        channelId: videos.channelId,
+        hasLike:
+          sql<boolean>`bool_or(${videoReactions.reaction} = 'like')`.as(
+            "has_like"
+          ),
+        hasDislike:
+          sql<boolean>`bool_or(${videoReactions.reaction} = 'dislike')`.as(
+            "has_dislike"
+          ),
+      })
+      .from(videoReactions)
+      .innerJoin(videos, eq(videos.id, videoReactions.videoId))
+      .where(
+        and(
+          eq(videoReactions.profileId, profileId),
+          isNotNull(videos.channelId)
+        )
+      )
+      .groupBy(videos.channelId)
+  );
+
+  // Started, not finished, not within the tail of the video.
+  const inProgress = sql`${watchProgress.positionSeconds} > 0
+    and not coalesce(${watchProgress.completed}, false)
+    and (${videos.durationSeconds} is null
+         or ${watchProgress.positionSeconds} < ${videos.durationSeconds})`;
+
+  const score = sql<number>`
+    coalesce(${channelAffinity.affinity}, 0)
+      * case when ${watchProgress.completed} then 0.25 else 1 end
+    + case when ${inProgress} then 8 else 0 end
+    + case when ${channelFlags.hasLike} then 5 else 0 end
+    + case when ${videoReactions.reaction} = 'like' then 4 else 0 end
+    - case when ${channelFlags.hasDislike} then 20 else 0 end`;
+
+  return db
+    .with(channelAffinity, channelFlags)
+    .select({
+      video: feedVideoCols,
+      progress: watchProgress,
+      reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
+    })
+    .from(whitelistedVideos)
+    .innerJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .leftJoin(
+      watchProgress,
+      and(
+        eq(watchProgress.profileId, whitelistedVideos.profileId),
+        eq(watchProgress.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .leftJoin(
+      videoReactions,
+      and(
+        eq(videoReactions.profileId, whitelistedVideos.profileId),
+        eq(videoReactions.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .leftJoin(
+      channelAffinity,
+      eq(channelAffinity.channelId, videos.channelId)
+    )
+    .leftJoin(channelFlags, eq(channelFlags.channelId, videos.channelId))
+    .where(
+      and(
+        eq(whitelistedVideos.profileId, profileId),
+        // Disliked videos drop out of the tab entirely.
+        sql`${videoReactions.reaction} is distinct from 'dislike'`,
+        q ? ilike(videos.title, `%${q}%`) : undefined
+      )
+    )
+    // Same-score ties: newest first; rows still tied (e.g. null
+    // published_at) rotate daily via the md5 seed instead of a random
+    // order that reshuffles on every refresh.
+    .orderBy(
+      desc(score),
+      sql`${videos.publishedAt} desc nulls last`,
+      sql`md5(${videos.id} || current_date)`
+    )
+    .limit(limit);
 }
 
 export interface KidsChannel {

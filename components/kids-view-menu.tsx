@@ -11,6 +11,7 @@ import {
   MonitorPlay,
   Play,
   Playlist,
+  Sparkle,
   SpinnerGap,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,8 @@ const iconFor = (key: string, active: boolean): ReactNode => {
       return <Playlist size={22} weight={active ? "fill" : "bold"} />;
     case "history":
       return <ClockCounterClockwise size={22} weight="bold" />;
+    case "foryou":
+      return <Sparkle size={22} weight={active ? "fill" : "bold"} />;
     default:
       return null;
   }

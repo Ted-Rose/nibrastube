@@ -15,6 +15,7 @@ import {
   Play,
   Playlist,
   House,
+  Sparkle,
   SpinnerGap,
   UserSwitch,
 } from "@phosphor-icons/react/dist/ssr";
@@ -43,6 +44,7 @@ import {
   getLikedVideos,
   getPlaylists,
   getPlaylistVideos,
+  getRecommendedVideos,
   getWatchHistory,
   kidsFeedQuery,
   parseKidsFeedParams,
@@ -74,18 +76,20 @@ async function FeedContent({
     `/kids/${profileId}${kidsFeedQuery(feed, overrides)}`;
 
   const rows =
-    view === "liked"
-      ? await getLikedVideos(profileId, { q: query })
-      : inPlaylist
-        ? await getPlaylistVideos(profileId, list, { q: query })
-        : showVideoGrid
-          ? await getKidsVideos(profileId, {
-              q: query,
-              channelId: channel,
-              sort: feed.sort,
-              dir: feed.dir,
-            })
-          : [];
+    view === "foryou"
+      ? await getRecommendedVideos(profileId, { q: query })
+      : view === "liked"
+        ? await getLikedVideos(profileId, { q: query })
+        : inPlaylist
+          ? await getPlaylistVideos(profileId, list, { q: query })
+          : showVideoGrid
+            ? await getKidsVideos(profileId, {
+                q: query,
+                channelId: channel,
+                sort: feed.sort,
+                dir: feed.dir,
+              })
+            : [];
   const channelRows =
     view === "channels" && !drilledIn
       ? await getKidsChannels(profileId, { q: query })
@@ -180,15 +184,17 @@ async function FeedContent({
                  ? `Results for "${query}"`
                  : view === "channels"
                    ? "Channels"
-                   : view === "liked"
-                     ? "Liked Videos"
-                     : view === "playlists"
-                       ? "Playlists"
-                       : view === "history"
-                         ? feed.date
-                           ? `History — ${feed.date}`
-                           : "History"
-                         : "Approved Videos"}
+                   : view === "foryou"
+                     ? "Picked for You"
+                     : view === "liked"
+                       ? "Liked Videos"
+                       : view === "playlists"
+                         ? "Playlists"
+                         : view === "history"
+                           ? feed.date
+                             ? `History — ${feed.date}`
+                             : "History"
+                           : "Approved Videos"}
          </h2>
          {view === "history" && <HistoryDatePicker date={feed.date} />}
          {inPlaylist && playlist && (
@@ -347,6 +353,8 @@ async function FeedContent({
            <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
                {view === "liked" ? (
                  <Heart size={48} weight="fill" />
+               ) : view === "foryou" ? (
+                 <Sparkle size={48} weight="fill" />
                ) : (
                  <Play size={48} weight="fill" />
                )}
@@ -462,7 +470,9 @@ export default async function KidsPortalPage({
                     : `Search ${profile.name}'s playlists...`
                   : view === "history"
                     ? `Search ${profile.name}'s history...`
-                    : `Search ${profile.name}'s videos...`
+                    : view === "foryou"
+                      ? `Search ${profile.name}'s picks...`
+                      : `Search ${profile.name}'s videos...`
             }
           />
 
@@ -486,11 +496,22 @@ export default async function KidsPortalPage({
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 sm:mt-10">
-        {/* View picker — the five feeds live in a burger menu so the row
+        {/* View picker — the six feeds live in a burger menu so the row
             stays one element wide on phones */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-8">
           <KidsViewMenu
             items={[
+              {
+                key: "foryou",
+                label: "For You",
+                href: portalUrl({
+                  view: "foryou",
+                  channel: null,
+                  list: null,
+                  date: null,
+                }),
+                active: view === "foryou",
+              },
               {
                 key: "videos",
                 label: "Videos",

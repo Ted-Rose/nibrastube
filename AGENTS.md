@@ -74,7 +74,7 @@ app/
                                 debounced search; streams via Suspense
     _components/                Route-private view code: per-view server
                                 components, KIDS_VIEWS table, feed-header
-  kids/[profileId]/watch/[id]/  Watch page → <WatchExperience>
+  kids/[profileId]/watch/[videoId]/  Watch page → <WatchExperience>
   actions/                      Server actions (auth, profiles, pinning,
                                 channels, invites, safety)
   api/sync-channels/            Daily channel sync trigger (GET + POST)
@@ -205,14 +205,16 @@ release APK on `v*` tags.
   shelves above the All-videos grid, streaming in their own Suspense
   boundary; empty shelves don't render. Watch-page autoplay rebuilds
   its queue from the card href's feed params, so shelf cards carry the
-  params that reproduce the right queue — the home feed for most
-  shelves, `view=liked` for the Liked shelf.
+  params that reproduce the right queue — the home feed for the video
+  shelves, `view=liked` for the Liked shelf (playlist tiles deep-link
+  to their drill-in).
 - **Kids feed code is route-private:** `app/kids/[profileId]/_components/`
   holds the per-view server components (`videos-view`, `channels-view`,
-  `liked-view`, `playlists-view`, `history-feed-view`), the
-  `KIDS_VIEWS` config table (labels, icons, titles, placeholders) and
-  `feed-header`. `feed-content.tsx` picks the view; everything below
-  the header streams under Suspense.
+  `liked-view`, `playlists-view` + `playlist-detail-view`,
+  `history-feed-view`), `home-shelves`, `back-link`, the `KIDS_VIEWS`
+  config table (labels, icons, titles, placeholders) and `feed-header`.
+  `feed-content.tsx` picks the view; everything below the header
+  streams under Suspense.
 
 ## Conventions
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ViewTransition } from "react";
 import { Heart, Play, ThumbsDown } from "@phosphor-icons/react/dist/ssr";
 import { Card, CardContent } from "@/components/ui/card";
 import type { watchProgress } from "@/lib/db/schema";
@@ -20,6 +21,11 @@ interface VideoCardProps {
   eager?: boolean;
   // "compact" is the denser variant for horizontal shelf rows.
   size?: "default" | "compact";
+  // Opt-in to the `video-<id>` view-transition name so the thumbnail
+  // morphs into the watch-page player. Only the grid may set this — a
+  // shelf can render the same video at the same time, and duplicate
+  // names abort the transition.
+  vt?: boolean;
 }
 
 export function VideoCard({
@@ -31,6 +37,7 @@ export function VideoCard({
   playlistId,
   eager = false,
   size = "default",
+  vt = false,
 }: VideoCardProps) {
   const compact = size === "compact";
   const pct = progress?.completed
@@ -42,6 +49,63 @@ export function VideoCard({
         )
       : 0;
   const duration = formatDuration(video.durationSeconds);
+
+  const thumbnail = (
+    <div className="relative aspect-video">
+      <img
+        src={video.thumbnail}
+        className="w-full h-full object-cover"
+        alt=""
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+      />
+      {reaction && (
+        <div className="absolute top-3 left-3 w-9 h-9 bg-white/90 rounded-full flex items-center justify-center shadow">
+          <span className="sr-only">
+            {reaction === "like" ? "Liked" : "Disliked"}
+          </span>
+          {reaction === "like" ? (
+            <Heart weight="fill" className="text-primary" size={20} />
+          ) : (
+            <ThumbsDown weight="fill" className="text-red-500" size={20} />
+          )}
+        </div>
+      )}
+      <div
+        className={cn(
+          "absolute inset-0 flex items-center justify-center",
+          "opacity-0 motion-safe:transition motion-safe:duration-200",
+          "group-hover:opacity-100 group-focus-visible:opacity-100",
+          "motion-safe:scale-75 motion-safe:group-hover:scale-100",
+          "motion-safe:group-focus-visible:scale-100"
+        )}
+      >
+        <div
+          className={cn(
+            "flex items-center justify-center rounded-full bg-primary shadow-lg",
+            compact ? "h-12 w-12" : "h-16 w-16"
+          )}
+        >
+          <Play
+            weight="fill"
+            color="white"
+            size={compact ? 22 : 30}
+          />
+        </div>
+      </div>
+      {pct > 0 && (
+        <div
+          className="absolute bottom-0 left-0 h-1.5 bg-red-600"
+          style={{ width: `${pct}%` }}
+        />
+      )}
+      {duration && (
+        <span className="absolute bottom-2 right-2 rounded-lg bg-black/75 px-2 py-0.5 text-sm font-bold text-white tabular-nums">
+          {duration}
+        </span>
+      )}
+    </div>
+  );
 
   // The ⋮ menu is a sibling of (not inside) the Link — a button nested in
   // an anchor is invalid interactive-in-interactive markup and its clicks
@@ -55,60 +119,13 @@ export function VideoCard({
         className="group block rounded-[32px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
       >
         <Card className="overflow-hidden border-0 shadow-lg rounded-[32px] bg-white transition-transform duration-300 motion-safe:group-hover:-translate-y-2 motion-safe:active:scale-[0.98]">
-          <div className="relative aspect-video">
-            <img
-              src={video.thumbnail}
-              className="w-full h-full object-cover"
-              alt=""
-              loading={eager ? "eager" : "lazy"}
-              decoding="async"
-            />
-            {reaction && (
-              <div className="absolute top-3 left-3 w-9 h-9 bg-white/90 rounded-full flex items-center justify-center shadow">
-                <span className="sr-only">
-                  {reaction === "like" ? "Liked" : "Disliked"}
-                </span>
-                {reaction === "like" ? (
-                  <Heart weight="fill" className="text-primary" size={20} />
-                ) : (
-                  <ThumbsDown weight="fill" className="text-red-500" size={20} />
-                )}
-              </div>
-            )}
-            <div
-              className={cn(
-                "absolute inset-0 flex items-center justify-center",
-                "opacity-0 motion-safe:transition motion-safe:duration-200",
-                "group-hover:opacity-100 group-focus-visible:opacity-100",
-                "motion-safe:scale-75 motion-safe:group-hover:scale-100",
-                "motion-safe:group-focus-visible:scale-100"
-              )}
-            >
-              <div
-                className={cn(
-                  "flex items-center justify-center rounded-full bg-primary shadow-lg",
-                  compact ? "h-12 w-12" : "h-16 w-16"
-                )}
-              >
-                <Play
-                  weight="fill"
-                  color="white"
-                  size={compact ? 22 : 30}
-                />
-              </div>
-            </div>
-            {pct > 0 && (
-              <div
-                className="absolute bottom-0 left-0 h-1.5 bg-red-600"
-                style={{ width: `${pct}%` }}
-              />
-            )}
-            {duration && (
-              <span className="absolute bottom-2 right-2 rounded-lg bg-black/75 px-2 py-0.5 text-sm font-bold text-white tabular-nums">
-                {duration}
-              </span>
-            )}
-          </div>
+          {vt ? (
+            <ViewTransition name={`video-${video.id}`}>
+              {thumbnail}
+            </ViewTransition>
+          ) : (
+            thumbnail
+          )}
           <CardContent className={compact ? "p-4" : "p-6"}>
             <h3
               className={cn(

@@ -132,3 +132,13 @@
     overflow-x: clip;
     }
 }
+
+/* The thumbnail→player morph relies on view transitions; honor
+   prefers-reduced-motion by cutting straight to the new frame. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none;
+  }
+}

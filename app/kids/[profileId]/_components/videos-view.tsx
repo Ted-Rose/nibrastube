@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { and, eq } from "drizzle-orm";
 import { Play } from "@phosphor-icons/react/dist/ssr";
 import { db } from "@/lib/db";
@@ -13,8 +14,13 @@ import { EmptyState } from "@/components/empty-state";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { KidsSortChips } from "@/components/kids-sort-chips";
 import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
+import {
+  ShelfSkeleton,
+  VideoGridSkeleton,
+} from "@/components/video-grid-skeleton";
 import { BackLink } from "./back-link";
 import { FeedHeader } from "./feed-header";
+import { HomeShelves } from "./home-shelves";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
 // Sort chip order — default (status:asc) first. kidsFeedQuery drops
@@ -26,9 +32,20 @@ const SORT_OPTIONS = [
   { sort: "age", dir: "asc", label: "Oldest" },
 ] as const;
 
+function sortOptions(profileId: string, feed: KidsFeedParams) {
+  return SORT_OPTIONS.map((o) => ({
+    key: `${o.sort}:${o.dir}`,
+    label: o.label,
+    href: kidsPortalUrl(profileId, feed, { sort: o.sort, dir: o.dir }),
+    active: o.sort === feed.sort && o.dir === feed.dir,
+  }));
+}
+
 // The Videos tab and the channel drill-in (view=channels&channel=…) —
 // both render the whitelisted-videos grid, the drill-in filtered to one
-// channel with an "All channels" back link on top.
+// channel with an "All channels" back link on top. The plain Videos tab
+// (no search, no drill-in) is the home layout: shelves above the "All
+// videos" grid, each streaming in its own Suspense boundary.
 export async function VideosView({
   profileId,
   feed,
@@ -39,6 +56,19 @@ export async function VideosView({
   const { channel, q: query } = feed;
   const drilledIn = feed.view === "channels" && channel !== null;
 
+  if (channel === null && !query) {
+    return (
+      <>
+        <Suspense fallback={<ShelfSkeleton />}>
+          <HomeShelves profileId={profileId} feed={feed} />
+        </Suspense>
+        <Suspense fallback={<VideoGridSkeleton />}>
+          <AllVideosGrid profileId={profileId} feed={feed} />
+        </Suspense>
+      </>
+    );
+  }
+
   const rows = await getKidsVideos(profileId, {
     q: query,
     channelId: channel,
@@ -48,13 +78,6 @@ export async function VideosView({
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu.
   const playlistRows = await getPlaylists(profileId);
-
-  const sortOptions = SORT_OPTIONS.map((o) => ({
-    key: `${o.sort}:${o.dir}`,
-    label: o.label,
-    href: kidsPortalUrl(profileId, feed, { sort: o.sort, dir: o.dir }),
-    active: o.sort === feed.sort && o.dir === feed.dir,
-  }));
 
   let channelTitle: string | null = null;
   let channelApproved = false;
@@ -108,7 +131,7 @@ export async function VideosView({
 
       <FeedHeader
         title={feedTitle(feed, { channelTitle })}
-        actions={<KidsSortChips options={sortOptions} />}
+        actions={<KidsSortChips options={sortOptions(profileId, feed)} />}
       />
 
       {rows.length === 0 ? (
@@ -126,6 +149,54 @@ export async function VideosView({
             rows={rows}
             profileId={profileId}
             feedQuery={kidsFeedQuery(feed)}
+          />
+        </SaveToPlaylistProvider>
+      )}
+    </>
+  );
+}
+
+// The full whitelisted-videos grid under the home shelves — its own
+// async component so it streams independently of them. The grid's cards
+// all load lazily; the shelves' first cards are the eager ones.
+async function AllVideosGrid({
+  profileId,
+  feed,
+}: {
+  profileId: string;
+  feed: KidsFeedParams;
+}) {
+  const rows = await getKidsVideos(profileId, {
+    sort: feed.sort,
+    dir: feed.dir,
+  });
+  // Playlists snapshot — feeds the shared "Save to playlist" dialog
+  // behind every video card's ⋮ menu. cache() makes this the same query
+  // the shelves already ran this request.
+  const playlistRows = await getPlaylists(profileId);
+
+  return (
+    <>
+      <FeedHeader
+        title="All videos"
+        actions={<KidsSortChips options={sortOptions(profileId, feed)} />}
+      />
+
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={<Play size={48} weight="fill" />}
+          message="Ask a grown-up to pick some videos!"
+        />
+      ) : (
+        <SaveToPlaylistProvider
+          profileId={profileId}
+          playlists={playlistRows}
+        >
+          <KidsVideoGrid
+            rows={rows}
+            profileId={profileId}
+            feedQuery={kidsFeedQuery(feed)}
+            eagerCount={0}
           />
         </SaveToPlaylistProvider>
       )}

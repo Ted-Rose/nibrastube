@@ -5,6 +5,7 @@ import {
   MonitorPlay,
   Play,
   Playlist,
+  Sparkle,
 } from "@phosphor-icons/react/dist/ssr";
 import type { KidsFeedParams, KidsView } from "@/lib/kids-feed";
 
@@ -16,10 +17,16 @@ interface KidsViewConfig {
   placeholder: (profileName: string, feed: KidsFeedParams) => string;
 }
 
-// The five kids feeds, in tab order. Everything per-view that the shell or
+// The six kids feeds, in tab order. Everything per-view that the shell or
 // views need — labels, icons, default titles, search placeholders — lives
 // here so the page no longer carries parallel ternary chains.
 export const KIDS_VIEWS: Record<KidsView, KidsViewConfig> = {
+  foryou: {
+    label: "For You",
+    icon: Sparkle,
+    title: "Picked for You",
+    placeholder: (profileName) => `Search ${profileName}'s picks...`,
+  },
   videos: {
     label: "Videos",
     icon: Play,

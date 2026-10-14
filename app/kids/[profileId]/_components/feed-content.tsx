@@ -1,5 +1,6 @@
 import type { KidsFeedParams } from "@/lib/kids-feed";
 import { ChannelsView } from "./channels-view";
+import { ForYouView } from "./foryou-view";
 import { HistoryFeedView } from "./history-feed-view";
 import { LikedView } from "./liked-view";
 import { PlaylistsView } from "./playlists-view";
@@ -20,6 +21,8 @@ export function FeedContent({
     return <VideosView profileId={profileId} feed={feed} />;
   }
   switch (feed.view) {
+    case "foryou":
+      return <ForYouView profileId={profileId} feed={feed} />;
     case "channels":
       return <ChannelsView profileId={profileId} feed={feed} />;
     case "liked":

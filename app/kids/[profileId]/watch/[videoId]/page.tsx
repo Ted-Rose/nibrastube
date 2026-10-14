@@ -10,6 +10,7 @@ import {
   getKidsVideos,
   getLikedVideos,
   getPlaylistVideos,
+  getRecommendedVideos,
   getWatchHistory,
   kidsFeedQuery,
   parseKidsFeedParams,
@@ -69,14 +70,16 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
             date: feed.date ?? undefined,
           })
         )
-      : feed.view === "liked"
-        ? await getLikedVideos(profileId, { q: feed.q })
-        : await getKidsVideos(profileId, {
-            q: feed.q,
-            channelId: feed.channel,
-            sort: feed.sort,
-            dir: feed.dir,
-          });
+      : feed.view === "foryou"
+        ? await getRecommendedVideos(profileId, { q: feed.q })
+        : feed.view === "liked"
+          ? await getLikedVideos(profileId, { q: feed.q })
+          : await getKidsVideos(profileId, {
+              q: feed.q,
+              channelId: feed.channel,
+              sort: feed.sort,
+              dir: feed.dir,
+            });
   let currentIndex = rows.findIndex((r) => r.video.id === videoId);
 
   if (currentIndex === -1) {
@@ -86,18 +89,21 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
       ? await getPlaylistVideos(profileId, playlistId)
       : history
         ? uniqueByVideo(await getWatchHistory(profileId))
-        : feed.view === "liked"
-          ? await getLikedVideos(profileId)
-          : await getKidsVideos(profileId, {
-              sort: feed.sort,
-              dir: feed.dir,
-            });
+        : feed.view === "foryou"
+          ? await getRecommendedVideos(profileId)
+          : feed.view === "liked"
+            ? await getLikedVideos(profileId)
+            : await getKidsVideos(profileId, {
+                sort: feed.sort,
+                dir: feed.dir,
+              });
     currentIndex = rows.findIndex((r) => r.video.id === videoId);
   }
 
-  if (currentIndex === -1 && playlistId) {
-    // The playlist was deleted or emptied mid-session — degrade to the
-    // full approved list rather than bouncing back to the portal.
+  if (currentIndex === -1 && (playlistId || feed.view === "foryou")) {
+    // The playlist was deleted or emptied mid-session, or the video
+    // re-ranked below the For-You cap — degrade to the full approved
+    // list rather than bouncing back to the portal.
     rows = await getKidsVideos(profileId, {
       sort: feed.sort,
       dir: feed.dir,

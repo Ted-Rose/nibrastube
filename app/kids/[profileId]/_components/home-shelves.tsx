@@ -7,15 +7,16 @@ import {
   getLikedVideos,
   getNewForYou,
   getPlaylists,
+  getRecommendedVideos,
   kidsFeedQuery,
   kidsPortalUrl,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 
-// Home shelves on the plain Videos tab — Continue watching, New for you,
-// playlists and Liked rows above the "All videos" grid. Streams inside
-// its own Suspense boundary so the grid never waits on these queries;
-// a shelf with no rows doesn't render at all.
+// Home shelves on the plain Videos tab — Continue watching, Picked for
+// you, New for you, playlists and Liked rows above the "All videos"
+// grid. Streams inside its own Suspense boundary so the grid never
+// waits on these queries; a shelf with no rows doesn't render at all.
 export async function HomeShelves({
   profileId,
   feed,
@@ -23,10 +24,11 @@ export async function HomeShelves({
   profileId: string;
   feed: KidsFeedParams;
 }) {
-  // Pool max is 3, so the 4th query just queues behind the others.
-  const [continueRows, newRows, playlistRows, likedRows] =
+  // Pool max is 3, so the 4th+ queries just queue behind the others.
+  const [continueRows, pickedRows, newRows, playlistRows, likedRows] =
     await Promise.all([
       getContinueWatching(profileId),
+      getRecommendedVideos(profileId, { limit: 20 }),
       getNewForYou(profileId),
       getPlaylists(profileId),
       getLikedVideos(profileId, { limit: 20 }),
@@ -34,6 +36,7 @@ export async function HomeShelves({
 
   if (
     continueRows.length === 0 &&
+    pickedRows.length === 0 &&
     newRows.length === 0 &&
     playlistRows.length === 0 &&
     likedRows.length === 0
@@ -51,6 +54,7 @@ export async function HomeShelves({
   // shelf cards keep the home feed (unwatched-first across all videos),
   // Liked-shelf cards keep the Liked queue they were picked from.
   const homeFeedQuery = kidsFeedQuery(feed);
+  const foryouFeedQuery = kidsFeedQuery(feed, { view: "foryou" });
   const likedFeedQuery = kidsFeedQuery(feed, { view: "liked" });
   const watchHref = (videoId: string, feedQuery: string) =>
     `/kids/${profileId}/watch/${videoId}${feedQuery}`;
@@ -63,6 +67,26 @@ export async function HomeShelves({
             <VideoCard
               key={video.id}
               href={watchHref(video.id, homeFeedQuery)}
+              video={video}
+              profileId={profileId}
+              progress={progress}
+              reaction={reaction}
+              size="compact"
+              eager={takeEager()}
+            />
+          ))}
+        </VideoShelf>
+      )}
+
+      {pickedRows.length > 0 && (
+        <VideoShelf
+          title="Picked for you"
+          seeAllHref={kidsPortalUrl(profileId, feed, { view: "foryou" })}
+        >
+          {pickedRows.map(({ video, progress, reaction }) => (
+            <VideoCard
+              key={video.id}
+              href={watchHref(video.id, foryouFeedQuery)}
               video={video}
               profileId={profileId}
               progress={progress}

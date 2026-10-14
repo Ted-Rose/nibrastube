@@ -201,20 +201,24 @@ release APK on `v*` tags.
   Only `q` changes; the URL is rebuilt from the live `searchParams`,
   so view/channel/list/date/sort/dir survive untouched.
 - **Home shelves:** the plain Videos tab (no `q`, no `channel`) renders
-  "Continue watching", "New for you", "Your playlists" and "Liked"
-  shelves above the All-videos grid, streaming in their own Suspense
-  boundary; empty shelves don't render. Watch-page autoplay rebuilds
-  its queue from the card href's feed params, so shelf cards carry the
-  params that reproduce the right queue — the home feed for the video
-  shelves, `view=liked` for the Liked shelf (playlist tiles deep-link
-  to their drill-in).
+  "Continue watching", "Picked for you", "New for you", "Your
+  playlists" and "Liked" shelves above the All-videos grid, streaming
+  in their own Suspense boundary; empty shelves don't render.
+  Watch-page autoplay rebuilds its queue from the card href's feed
+  params, so shelf cards carry the params that reproduce the right
+  queue — the home feed for the video shelves, `view=foryou` for the
+  Picked-for-you shelf, `view=liked` for the Liked shelf (playlist
+  tiles deep-link to their drill-in).
 - **Kids feed code is route-private:** `app/kids/[profileId]/_components/`
   holds the per-view server components (`videos-view`, `channels-view`,
   `liked-view`, `playlists-view` + `playlist-detail-view`,
-  `history-feed-view`), `home-shelves`, `back-link`, the `KIDS_VIEWS`
-  config table (labels, icons, titles, placeholders) and `feed-header`.
-  `feed-content.tsx` picks the view; everything below the header
-  streams under Suspense.
+  `history-feed-view`, `foryou-view`), `home-shelves`, `back-link`, the
+  `KIDS_VIEWS` config table (labels, icons, titles, placeholders) and
+  `feed-header`. `feed-content.tsx` picks the view; everything below
+  the header streams under Suspense. `foryou` is a sixth feed with NO
+  tab — it's reached via the "Picked for you" home shelf's see-all
+  link (and its cards' `?view=foryou` autoplay context); a 6th phone
+  tab was rejected for cramped tap targets.
 
 ## Conventions
 

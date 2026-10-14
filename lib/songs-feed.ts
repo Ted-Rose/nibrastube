@@ -96,12 +96,22 @@ export interface FeedSong {
   videoDuration: number | null; // fills the range badge's open end
   thumbnail: string; // compilation thumbnail
   channelTitle: string;
-  sourceHandle: string | null;
-  importedBy: string | null; // the "Yours" filter + owner-only delete
+  // Owner-only ⋮ delete menu, stamped server-side — rows serialize to
+  // the public route's client components, so the raw importedBy user
+  // id never ships; deleteSong re-verifies ownership regardless.
+  canDelete: boolean;
 }
 
+// The raw select row: FeedSong's fields plus the importer's user id,
+// which feeds the "Yours" filter and the canDelete stamp in
+// toFeedSong. Server-side only — it must not reach client props.
+type SongRow = Omit<FeedSong, "canDelete"> & {
+  importedBy: string | null;
+};
+
 // Only the columns the card and the range badge render — the full
-// videos row carries description/tags/raw JSONB (~9KB/row).
+// videos row carries description/tags/raw JSONB (~9KB/row). sourceHandle
+// isn't rendered anywhere and stays unselected.
 const feedSongCols = {
   id: songs.id,
   title: songs.title,
@@ -112,9 +122,26 @@ const feedSongCols = {
   videoDuration: videos.durationSeconds,
   thumbnail: videos.thumbnail,
   channelTitle: videos.channelTitle,
-  sourceHandle: songs.sourceHandle,
   importedBy: songs.importedBy,
 };
+
+// Row → client-facing FeedSong: resolves canDelete against the session
+// user and lists the outgoing columns explicitly so importedBy (and
+// any future sensitive column) can't leak into serialized props.
+function toFeedSong(row: SongRow, viewerId?: string): FeedSong {
+  return {
+    id: row.id,
+    title: row.title,
+    startSeconds: row.startSeconds,
+    endSeconds: row.endSeconds,
+    videoId: row.videoId,
+    videoTitle: row.videoTitle,
+    videoDuration: row.videoDuration,
+    thumbnail: row.thumbnail,
+    channelTitle: row.channelTitle,
+    canDelete: viewerId != null && row.importedBy === viewerId,
+  };
+}
 
 // Song length = end - start; an open end borrows the compilation's
 // duration. Null when the video's duration is also unknown — those
@@ -154,15 +181,18 @@ export async function getSongs(
             asc(songs.startSeconds),
           ];
 
-  return db
+  const rows = await db
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
     .where(
       and(
         feed.video ? eq(songs.videoId, feed.video) : undefined,
-        feed.view === "mine" && importedByUserId
-          ? eq(songs.importedBy, importedByUserId)
+        // "mine" fails closed: a missing session id filters to zero
+        // rows instead of dropping the predicate and listing
+        // everyone's songs.
+        feed.view === "mine"
+          ? eq(songs.importedBy, importedByUserId ?? "")
           : undefined,
         feed.q
           ? or(
@@ -174,6 +204,8 @@ export async function getSongs(
     )
     .orderBy(...orderBy)
     .limit(SONGS_LIMIT);
+
+  return rows.map((row) => toFeedSong(row, importedByUserId));
 }
 
 export interface FeedCompilation {
@@ -209,13 +241,17 @@ export async function getCompilations({
 }
 
 // Newest imports across all parents — the "Newly added" home shelf.
-export async function getNewSongs(limit = 12): Promise<FeedSong[]> {
-  return db
+export async function getNewSongs(
+  limit = 12,
+  viewerId?: string
+): Promise<FeedSong[]> {
+  const rows = await db
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
     .orderBy(desc(songs.createdAt))
     .limit(limit);
+  return rows.map((row) => toFeedSong(row, viewerId));
 }
 
 // One parent's imports, newest first — the "Your imports" home shelf.
@@ -223,11 +259,12 @@ export async function getUserSongs(
   userId: string,
   limit = 12
 ): Promise<FeedSong[]> {
-  return db
+  const rows = await db
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
     .where(eq(songs.importedBy, userId))
     .orderBy(desc(songs.createdAt))
     .limit(limit);
+  return rows.map((row) => toFeedSong(row, userId));
 }

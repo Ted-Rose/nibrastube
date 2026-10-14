@@ -19,7 +19,7 @@ export async function HomeShelves({
   userId: string | null;
 }) {
   const [newRows, userRows] = await Promise.all([
-    getNewSongs(),
+    getNewSongs(12, userId ?? undefined),
     userId ? getUserSongs(userId) : Promise.resolve([]),
   ]);
 
@@ -39,7 +39,6 @@ export async function HomeShelves({
             <SongCard
               key={song.id}
               song={song}
-              userId={userId}
               size="compact"
               eager={takeEager()}
             />
@@ -56,7 +55,6 @@ export async function HomeShelves({
             <SongCard
               key={song.id}
               song={song}
-              userId={userId}
               size="compact"
               eager={takeEager()}
             />

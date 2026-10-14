@@ -13,8 +13,8 @@ const itemClass =
   "flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none data-[highlighted]:bg-slate-100";
 
 // ⋮ menu overlaid on a song card's thumbnail — a single owner-only
-// "Delete song" action. The card renders this only when
-// importedBy === session.user.id; deleteSong re-checks it server-side.
+// "Delete song" action. The card renders this only on rows the server
+// stamped canDelete on; deleteSong re-checks ownership server-side.
 export function SongCardMenu({ songId }: { songId: string }) {
   const [open, setOpen] = useState(false);
   const [removing, setRemoving] = useState(false);

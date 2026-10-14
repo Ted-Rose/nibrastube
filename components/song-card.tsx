@@ -7,9 +7,6 @@ import { SongCardMenu } from "./song-card-menu";
 
 interface SongCardProps {
   song: FeedSong;
-  // Session user's id — the ⋮ delete menu renders only on rows this
-  // user imported. Null/undefined (or a mismatch) means no affordance.
-  userId?: string | null;
   // The first above-the-fold cards load eagerly; the rest stay lazy.
   eager?: boolean;
   // "compact" is the denser variant for horizontal shelf rows.
@@ -24,16 +21,17 @@ interface SongCardProps {
 // whole card is an external YouTube deep-link at the song's start.
 export function SongCard({
   song,
-  userId,
   eager = false,
   size = "default",
 }: SongCardProps) {
   const compact = size === "compact";
-  const canDelete = userId != null && song.importedBy === userId;
+  // Stamped server-side against the session — the card never sees the
+  // importer's user id.
+  const canDelete = song.canDelete;
 
   const start = formatDuration(song.startSeconds) ?? "0:00";
   const endSeconds = song.endSeconds ?? song.videoDuration;
-  const range = `${start} – ${endSeconds ? formatDuration(endSeconds) : "end"}`;
+  const range = `${start} – ${formatDuration(endSeconds) ?? "end"}`;
   const href = `https://www.youtube.com/watch?v=${song.videoId}&t=${song.startSeconds}s`;
 
   return (

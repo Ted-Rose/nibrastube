@@ -88,15 +88,29 @@ export async function SongsView({
         label: "Clear search",
         href: songsCatalogUrl(feed, { q: "" }),
       }
-    : userId
+    : drilledIn
       ? {
-          label: "Import songs",
-          href: "/parent/dashboard",
+          // Same "All channels" convention as the kids drill-in:
+          // empty search aside, the way out is back to the tiles.
+          label: "All compilations",
+          href: songsCatalogUrl(feed, {
+            view: "compilations",
+            video: null,
+          }),
         }
-      : {
-          label: "Sign up free",
-          href: "/signup",
-        };
+      : userId
+        ? {
+            label: "Import songs",
+            // proxy.ts 307s signed-in-but-locked parents to the PIN
+            // gate — don't prefetch the redirect (see
+            // catalog-header.tsx).
+            href: "/parent/dashboard",
+            prefetch: false,
+          }
+        : {
+            label: "Sign up free",
+            href: "/signup",
+          };
 
   return (
     <>
@@ -123,7 +137,7 @@ export async function SongsView({
           action={emptyAction}
         />
       ) : (
-        <SongCatalogGrid rows={rows} userId={userId} />
+        <SongCatalogGrid rows={rows} />
       )}
     </>
   );
@@ -156,7 +170,10 @@ async function AllSongsGrid({
             userId
               ? {
                   label: "Import songs",
+                  // /parent/* 307s for locked parents — don't prefetch
+                  // the redirect (see catalog-header.tsx).
                   href: "/parent/dashboard",
+                  prefetch: false,
                 }
               : {
                   label: "Sign up free",
@@ -165,7 +182,7 @@ async function AllSongsGrid({
           }
         />
       ) : (
-        <SongCatalogGrid rows={rows} userId={userId} eagerCount={0} />
+        <SongCatalogGrid rows={rows} eagerCount={0} />
       )}
     </>
   );

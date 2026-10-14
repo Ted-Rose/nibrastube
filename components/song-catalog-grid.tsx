@@ -11,12 +11,9 @@ const PAGE_SIZE = 48;
 
 export function SongCatalogGrid({
   rows,
-  userId,
   eagerCount = 4,
 }: {
   rows: FeedSong[];
-  // Session user's id — their own rows get the ⋮ delete menu.
-  userId?: string | null;
   // Thumbnails of the first `eagerCount` cards load eagerly — they're
   // the ones visible without scrolling.
   eagerCount?: number;
@@ -47,7 +44,6 @@ export function SongCatalogGrid({
           <SongCard
             key={song.id}
             song={song}
-            userId={userId}
             eager={i < eagerCount}
           />
         ))}

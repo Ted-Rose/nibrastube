@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, boolean, integer, bigint, jsonb, primaryKey, date } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, boolean, integer, bigint, jsonb, primaryKey, uniqueIndex, date } from "drizzle-orm/pg-core";
 
 // Parent Users
 export const users = pgTable("users", {
@@ -7,6 +7,7 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   name: text("name"),
   parentPin: text("parent_pin").default("0000").notNull(),
+  songCommenterHandle: text("song_commenter_handle"), // YT handle whose timestamped comments get imported as songs
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -66,6 +67,38 @@ export const channels = pgTable("channels", {
   raw: jsonb("raw"), // full channels.list item
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Songs parsed from timestamped tracklist comments on compilation
+// videos (live streams, medleys, albums). Global registry like
+// videos/channels — NOT tied to a kid profile or the whitelist.
+// (videoId, startSeconds) is unique: two commenters' tracklists for the
+// same video merge on shared boundaries, last import wins via upsert.
+export const songs = pgTable(
+  "songs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    videoId: text("video_id")
+      .references(() => videos.id, { onDelete: "cascade" })
+      .notNull(),
+    title: text("title").notNull(),
+    startSeconds: integer("start_seconds").notNull(),
+    // null = "play to the end of the video" — the comment gave a bare
+    // start and there is no next song to bound it.
+    endSeconds: integer("end_seconds"),
+    sourceCommentId: text("source_comment_id"), // YT comment id — re-import identity
+    sourceHandle: text("source_handle"), // normalized handle, no "@"
+    importedBy: uuid("imported_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueVideoStart: uniqueIndex("songs_video_start_uniq").on(
+      table.videoId,
+      table.startSeconds
+    ),
+  })
+);
 
 // Whitelisted Videos for Profiles
 export const whitelistedVideos = pgTable(

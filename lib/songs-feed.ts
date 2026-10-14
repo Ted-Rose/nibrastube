@@ -190,9 +190,13 @@ export async function getSongs(
         feed.video ? eq(songs.videoId, feed.video) : undefined,
         // "mine" fails closed: a missing session id filters to zero
         // rows instead of dropping the predicate and listing
-        // everyone's songs.
+        // everyone's songs. The nil uuid keeps it a valid literal so
+        // Postgres returns an empty set rather than erroring.
         feed.view === "mine"
-          ? eq(songs.importedBy, importedByUserId ?? "")
+          ? eq(
+              songs.importedBy,
+              importedByUserId ?? "00000000-0000-0000-0000-000000000000"
+            )
           : undefined,
         feed.q
           ? or(

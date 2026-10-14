@@ -84,8 +84,9 @@ streams.
 songCommenterHandle: text("song_commenter_handle"), // e.g. "tedisrozenfelds7630"
 ```
 
-Nullable, no default. Written by the import form (the field doubles as
-the setting — a successful import persists it for next time), so no
+Nullable, no default. A stored preference written by its own
+`saveSongCommenterHandle` action (verified against `channels.list`
+before saving) — the import form never carries it as a field, so no
 separate settings page is needed for v1.
 
 ### `songs` — new table
@@ -212,11 +213,15 @@ comment formats drift and a wrong handle otherwise writes garbage:
 // No writes. Costs ~3-6 quota units.
 export async function previewSongImport(prevState, formData)
 
-// Confirm: reruns the same pipeline deterministically, persists
-// users.songCommenterHandle, writes the videos row if still missing,
-// applies the re-import delete+upsert. Redirects back with
-// ?songsVideo=<id> so the card can show the imported list.
-export async function importSongs(videoId: string, handle: string)
+// Confirm: reruns the same pipeline deterministically against the
+// stored handle, writes the videos row if still missing, applies the
+// re-import delete+upsert. Redirects back with ?songsVideo=<id> so the
+// card can show the imported list.
+export async function importSongs(prevState, formData)
+
+// Preference save: normalize → verify via channels.list (rejects typos
+// up front) → persist users.songCommenterHandle → revalidatePath.
+export async function saveSongCommenterHandle(prevState, formData)
 ```
 
 Auth on both: `getSession()` → `requireParentUnlocked()` — same shape
@@ -241,8 +246,10 @@ Error cases surfaced to the form (string `error`, mirroring
 New `components/song-import-form.tsx` client component in the sidebar,
 below `ApprovedChannelsCard` — a `Card` titled **Import songs** with:
 
-- Handle `Input` pre-filled from `users.songCommenterHandle`
-  (placeholder `@tedisrozenfelds7630`-style example).
+- The commenter handle shown as a stored preference (`Song commenter:
+  @handle · Change`) once set; the bare `Input` + Save button only
+  appears while unset or being edited — the handle is never re-asked
+  per import and never round-trips as a form field.
 - URL `Input` + `SubmitButton` "Find songs" → `previewSongImport`.
 - Preview state renders the parsed list (`m:ss — m:ss Title`, video
   title + thumbnail) with a confirm `SubmitButton` "Import N songs" →

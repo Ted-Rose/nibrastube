@@ -1,6 +1,7 @@
 "use server";
 
 import { and, eq, notInArray, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -39,16 +40,26 @@ export type SongImportState =
   | { error: string }
   | null;
 
+export type HandleSaveState = { saved: string } | { error: string } | null;
+
 const previewSchema = z.object({
   url: z.string(),
-  handle: z.string(),
 });
 
 const importSchema = z.object({
   videoId: z.string(),
-  handle: z.string(),
   returnTo: z.string().optional(),
 });
+
+// The commenter handle is a stored preference — it never round-trips
+// through the client as a form field.
+async function getSongCommenterHandle(userId: string): Promise<string | null> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { songCommenterHandle: true },
+  });
+  return user?.songCommenterHandle ?? null;
+}
 
 // Cached row when fresh (fetchedAt set), otherwise the API — `persist`
 // mirrors pinVideo's self-heal: preview only reads, import writes.
@@ -180,9 +191,48 @@ async function runSongImport(
   };
 }
 
+// Saves the commenter-handle preference. Verifies the handle resolves
+// to a real YouTube channel before storing (1 quota unit), so a typo
+// fails here with a friendly message instead of at import time.
+export async function saveSongCommenterHandle(
+  _prevState: HandleSaveState,
+  formData: FormData
+): Promise<HandleSaveState> {
+  const session = await getSession();
+  if (!session) return { error: "Not signed in." };
+  await requireParentUnlocked();
+
+  const parsed = z.object({ handle: z.string() }).safeParse({
+    handle: formData.get("handle"),
+  });
+  if (!parsed.success) return { error: "Enter a YouTube handle." };
+
+  const handle = normalizeHandle(parsed.data.handle);
+  if (!handle) {
+    return { error: "Enter a YouTube handle like @song-commenter." };
+  }
+
+  const channelId = await resolveChannelHandle(handle);
+  if (!channelId) {
+    return {
+      error: `No YouTube channel for @${handle} — check the spelling.`,
+    };
+  }
+
+  await db
+    .update(users)
+    .set({ songCommenterHandle: handle })
+    .where(eq(users.id, session.user.id));
+
+  // Fresh storedHandle prop for the card on the same round-trip.
+  revalidatePath("/parent/dashboard");
+
+  return { saved: handle };
+}
+
 // Dry run behind the "Find songs" button: parses everything but writes
-// nothing, so a wrong handle or drifting comment format can't write
-// garbage. Costs ~3-8 YouTube quota units.
+// nothing, so a drifting comment format can't write garbage. Uses the
+// stored commenter handle. Costs ~3-8 YouTube quota units.
 export async function previewSongImport(
   _prevState: SongImportState,
   formData: FormData
@@ -193,12 +243,13 @@ export async function previewSongImport(
 
   const parsed = previewSchema.safeParse({
     url: formData.get("url"),
-    handle: formData.get("handle"),
   });
   if (!parsed.success) return { error: "Enter a YouTube link." };
 
-  const handle = normalizeHandle(parsed.data.handle);
-  if (!handle) return { error: "Enter the commenter's YouTube handle." };
+  const handle = await getSongCommenterHandle(session.user.id);
+  if (!handle) {
+    return { error: "Save a song commenter handle first." };
+  }
 
   const videoId = parseYouTubeVideoId(parsed.data.url);
   if (!videoId) {
@@ -210,11 +261,11 @@ export async function previewSongImport(
   return { ...result, handle };
 }
 
-// Confirm: reruns the same pipeline deterministically, persists the
-// handle on the user row (it doubles as the setting for next time),
-// writes the videos row if still missing, then replaces this comment's
-// stale rows and upserts the new set — an edited comment cleanly
-// replaces its own output without clobbering another commenter's rows.
+// Confirm: reruns the same pipeline deterministically against the
+// stored handle, writes the videos row if still missing, then replaces
+// this comment's stale rows and upserts the new set — an edited comment
+// cleanly replaces its own output without clobbering another
+// commenter's rows.
 export async function importSongs(
   _prevState: SongImportState,
   formData: FormData
@@ -225,12 +276,11 @@ export async function importSongs(
 
   const parsed = importSchema.safeParse({
     videoId: formData.get("videoId"),
-    handle: formData.get("handle"),
     returnTo: formData.get("returnTo") ?? undefined,
   });
   if (!parsed.success) return { error: "Missing import details." };
 
-  const handle = normalizeHandle(parsed.data.handle);
+  const handle = await getSongCommenterHandle(session.user.id);
   const videoId = parseYouTubeVideoId(parsed.data.videoId);
   if (!handle || !videoId) {
     return { error: "Missing import details." };
@@ -238,11 +288,6 @@ export async function importSongs(
 
   const result = await runSongImport(videoId, handle, true);
   if ("error" in result) return result;
-
-  await db
-    .update(users)
-    .set({ songCommenterHandle: handle })
-    .where(eq(users.id, session.user.id));
 
   const newStarts = result.songs.map((s) => s.startSeconds);
   await db

@@ -298,7 +298,7 @@ async function SongImportCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <SongImportForm
-          defaultHandle={user?.songCommenterHandle ?? null}
+          storedHandle={user?.songCommenterHandle ?? null}
           returnTo={returnTo}
         />
         {importedSongs.length > 0 && (

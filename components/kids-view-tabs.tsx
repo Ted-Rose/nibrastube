@@ -1,38 +1,35 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
-import { KIDS_VIEWS } from "@/app/kids/[profileId]/_components/view-config";
 import { cn } from "@/lib/utils";
-import type { KidsView } from "@/lib/kids-feed";
+import type { ReactNode } from "react";
 
 export interface KidsViewTab {
-  key: KidsView;
+  key: string;
   label: string;
   href: string;
   active: boolean;
+  // Rendered as the tab's LinkPendingSpinner fallback — the caller picks
+  // the icon and its weight from its own view table, so this strip serves
+  // any feed (kids portal, /songs catalog), not just the kids views.
+  icon: ReactNode;
 }
 
-// Same weights the burger menu used: Play is always filled, the Liked
-// and Playlists icons fill in when their tab is active.
-const iconFor = (key: KidsView, active: boolean): ReactNode => {
-  const ViewIcon = KIDS_VIEWS[key].icon;
-  const filled =
-    key === "videos" ||
-    ((key === "liked" || key === "playlists") && active);
-  return <ViewIcon size={22} weight={filled ? "fill" : "bold"} />;
-};
-
-// The five kids feeds as an always-visible tab strip. Phones get five
-// equal tiles with the icon over a short label; sm+ shows inline pills.
-// Drill-ins keep their tab lit because a tab is active purely on
-// feed.view (a channel drill-in still has view=channels). Each tab swaps
-// its icon for a spinner via LinkPendingSpinner — param-only navigations
-// never fire loading.tsx.
+// The feed views as an always-visible tab strip. Phones get equal tiles
+// with the icon over a short label; sm+ shows inline pills. Drill-ins
+// keep their tab lit because a tab is active purely on feed.view. Each
+// tab swaps its icon for a spinner via LinkPendingSpinner — param-only
+// navigations never fire loading.tsx.
 export function KidsViewTabs({ tabs }: { tabs: KidsViewTab[] }) {
   return (
     <nav
       aria-label="Views"
-      className="grid grid-cols-5 gap-0.5 pb-2 sm:flex sm:gap-2 sm:pb-3"
+      className="grid gap-0.5 pb-2 sm:flex sm:gap-2 sm:pb-3"
+      // The kids feed has 5 tabs, the songs catalog 2-3 — any static
+      // grid-cols-N would leave orphans, so size the phone columns to
+      // the actual tab count.
+      style={{
+        gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`,
+      }}
     >
       {tabs.map((tab) => (
         <Link
@@ -51,7 +48,7 @@ export function KidsViewTabs({ tabs }: { tabs: KidsViewTab[] }) {
           <LinkPendingSpinner
             size={22}
             weight="bold"
-            fallback={iconFor(tab.key, tab.active)}
+            fallback={tab.icon}
           />
           <span className="text-[11px] leading-tight sm:text-sm md:text-base">
             {tab.label}

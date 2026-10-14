@@ -23,7 +23,11 @@ import {
   type KidsView,
 } from "@/lib/kids-feed";
 import { FeedContent } from "./_components/feed-content";
-import { KIDS_VIEWS, searchPlaceholder } from "./_components/view-config";
+import {
+  KIDS_VIEWS,
+  searchPlaceholder,
+  tabIcon,
+} from "./_components/view-config";
 
 interface KidsPortalProps {
   params: Promise<{ profileId: string }>;
@@ -74,12 +78,16 @@ export default async function KidsPortalPage({
       KidsView,
       Partial<KidsFeedParams>,
     ])[]
-  ).map(([key, overrides]) => ({
-    key,
-    label: KIDS_VIEWS[key].label,
-    href: kidsPortalUrl(profileId, feed, overrides),
-    active: view === key,
-  }));
+  ).map(([key, overrides]) => {
+    const active = view === key;
+    return {
+      key,
+      label: KIDS_VIEWS[key].label,
+      href: kidsPortalUrl(profileId, feed, overrides),
+      active,
+      icon: tabIcon(key, active),
+    };
+  });
 
   return (
     <div className="min-h-screen bg-[#F0F4FF]">

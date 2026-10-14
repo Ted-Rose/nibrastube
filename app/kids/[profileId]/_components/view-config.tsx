@@ -6,6 +6,7 @@ import {
   Play,
   Playlist,
 } from "@phosphor-icons/react/dist/ssr";
+import type { ReactNode } from "react";
 import type { KidsFeedParams, KidsView } from "@/lib/kids-feed";
 
 interface KidsViewConfig {
@@ -85,4 +86,14 @@ export function searchPlaceholder(
   profileName: string
 ): string {
   return KIDS_VIEWS[feed.view].placeholder(profileName, feed);
+}
+
+// Tab strip icons. Same weights the burger menu used: Play is always
+// filled, the Liked and Playlists icons fill in when their tab is active.
+export function tabIcon(key: KidsView, active: boolean): ReactNode {
+  const ViewIcon = KIDS_VIEWS[key].icon;
+  const filled =
+    key === "videos" ||
+    ((key === "liked" || key === "playlists") && active);
+  return <ViewIcon size={22} weight={filled ? "fill" : "bold"} />;
 }

@@ -1,9 +1,9 @@
 import { Suspense } from "react";
 import { db } from "@/lib/db";
-import { channels, channelSyncExclusions, profiles, videos, whitelistedChannels, whitelistedVideos } from "@/lib/db/schema";
+import { channels, channelSyncExclusions, profiles, songs, users, videos, whitelistedChannels, whitelistedVideos } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
-import { and, count, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { searchChannels, searchYouTube } from "@/lib/youtube";
 import { pinVideo } from "@/app/actions/pinning";
@@ -13,12 +13,14 @@ import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { DashboardSearch } from "@/components/dashboard-search";
+import { SongImportForm } from "@/components/song-import-form";
 import { PinnedVideosPanel } from "@/components/pinned-videos-panel";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, Pause, Play, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
+import { Check, MusicNotes, Pause, Play, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
 import DailySyncPing from "@/components/daily-sync-ping";
+import { formatDuration } from "@/lib/format";
 
 interface DashboardProps {
   searchParams: Promise<{
@@ -27,6 +29,7 @@ interface DashboardProps {
     type?: string;
     refreshed?: string;
     removed?: string;
+    songsVideo?: string;
   }>;
 }
 
@@ -257,6 +260,76 @@ async function ApprovedChannelsCard({
   );
 }
 
+// Songs are a global registry, not profile-scoped — this card takes no
+// profileId. The imported list renders when importSongs redirects back
+// with ?songsVideo=<id>.
+async function SongImportCard({
+  userId,
+  songsVideo,
+  returnTo,
+}: {
+  userId: string;
+  songsVideo: string | undefined;
+  returnTo: string;
+}) {
+  const [user, importedSongs] = await Promise.all([
+    db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { songCommenterHandle: true },
+    }),
+    songsVideo
+      ? db
+          .select()
+          .from(songs)
+          .where(eq(songs.videoId, songsVideo))
+          .orderBy(asc(songs.startSeconds))
+      : Promise.resolve([]),
+  ]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center">
+          <MusicNotes size={20} className="mr-2 text-primary" /> Import Songs
+        </CardTitle>
+        <CardDescription>
+          Turn a commenter&apos;s timestamped tracklist into songs.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <SongImportForm
+          storedHandle={user?.songCommenterHandle ?? null}
+          returnTo={returnTo}
+        />
+        {importedSongs.length > 0 && (
+          <div className="border-t pt-3">
+            <p className="pb-2 text-xs text-muted-foreground">
+              {importedSongs.length} song
+              {importedSongs.length === 1 ? "" : "s"}
+              {importedSongs[0].sourceHandle &&
+                ` from @${importedSongs[0].sourceHandle}`}
+            </p>
+            <ul className="max-h-48 space-y-1 overflow-y-auto text-xs">
+              {importedSongs.map((song) => (
+                <li key={song.id}>
+                  <span className="tabular-nums text-muted-foreground">
+                    {formatDuration(song.startSeconds)}
+                    {" – "}
+                    {song.endSeconds !== null
+                      ? formatDuration(song.endSeconds)
+                      : "end"}
+                  </span>{" "}
+                  {song.title}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // YouTube search + the pinned/approved lookups the result buttons need all
 // run here, inside Suspense — the page shell paints instantly and only this
 // region waits on the YouTube API.
@@ -364,7 +437,8 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const { q, profileId, type, refreshed, removed } = await searchParams;
+  const { q, profileId, type, refreshed, removed, songsVideo } =
+    await searchParams;
   const query = q || "";
   const searchType = type === "channels" ? "channels" : "videos";
   const selectedProfileId = profileId;
@@ -449,6 +523,21 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
             <ApprovedChannelsCard
               profileId={activeProfile.id}
               profileName={activeProfile.name}
+            />
+          </Suspense>
+
+          <Suspense
+            fallback={
+              <SidebarCardFallback
+                icon={<MusicNotes size={20} className="mr-2 text-primary" />}
+                title="Import Songs"
+              />
+            }
+          >
+            <SongImportCard
+              userId={session.user.id}
+              songsVideo={songsVideo}
+              returnTo={dashboardHref(searchType)}
             />
           </Suspense>
         </div>

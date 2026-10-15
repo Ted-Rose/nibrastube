@@ -11,3 +11,7 @@ build
 *.p12
 *.keystore
 *.jks
+
+# Devin user-local config (permissions, personal overrides)
+.devin/config.local.json
+.devin/mcp_config.local.json

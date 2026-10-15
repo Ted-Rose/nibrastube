@@ -1,5 +1,7 @@
 # Plan: Kids "For You" Recommendations
 
+**Status: implemented** (merged in #29)
+
 Feature branch prefix: `feature/` (e.g. `feature/kids-for-you`).
 
 ## Goal

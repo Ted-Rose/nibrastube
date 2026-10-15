@@ -137,7 +137,7 @@ export async function SongsView({
           action={emptyAction}
         />
       ) : (
-        <SongCatalogGrid rows={rows} />
+        <SongCatalogGrid rows={rows} playerBase={songsCatalogUrl(feed)} />
       )}
     </>
   );
@@ -182,7 +182,11 @@ async function AllSongsGrid({
           }
         />
       ) : (
-        <SongCatalogGrid rows={rows} eagerCount={0} />
+        <SongCatalogGrid
+          rows={rows}
+          playerBase={songsCatalogUrl(feed)}
+          eagerCount={0}
+        />
       )}
     </>
   );

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Play } from "@phosphor-icons/react/dist/ssr";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDuration } from "@/lib/format";
@@ -7,6 +8,9 @@ import { SongCardMenu } from "./song-card-menu";
 
 interface SongCardProps {
   song: FeedSong;
+  // The card's click target — the ?song=<uuid> overlay URL that opens
+  // the in-app segment player without leaving the catalog.
+  href: string;
   // The first above-the-fold cards load eagerly; the rest stay lazy.
   eager?: boolean;
   // "compact" is the denser variant for horizontal shelf rows.
@@ -16,11 +20,11 @@ interface SongCardProps {
 // A catalog song row as a card: the compilation's thumbnail with a
 // hover play affordance, the song title, and the compilation title plus
 // an "m:ss – m:ss" range badge (open-ended songs borrow the video's
-// duration, and a missing one shows "end"). In-app segment playback is
-// a documented seam — until the watch page learns ?song=<uuid>, the
-// whole card is an external YouTube deep-link at the song's start.
+// duration, and a missing one shows "end"). The whole card links to the
+// ?song= overlay (scroll={false} keeps the grid position under it).
 export function SongCard({
   song,
+  href,
   eager = false,
   size = "default",
 }: SongCardProps) {
@@ -32,18 +36,15 @@ export function SongCard({
   const start = formatDuration(song.startSeconds) ?? "0:00";
   const endSeconds = song.endSeconds ?? song.videoDuration;
   const range = `${start} – ${formatDuration(endSeconds) ?? "end"}`;
-  const href = `https://www.youtube.com/watch?v=${song.videoId}&t=${song.startSeconds}s`;
 
   return (
     // No `group` here — the ⋮ menu trigger is this div's child too, and
     // an outer group would fire the card's group-hover lift when
     // hovering it.
     <div className="relative">
-      {/* Plain <a>, not <Link> — this is an external YouTube deep-link. */}
-      <a
+      <Link
         href={href}
-        target="_blank"
-        rel="noopener noreferrer"
+        scroll={false}
         className="group block rounded-[32px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
       >
         <Card className="overflow-hidden border-0 shadow-lg rounded-[32px] bg-white transition-transform duration-300 motion-safe:group-hover:-translate-y-2 motion-safe:active:scale-[0.98]">
@@ -98,8 +99,8 @@ export function SongCard({
             </div>
           </CardContent>
         </Card>
-      </a>
-      {/* The ⋮ menu is a sibling of (not inside) the anchor — a button
+      </Link>
+      {/* The ⋮ menu is a sibling of (not inside) the link — a button
           nested in a link is invalid interactive-in-interactive markup
           and its clicks would navigate. */}
       {canDelete && <SongCardMenu songId={song.id} />}

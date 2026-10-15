@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
-import { UserSwitch } from "@phosphor-icons/react/dist/ssr";
+import { MusicNotes, UserSwitch } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import PusherListener from "@/components/pusher-listener";
 import DailySyncPing from "@/components/daily-sync-ping";
@@ -114,6 +114,15 @@ export default async function KidsPortalPage({
                 placeholder={searchPlaceholder(feed, profile.name)}
               />
             </div>
+            {/* Song catalog is public — a plain link is fine, no
+                prefetch caveat like the auth-conditional /kids. */}
+            <Link
+              href="/songs"
+              aria-label="Song catalog"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+            >
+              <MusicNotes size={24} weight="bold" />
+            </Link>
             <Link
               href="/kids"
               aria-label="Switch profile"

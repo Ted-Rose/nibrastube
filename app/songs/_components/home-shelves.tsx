@@ -3,6 +3,7 @@ import { VideoShelf } from "@/components/video-shelf";
 import {
   getNewSongs,
   getUserSongs,
+  songPlayerUrl,
   songsCatalogUrl,
   type SongsFeedParams,
 } from "@/lib/songs-feed";
@@ -39,6 +40,7 @@ export async function HomeShelves({
             <SongCard
               key={song.id}
               song={song}
+              href={songPlayerUrl(feed, song.id)}
               size="compact"
               eager={takeEager()}
             />
@@ -55,6 +57,7 @@ export async function HomeShelves({
             <SongCard
               key={song.id}
               song={song}
+              href={songPlayerUrl(feed, song.id)}
               size="compact"
               eager={takeEager()}
             />

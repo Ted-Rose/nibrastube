@@ -11,9 +11,15 @@ const PAGE_SIZE = 48;
 
 export function SongCatalogGrid({
   rows,
+  playerBase,
   eagerCount = 4,
 }: {
   rows: FeedSong[];
+  // The current feed's catalog URL — card hrefs append ?song=<uuid>
+  // to it so closing the player lands back on this exact view. Passed
+  // as a plain string because client props can't carry functions (and
+  // the songs-feed module itself imports the server-side db).
+  playerBase: string;
   // Thumbnails of the first `eagerCount` cards load eagerly — they're
   // the ones visible without scrolling.
   eagerCount?: number;
@@ -21,6 +27,7 @@ export function SongCatalogGrid({
   const [visible, setVisible] = useState(PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const hasMore = visible < rows.length;
+  const joiner = playerBase.includes("?") ? "&" : "?";
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -44,6 +51,7 @@ export function SongCatalogGrid({
           <SongCard
             key={song.id}
             song={song}
+            href={`${playerBase}${joiner}song=${song.id}`}
             eager={i < eagerCount}
           />
         ))}

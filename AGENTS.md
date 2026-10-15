@@ -106,10 +106,15 @@ components/
   empty-state.tsx               Shared kids empty-state card + CTA link
   kids-tile-card.tsx            Channel/playlist/compilation tile
                                 ("avatar"/"cover", `noun` for the count)
-  song-card.tsx                 /songs catalog card — external YouTube
-                                deep-link at the song's startSeconds
+  song-card.tsx                 /songs catalog card — links to the
+                                ?song=<uuid> in-app player overlay
   song-card-menu.tsx            Owner-only ⋮ "Delete song" on the card
   song-catalog-grid.tsx         Windowed song grid (sentinel paging)
+  song-player-overlay.tsx       Modal IFrame player for ?song= — plays
+                                the startSeconds→endSeconds segment,
+                                closes on ENDED/Escape/backdrop, snaps
+                                rogue suggested videos back to the
+                                segment
   video-grid-skeleton.tsx       Grid + shelf skeletons (Suspense fallbacks)
   pusher-listener.tsx           Subscribes `profile-<id>`, router.refresh() on events
   daily-sync-ping.tsx           Once/day/device POST to /api/sync-channels
@@ -119,6 +124,10 @@ lib/
   profiles.ts                   assertCanManageProfile, getManageableProfiles
   kids-feed.ts                  Kids feed params/URL builder + row queries
   songs-feed.ts                 /songs catalog params/URL builder + queries
+  yt-player.ts                  Shared YouTube IFrame-API types + the
+                                ensureYouTubeAPI script loader (the
+                                Window.YT global lives here — declaring
+                                it per-component collides as TS2717)
   youtube.ts                    YouTube Data API wrappers + ISO-8601 duration parse
   channel-sync.ts               backfillChannel / pollChannel / syncAllChannels
   pusher.ts                     pusherServer + getPusherClient factories
@@ -239,10 +248,14 @@ release APK on `v*` tags.
   the read-only catalog plus signup chrome; a parent session adds the
   "Yours" tab (`songs.importedBy`), the "Your imports" shelf, a ⋮
   delete menu on their own rows and a Parent portal link. `deleteSong`
-  re-verifies `importedBy === session.user.id` server-side. Card hrefs
-  are external YouTube deep-links (`&t=<startSeconds>s`) until the
-  watch page learns `?song=<uuid>` — see
-  `docs/public-song-catalog-plan.md` for the seams.
+  re-verifies `importedBy === session.user.id` server-side. Kid-locked
+  devices also get a Videos pill back to `/kids/<activeProfileId>` —
+  the kids header links here via its MusicNotes button (the parent
+  dashboard has a "Song catalog" button too). Song cards open the
+  `?song=<uuid>` overlay player in-app (IFrame API, `start`/`end`
+  segment params, ENDED → close; rogue suggested-video loads snap back
+  to the segment); `?song=` is not a feed param, so tab/sort/search
+  navigation closes the overlay.
 
 ## Conventions
 

@@ -86,6 +86,18 @@ export function songsCatalogUrl(
   return `/songs${songsFeedQuery(feed, overrides)}`;
 }
 
+// `?song=<uuid>` opens the in-app segment player as an overlay on the
+// current feed — it's deliberately not part of SongsFeedParams, so
+// every navigation helper (tabs, sorts, search) drops it and closes
+// the player.
+export function songPlayerUrl(
+  feed: SongsFeedParams,
+  songId: string
+): string {
+  const base = songsCatalogUrl(feed);
+  return `${base}${base.includes("?") ? "&" : "?"}song=${songId}`;
+}
+
 export interface FeedSong {
   id: string; // songs.id — key + the future ?song=<uuid> watch param
   title: string;
@@ -242,6 +254,19 @@ export async function getCompilations({
       videos.channelTitle
     )
     .orderBy(asc(videos.title));
+}
+
+// One song row for the ?song= player overlay — returns null when the
+// id is unknown so the page can silently ignore a stale param.
+export async function getSong(id: string): Promise<FeedSong | null> {
+  const row = await db
+    .select(feedSongCols)
+    .from(songs)
+    .innerJoin(videos, eq(videos.id, songs.videoId))
+    .where(eq(songs.id, id))
+    .limit(1)
+    .then((rows) => rows[0]);
+  return row ? toFeedSong(row) : null;
 }
 
 // Newest imports across all parents — the "Newly added" home shelf.

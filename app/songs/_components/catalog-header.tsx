@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Play } from "@phosphor-icons/react/dist/ssr";
 import { KidsHeader } from "@/components/kids-header";
 import { KidsSearch } from "@/components/kids-search";
 import {
@@ -12,16 +13,20 @@ import { searchPlaceholder } from "./view-config";
 // The catalog's sticky header — the KidsHeader shell with the brand,
 // type-ahead search and the view tabs. Anonymous visitors get Log in /
 // Sign up links on the right; signed-in parents get a way back to the
-// dashboard. Kid-locked devices have no session, so they see the
-// anonymous chrome.
+// dashboard; kid-locked devices (no session, but an activeProfileId
+// cookie) additionally get a Videos pill back to their feed — the
+// Songs button in the kids header leads here, and this is the way back.
 export function CatalogHeader({
   feed,
   tabs,
   signedIn,
+  kidsHref,
 }: {
   feed: SongsFeedParams;
   tabs: KidsViewTab[];
   signedIn: boolean;
+  // /kids/<activeProfileId> for locked kid devices, null otherwise.
+  kidsHref: string | null;
 }) {
   return (
     <KidsHeader
@@ -57,12 +62,26 @@ export function CatalogHeader({
             </Link>
           ) : (
             <>
-              <Link
-                href="/login"
-                className="inline-flex h-11 shrink-0 items-center rounded-full px-4 text-base font-black text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
-              >
-                Log in
-              </Link>
+              {kidsHref ? (
+                // The locked device already carries the matching
+                // activeProfileId cookie, so /kids/<id> resolves to the
+                // feed rather than a redirect — safe to prefetch.
+                <Link
+                  href={kidsHref}
+                  aria-label="Back to videos"
+                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-primary px-4 text-base font-black text-white shadow-md transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40 motion-safe:hover:scale-105 sm:px-5"
+                >
+                  <Play size={18} weight="fill" className="sm:hidden" />
+                  Videos
+                </Link>
+              ) : (
+                <Link
+                  href="/login"
+                  className="inline-flex h-11 shrink-0 items-center rounded-full px-4 text-base font-black text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+                >
+                  Log in
+                </Link>
+              )}
               <Link
                 href="/signup"
                 className="inline-flex h-11 shrink-0 items-center rounded-full bg-primary px-5 text-base font-black text-white shadow-md transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40 motion-safe:hover:scale-105"

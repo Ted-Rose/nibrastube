@@ -1,7 +1,7 @@
 # Plan: Postgres connection exhaustion on Aiven (max_connections=20)
 
-**Status: partially implemented** — fixes 2–5 shipped in PRs #34–#36
-(stacked); fix #1 (Aiven PgBouncer pool) deferred.
+**Status: partially implemented** — fixes 2–5 shipped in stacked PRs
+#34–#37; fix #1 (Aiven PgBouncer pool) deferred.
 
 ## Incident
 
@@ -17,7 +17,8 @@ at `max_connections = 20` (~17 usable — 3 reserved for superuser).
 - 15 live connections, **all `avnadmin`, all `idle`** — from ~8 distinct
   IPs across AWS `us-east-1` *and* `eu-central` (Vercel lambda
   instances). Idle times ranged 1.5–10.5 minutes.
-- Top `last_query`s: `select "id" from "profiles" where "id" = $1` (the
+- The most common `query` values: `select "id" from "profiles" where
+  "id" = $1` (the
   profile-existence check `proxy.ts` runs on every matched request for a
   kid session — added by kid-login) and the heavy `channel_affinity`
   For-You CTE.
@@ -74,7 +75,10 @@ and `0012` (kid credentials) are both applied.
 3. **Stop paying a DB round-trip per proxy request.** Wrap the
    profile-existence check for kid sessions in `unstable_cache` keyed by
    `profileId` with a ~60 s TTL (deletion detection lags ≤60 s —
-   acceptable, proxy still clears cookies on the next nav after expiry).
+   acceptable, proxy still clears cookies on the next nav after expiry)
+   (implemented as a module-scope TTL Map — `unstable_cache` throws
+   `incrementalCache missing` under the standalone proxy/middleware
+   entry on next<16.2).
 4. **Reconcile `__drizzle_migrations`**: update the stored hashes for
    `0003`/`0004` to the sha256 of the current `.sql` files so
    `db:migrate` stops trying to re-apply them.

@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
@@ -10,6 +11,23 @@ import {
 } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
+
+// Kid sessions probe profile existence on every matched request —
+// caching the result for 60 s avoids a DB round-trip (and a checked-out
+// pool connection for the lambda's warm lifetime) per navigation. Args
+// are part of the cache key, so each profileId gets its own entry. A
+// deleted profile is detected at most 60 s late; the redirect below
+// still clears the stale cookies on the next nav after the entry
+// expires.
+const profileExists = unstable_cache(
+  async (profileId: string) =>
+    !!(await db.query.profiles.findFirst({
+      where: eq(profiles.id, profileId),
+      columns: { id: true },
+    })),
+  ["profile-exists"],
+  { revalidate: 60 }
+);
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -24,11 +42,10 @@ export async function proxy(request: NextRequest) {
     // treat the device as signed-out. Server components can't delete
     // cookies, so this is the only place the JWT gets revoked. (Proxy
     // always runs on the Node.js runtime, so the DB lookup is safe.)
-    const profileExists = await db.query.profiles.findFirst({
-      where: eq(profiles.id, session.profileId),
-      columns: { id: true },
-    });
-    if (!profileExists) {
+    // The cached existence result can lag ≤60 s behind a deletion —
+    // acceptable, since the next nav after expiry still lands here and
+    // clears the stale cookies.
+    if (!(await profileExists(session.profileId))) {
       const res = NextResponse.redirect(new URL("/login", request.url));
       res.cookies.delete("session");
       res.cookies.delete("activeProfileId");
@@ -84,8 +101,14 @@ export async function proxy(request: NextRequest) {
   //    Without a session AND without a matching lock, it's off-limits.
   if (pathname.startsWith("/kids/")) {
     const profileIdInUrl = pathname.split("/")[2];
-    if (activeProfileId && profileIdInUrl && activeProfileId !== profileIdInUrl) {
-      return NextResponse.redirect(new URL(`/kids/${activeProfileId}`, request.url));
+    if (
+      activeProfileId &&
+      profileIdInUrl &&
+      activeProfileId !== profileIdInUrl
+    ) {
+      return NextResponse.redirect(
+        new URL(`/kids/${activeProfileId}`, request.url)
+      );
     }
     if (!session && activeProfileId !== profileIdInUrl) {
       return NextResponse.redirect(

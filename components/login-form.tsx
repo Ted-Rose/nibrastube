@@ -16,8 +16,14 @@ export function LoginForm({ callback }: { callback?: string }) {
       <input type="hidden" name="callback" value={callback || ""} />
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" placeholder="m@example.com" required />
+          <Label htmlFor="identifier">Email or username</Label>
+          <Input
+            id="identifier"
+            name="identifier"
+            autoComplete="username"
+            placeholder="m@example.com or emma"
+            required
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="password">Password</Label>

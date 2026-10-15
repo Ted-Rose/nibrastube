@@ -1,15 +1,60 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { eq } from "drizzle-orm";
 import {
+  activeProfileCookieOptions,
   getRequestSession,
+  isKidSession,
   isParentUnlocked,
   updateSession,
 } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { profiles } from "@/lib/db/schema";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const session = await getRequestSession(request);
   const activeProfileId = request.cookies.get("activeProfileId")?.value;
+
+  // Kid sessions get their own routing table: the signed JWT pins the
+  // device to one profile's pages, and every other matched path
+  // redirects to that feed. Parents fall through to the rules below.
+  if (isKidSession(session)) {
+    // A deleted profile with a live JWT would redirect-loop forever —
+    // treat the device as signed-out. Server components can't delete
+    // cookies, so this is the only place the JWT gets revoked. (Proxy
+    // always runs on the Node.js runtime, so the DB lookup is safe.)
+    const profileExists = await db.query.profiles.findFirst({
+      where: eq(profiles.id, session.profileId),
+      columns: { id: true },
+    });
+    if (!profileExists) {
+      const res = NextResponse.redirect(new URL("/login", request.url));
+      res.cookies.delete("session");
+      res.cookies.delete("activeProfileId");
+      return res;
+    }
+
+    const feed = `/kids/${session.profileId}`;
+    if (pathname === feed || pathname.startsWith(`${feed}/`)) {
+      // Own feed (and the watch pages under it) — allowed through. The
+      // session wins over a stale/forgeable activeProfileId cookie, so
+      // re-pin it here.
+      const res = (await updateSession(request)) ?? NextResponse.next();
+      if (activeProfileId !== session.profileId) {
+        res.cookies.set(
+          "activeProfileId",
+          session.profileId,
+          activeProfileCookieOptions
+        );
+      }
+      return res;
+    }
+    // /, the /kids picker, another kid's pages, /parent/* (no PIN gate —
+    // a kid has no unlock path), /login, /signup.
+    return NextResponse.redirect(new URL(feed, request.url));
+  }
+
   const parentUnlocked = await isParentUnlocked(request, session);
 
   // 0. No landing page: `/` sends kid-locked devices straight back to

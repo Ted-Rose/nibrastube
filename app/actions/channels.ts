@@ -104,7 +104,7 @@ export async function setChannelSyncExcluded(
   excluded: boolean
 ) {
   const session = await getSession();
-  if (!session) return;
+  if (!session || session.role !== "parent") return;
   await requireParentUnlocked();
 
   const manageable = await getManageableProfiles(session.user.id);

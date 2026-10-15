@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { invites, profiles, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { getSession } from "@/lib/auth";
+import { getSession, parentSession } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,9 @@ interface InvitePageProps {
 
 export default async function InvitePage({ params }: InvitePageProps) {
   const { token } = await params;
-  const session = await getSession();
+  // Kid sessions read as signed-out here — accepting an invite is a
+  // parent-only action.
+  const user = parentSession(await getSession());
   
   const invite = await db.query.invites.findFirst({
     where: eq(invites.token, token),
@@ -64,7 +66,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
             </p>
           </div>
           
-          {!session && (
+          {!user && (
             <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 text-amber-800 text-sm flex gap-3 items-start text-left">
               <span className="text-xl">⚠️</span>
               <p>You need to be logged in as a parent to accept this invite. If you don&apos;t have an account, create one first!</p>
@@ -74,12 +76,12 @@ export default async function InvitePage({ params }: InvitePageProps) {
         <CardFooter className="flex flex-col gap-4">
           <form action={acceptInvite.bind(null, token)} className="w-full">
             <SubmitButton size="lg" className="w-full h-14 text-xl font-bold shadow-lg hover:shadow-primary/20 transition-all" pendingLabel="Accepting…">
-              {session ? "Accept Invitation" : "Login & Accept"}
+              {user ? "Accept Invitation" : "Login & Accept"}
             </SubmitButton>
           </form>
-          {session && (
+          {user && (
             <p className="text-xs text-center text-muted-foreground italic">
-              Logged in as {session.user.email}
+              Logged in as {user.email}
             </p>
           )}
         </CardFooter>

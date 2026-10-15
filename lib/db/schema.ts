@@ -18,6 +18,11 @@ export const profiles = pgTable("profiles", {
     .notNull(),
   name: text("name").notNull(),
   avatar: text("avatar"), // URL or base64 or emoji
+  // Optional login credentials: username shares one identifier namespace
+  // with users.email (enforced at write time in signup/setKidCredentials).
+  // Both nullable — a profile without them simply has no kid login.
+  username: text("username").unique(),
+  passwordHash: text("password_hash"),
   swipeEnabled: boolean("swipe_enabled").default(false).notNull(), // kid may swipe to switch videos on the watch page
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

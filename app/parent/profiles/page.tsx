@@ -1,15 +1,16 @@
 import { db } from "@/lib/db";
 import { profiles, invites, sharedAccess } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth";
+import { getSession, parentSession } from "@/lib/auth";
 import { eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { createProfile, deleteProfile } from "@/app/actions/profiles";
+import { deleteProfile } from "@/app/actions/profiles";
 import { SwipeToggle } from "@/components/profile-swipe-toggle";
+import { ProfileCreateForm } from "@/components/profile-create-form";
+import { KidCredentialsForm } from "@/components/kid-credentials-form";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Trash, Plus } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
@@ -17,10 +18,11 @@ import { createInviteAction } from "@/app/actions/invites";
 
 export default async function ProfilesPage() {
   const session = await getSession();
-  if (!session) redirect("/login");
+  const user = parentSession(session);
+  if (!user) redirect("/login");
 
   const kidProfiles = await db.query.profiles.findMany({
-    where: eq(profiles.parentId, session.user.id),
+    where: eq(profiles.parentId, user.id),
   });
 
   // Fetch all invites for these profiles
@@ -36,7 +38,7 @@ export default async function ProfilesPage() {
   // Profiles other parents shared with this user — editors get a smaller
   // card (no delete/invite) but can still manage videos and toggle swipe.
   const sharedWithMe = await db.query.sharedAccess.findMany({
-    where: eq(sharedAccess.parentId, session.user.id)
+    where: eq(sharedAccess.parentId, user.id)
   });
   const sharedProfiles = sharedWithMe.length > 0
     ? await db.query.profiles.findMany({
@@ -83,6 +85,16 @@ export default async function ProfilesPage() {
               </div>
 
               <div className="w-full pt-4 border-t border-slate-200">
+                  <p className="text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest">Kid Login</p>
+                  <KidCredentialsForm
+                    profileId={profile.id}
+                    username={profile.username}
+                    hasCredentials={!!profile.passwordHash}
+                    name={profile.name}
+                  />
+              </div>
+
+              <div className="w-full pt-4 border-t border-slate-200">
                   <p className="text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest">Share Access</p>
                   <form action={createInviteAction} className="flex gap-2 mb-4">
                      <input type="hidden" name="profileId" value={profile.id} />
@@ -120,17 +132,7 @@ export default async function ProfilesPage() {
             <CardTitle>Add New Kid</CardTitle>
           </CardHeader>
           <CardContent className="w-full">
-            <form action={createProfile} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Kid&apos;s Name</Label>
-                <Input id="name" name="name" placeholder="Adam" required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="avatar">Avatar (Emoji)</Label>
-                <Input id="avatar" name="avatar" placeholder="👦" defaultValue="👦" />
-              </div>
-              <SubmitButton className="w-full mt-4" size="touch" pendingLabel="Adding…">Add Kid</SubmitButton>
-            </form>
+            <ProfileCreateForm />
           </CardContent>
         </Card>
       </div>

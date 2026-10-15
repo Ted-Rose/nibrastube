@@ -10,7 +10,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <CardHeader className="space-y-1">
           <CardTitle className="text-3xl font-bold tracking-tight text-center">Log in</CardTitle>
           <CardDescription className="text-center">
-            Enter your email and password to access your parent portal
+            Parents log in with their email — kids with the username their
+            parent set up
           </CardDescription>
         </CardHeader>
         <LoginForm callback={callback} />

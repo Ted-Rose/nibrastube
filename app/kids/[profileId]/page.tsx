@@ -8,12 +8,13 @@ import Link from "next/link";
 import PusherListener from "@/components/pusher-listener";
 import DailySyncPing from "@/components/daily-sync-ping";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
+import { KidLogoutButton } from "@/components/kid-logout-button";
 import { KidsHeader } from "@/components/kids-header";
 import { KidsSearch } from "@/components/kids-search";
 import { KidsViewTabs } from "@/components/kids-view-tabs";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { VideoGridSkeleton } from "@/components/video-grid-skeleton";
-import { getSession } from "@/lib/auth";
+import { getSession, isKidSession } from "@/lib/auth";
 import { canViewProfile } from "@/lib/profiles";
 import { cookies } from "next/headers";
 import {
@@ -106,31 +107,52 @@ export default async function KidsPortalPage({
                 placeholder={searchPlaceholder(feed, profile.name)}
               />
             </div>
-            <Link
-              href="/kids"
-              aria-label="Switch profile"
-              // /kids is auth-conditional: proxy.ts 307-redirects it to
-              // /login on locked kid devices. A prefetched redirect
-              // pollutes the router's segment cache and can replay on
-              // later navigations — always resolve it fresh on click.
-              prefetch={false}
-              className="group flex shrink-0 items-center gap-3 rounded-2xl transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
-            >
-               <span className="text-xl font-black text-slate-700 hidden sm:block">{profile.name}</span>
-               <div className="relative">
-                 <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-white border-4 border-primary shadow-sm flex items-center justify-center text-2xl sm:text-3xl">
-                    {profile.avatar}
+            {isKidSession(session) ? (
+              // A kid session can't switch profiles — proxy bounces
+              // /kids back to their own feed — so the identity renders
+              // as a plain badge, not a dead link.
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="hidden text-xl font-black text-slate-700 sm:block">
+                  {profile.name}
+                </span>
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border-4 border-primary bg-white text-2xl shadow-sm sm:h-14 sm:w-14 sm:text-3xl">
+                  {profile.avatar}
+                </div>
+              </div>
+            ) : (
+              <Link
+                href="/kids"
+                aria-label="Switch profile"
+                // /kids is auth-conditional: proxy.ts 307-redirects it
+                // to /login on locked kid devices. A prefetched redirect
+                // pollutes the router's segment cache and can replay on
+                // later navigations — always resolve it fresh on click.
+                prefetch={false}
+                className="group flex shrink-0 items-center gap-3 rounded-2xl transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+              >
+                 <span className="text-xl font-black text-slate-700 hidden sm:block">{profile.name}</span>
+                 <div className="relative">
+                   <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-white border-4 border-primary shadow-sm flex items-center justify-center text-2xl sm:text-3xl">
+                      {profile.avatar}
+                   </div>
+                   <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-sm">
+                     <LinkPendingSpinner
+                       size={14}
+                       weight="bold"
+                       fallback={<UserSwitch size={14} weight="bold" />}
+                     />
+                   </div>
                  </div>
-                 <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-sm">
-                   <LinkPendingSpinner
-                     size={14}
-                     weight="bold"
-                     fallback={<UserSwitch size={14} weight="bold" />}
-                   />
-                 </div>
-               </div>
-            </Link>
-            <KidsFooterGate variant="icon" />
+              </Link>
+            )}
+            {/* Kid sessions can never pass the PIN gate (verifyParentPin
+                bounces them), so they get a Log out control instead of
+                the dead lock icon — e.g. two kids sharing one tablet. */}
+            {isKidSession(session) ? (
+              <KidLogoutButton />
+            ) : (
+              <KidsFooterGate variant="icon" />
+            )}
           </>
         }
         tabs={<KidsViewTabs tabs={tabs} />}

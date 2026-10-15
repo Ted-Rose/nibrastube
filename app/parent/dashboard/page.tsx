@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { db } from "@/lib/db";
 import { channels, channelSyncExclusions, profiles, videos, whitelistedChannels, whitelistedVideos } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth";
+import { getSession, parentSession } from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
 import { and, count, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
@@ -362,7 +362,8 @@ async function SearchResults({
 
 export default async function DashboardPage({ searchParams }: DashboardProps) {
   const session = await getSession();
-  if (!session) redirect("/login");
+  const user = parentSession(session);
+  if (!user) redirect("/login");
 
   const { q, profileId, type, refreshed, removed } = await searchParams;
   const query = q || "";
@@ -370,7 +371,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   const selectedProfileId = profileId;
 
   // Get all profiles this parent owns or has shared access to
-  const parentProfiles = await getManageableProfiles(session.user.id);
+  const parentProfiles = await getManageableProfiles(user.id);
 
   if (parentProfiles.length === 0) {
     redirect("/parent/profiles");

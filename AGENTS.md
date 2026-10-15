@@ -44,8 +44,14 @@ pass `--repo Ted-Rose/nibrastube` when in doubt.
 
 ## Architecture
 
-Route protection lives in `proxy.ts` (Next 16's middleware replacement):
-`/` redirects to `/kids/<activeProfileId>` (kid-locked device),
+Route protection lives in `proxy.ts` (Next 16's middleware replacement —
+it always runs on the Node.js runtime, so DB calls in it are safe).
+Kid sessions (`session` JWT with `role: "kid"`) are handled first:
+every matched path redirects to `/kids/<session.profileId>` except that
+profile's own feed/watch pages, which pass through (and re-pin a stale
+`activeProfileId`); a session whose profile was deleted gets both
+cookies cleared and lands on `/login`. For parents: `/` redirects to
+`/kids/<activeProfileId>` (kid-locked device),
 `/parent/dashboard` (session) or `/signup`; `/kids` needs a session;
 `/kids/:profileId/*` needs a session OR an `activeProfileId` cookie
 matching that profile (other profiles snap back to the locked one);
@@ -53,7 +59,8 @@ matching that profile (other profiles snap back to the locked one);
 kid-locked devices bounce to `/kids`, missing/stale unlock redirects
 to `/kids?gate=1`, which auto-opens the PIN modal; `/login`/`/signup`
 redirect signed-in users to `/parent/dashboard`. `proxy.ts` also
-rolling-refreshes `session` (reissues JWTs older than ~1 day). There is
+rolling-refreshes `session` (reissues JWTs older than ~1 day, whole
+payload so kid claims survive). There is
 **no** `middleware.ts` — do not create one; extend `proxy.ts` instead.
 
 All mutations are Server Actions in `app/actions/*.ts` (`"use server"`).
@@ -65,7 +72,9 @@ app/
   page.tsx                      Redirect stub — proxy.ts routes `/` to
                                 /kids/<activeProfileId>, /parent/dashboard
                                 or /signup
-  login/ signup/                Parent auth (server actions, FormData + zod)
+  login/ signup/                Unified auth — one identifier+password
+                                form serves parents (email) and kids
+                                (profiles.username)
   invite/[token]/               Accept shared-access invite
   parent/dashboard/             Search YouTube, pin videos, approve channels
   parent/profiles/              Manage kids + send invites
@@ -89,6 +98,8 @@ components/
                                 would clip an inline fixed overlay)
   kids-footer-gate.tsx          PIN gate trigger — "footer" button on
                                 /kids, "icon" lock in the kids header
+  kid-logout-button.tsx         Sign-out icon in the kids header, shown
+                                only for kid-session devices
   kids-header.tsx               Sticky frosted 2-row kids header; row 1
                                 collapses on phone scroll (transform only)
   kids-view-tabs.tsx            Always-visible 5-tab strip for the feeds
@@ -101,7 +112,8 @@ components/
   daily-sync-ping.tsx           Once/day/device POST to /api/sync-channels
   pwa-register.tsx              Registers public/sw.js
 lib/
-  auth.ts                       JWT encrypt/decrypt, login/logout, getSession
+  auth.ts                       JWT encrypt/decrypt, login/loginKid/logout,
+                                getSession, isKidSession/parentSession helpers
   profiles.ts                   assertCanManageProfile, getManageableProfiles
   youtube.ts                    YouTube Data API wrappers + ISO-8601 duration parse
   channel-sync.ts               backfillChannel / pollChannel / syncAllChannels
@@ -130,7 +142,9 @@ release APK on `v*` tags.
 ## Data model (`lib/db/schema.ts`)
 
 - `users` — parents; `parentPin` (default "0000") gates parent areas
-- `profiles` — kids, owned by `parentId`; avatars are emoji strings
+- `profiles` — kids, owned by `parentId`; avatars are emoji strings;
+  optional `username` (unique, shares the login-identifier namespace
+  with `users.email`) + `passwordHash` enable kid login
 - `videos` — global YouTube video cache, PK = YouTube video ID
 - `channels` — global YouTube channel cache, PK = `UC...` ID, stores
   `uploadsPlaylistId`
@@ -157,8 +171,17 @@ release APK on `v*` tags.
   `assertCanManageProfile(session, profileId)` (owner or `shared_access`
   row). Watch-progress also accepts the `activeProfileId` cookie matching
   the profile (a locked kid device may lack a manageable session).
-- **Three auth cookies:** `session` = parent JWT (1 year, rolling
-  refresh via `proxy.ts`); `parentUnlocked` = signed JWT (scope
+- **Three auth cookies:** `session` = JWT (1 year, rolling
+  refresh via `proxy.ts`) in one of two scopes — `role: "parent"`
+  carries `user` (a `users` row), `role: "kid"` carries `profileId` +
+  `name` and pins the device to that profile's pages. Kid sessions are
+  minted by the unified login (`loginKid`); they fail closed on every
+  parent check (`assertCanManageProfile`, `requireParentUnlocked`,
+  `setParentUnlocked`, `verifyParentPin`) since they carry no `user` —
+  call sites needing `session.user` must go through `parentSession()`
+  or a `role === "parent"` guard. `decrypt` normalizes pre-role parent
+  JWTs to `role: "parent"` so old sessions survive.
+  `parentUnlocked` = signed JWT (scope
   `parent-unlock`, bound to the session user, 24h exp) inside a
   browser-session cookie set by `verifyParentPin`/login/signup, cleared
   by "Kids Corner" (`lockParentPortal`) — `/parent/*` is unreachable
@@ -166,13 +189,19 @@ release APK on `v*` tags.
   `requireParentUnlocked()` (invite acceptance excepted — the token is
   the credential); `activeProfileId` = which kid profile the device is
   locked to (1 year; also read by `/api/watch-progress` &
-  `/api/video-reactions`). The `/kids` picker needs a session and lists
+  `/api/video-reactions`) — set on kid login too as a compat shim, with
+  the signed session winning wherever they disagree.
+  The `/kids` picker needs a **parent** session and lists
   owned+shared profiles (`getManageableProfiles`); `/kids/<id>` pages
-  allow the matching `activeProfileId` lock OR a managing session
+  allow the matching `activeProfileId` lock, a matching kid session,
+  or a managing parent session
   (`canViewProfile`). PIN verification is server-side
   (`verifyParentPin` reads `users.parentPin` from the DB, with a 500 ms
-  delay on failures to throttle brute force) — never pass the PIN to
-  client components.
+  delay on failures to throttle brute force — login failures get the
+  same delay) — never pass the PIN to
+  client components. Kid credentials are owner-only
+  (`setKidCredentials` requires `profiles.parentId === session.user.id`,
+  like `deleteProfile`); kid passwords can be 4 chars vs parents' 6.
 - **Channel sync:** approving a channel backfills its uploads playlist in
   the background (`after()`), resumable via `backfillPageToken`. Daily
   sync (`/api/sync-channels`, pinged once/day by clients) polls newest
@@ -260,7 +289,9 @@ release APK on `v*` tags.
 - `/kids/<uuid>` is effectively a capability URL: `activeProfileId` is
   the profile UUID, so anyone who learns a UUID can self-set the cookie
   and view that feed without a session. Unguessable UUIDs keep the risk
-  low — this is the accepted model.
+  low — this is the accepted model. Kid-session JWTs close the forgeable-
+  cookie hole for logged-in kids (signed, server-bound), but the lock
+  cookie stays for picker flow and backwards compat.
 - YouTube Data API quota is finite (10k units/day); searches are 100
   units each — prefer `videos`/`playlistItems` endpoints in sync code.
 - Dev server runs on **port 3100** (`.vscode/launch.json` frees the port

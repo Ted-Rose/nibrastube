@@ -6,8 +6,10 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import {
+  activeProfileCookieOptions,
   clearParentUnlocked,
   getSession,
+  isKidSession,
   setParentUnlocked,
 } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
@@ -24,13 +26,7 @@ export async function selectProfile(profileId: string) {
   }
 
   const cookieStore = await cookies();
-  cookieStore.set("activeProfileId", profileId, {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365, // 1 year — matches the session lifetime
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-  });
+  cookieStore.set("activeProfileId", profileId, activeProfileCookieOptions);
   redirect(`/kids/${profileId}`);
 }
 
@@ -42,6 +38,9 @@ export async function selectProfile(profileId: string) {
 export async function verifyParentPin(pin: string) {
   const session = await getSession();
   if (!session) redirect("/login");
+  // Kid sessions carry no `user` — there is no PIN to check them
+  // against, so bounce straight back to their feed.
+  if (isKidSession(session)) redirect(`/kids/${session.profileId}`);
 
   const user = await db.query.users.findFirst({
     where: eq(users.id, session.user.id),

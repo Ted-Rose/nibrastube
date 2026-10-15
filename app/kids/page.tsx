@@ -1,4 +1,8 @@
-import { getSession, isParentUnlockedCookie } from "@/lib/auth";
+import {
+  getSession,
+  isParentUnlockedCookie,
+  parentSession,
+} from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
 import { redirect } from "next/navigation";
 import { selectProfile } from "@/app/actions/safety";
@@ -13,13 +17,15 @@ export default async function KidsPage({
   searchParams: Promise<{ gate?: string }>;
 }) {
   // The picker is parent-only: proxy.ts bounces anonymous visitors to
-  // /login?callback=/kids, and this is the server-side backstop.
+  // /login?callback=/kids and kid sessions to their feed; this is the
+  // server-side backstop for both.
   const session = await getSession();
-  if (!session) redirect("/login?callback=/kids");
+  const user = parentSession(session);
+  if (!user) redirect("/login?callback=/kids");
 
   const { gate } = await searchParams;
   // Only this family's profiles: owned + shared with the parent.
-  const allProfiles = await getManageableProfiles(session.user.id);
+  const allProfiles = await getManageableProfiles(user.id);
   // Verify (not just presence-check) the unlock token so a stale or
   // forged cookie doesn't suppress the gate modal.
   const parentUnlocked = await isParentUnlockedCookie(session);

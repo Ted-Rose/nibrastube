@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { invites, sharedAccess } from "@/lib/db/schema";
-import { getSession, requireParentUnlocked } from "@/lib/auth";
+import { getSession, parentSession, requireParentUnlocked } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -11,7 +11,7 @@ import crypto from "crypto";
 
 export async function inviteParent(profileId: string, email: string) {
   const session = await getSession();
-  if (!session) return;
+  if (!session || session.role !== "parent") return;
   await requireParentUnlocked();
   await assertCanManageProfile(session, profileId);
 
@@ -43,7 +43,10 @@ export async function createInviteAction(formData: FormData) {
 
 export async function acceptInvite(token: string) {
   const session = await getSession();
-  if (!session) redirect(`/login?callback=/invite/${token}`);
+  const user = parentSession(session);
+  // A kid session can't accept an invite — proxy.ts will route the
+  // resulting /login hit back to their feed.
+  if (!user) redirect(`/login?callback=/invite/${token}`);
 
   const invite = await db.query.invites.findFirst({
     where: eq(invites.token, token),
@@ -57,7 +60,7 @@ export async function acceptInvite(token: string) {
   await db
     .insert(sharedAccess)
     .values({
-      parentId: session.user.id,
+      parentId: user.id,
       profileId: invite.profileId,
       role: "editor",
     })

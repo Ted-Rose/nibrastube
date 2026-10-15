@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { getSession, parentSession } from "@/lib/auth";
 import { ParentNav } from "@/components/parent-nav";
 
 export default async function ParentLayout({
@@ -7,12 +7,12 @@ export default async function ParentLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSession();
-  if (!session) redirect("/login");
+  const user = parentSession(await getSession());
+  if (!user) redirect("/login");
 
   return (
     <div className="min-h-screen bg-background">
-      <ParentNav userName={session.user?.name ?? null} />
+      <ParentNav userName={user.name} />
       <main>{children}</main>
     </div>
   );

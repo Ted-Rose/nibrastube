@@ -2,7 +2,7 @@ import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getSession } from "@/lib/auth";
+import { getSession, isKidSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { videos, watchHistory, watchProgress, whitelistedVideos } from "@/lib/db/schema";
 import { assertCanManageProfile } from "@/lib/profiles";
@@ -27,11 +27,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
 
-  // Auth: device locked to this profile, or a managing parent session
-  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
-  if (activeProfileId !== body.profileId) {
+  // Auth: the signed session wins over the forgeable activeProfileId
+  // cookie — a kid session may only write its own profile. Otherwise:
+  // device locked to this profile or a managing parent session.
+  const session = await getSession();
+  if (isKidSession(session)) {
+    if (session.profileId !== body.profileId) {
+      return NextResponse.json({ ok: false }, { status: 403 });
+    }
+  } else if (
+    (await cookies()).get("activeProfileId")?.value !== body.profileId
+  ) {
     try {
-      const session = await getSession();
       await assertCanManageProfile(session, body.profileId);
     } catch {
       return NextResponse.json({ ok: false }, { status: 403 });

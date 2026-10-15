@@ -24,7 +24,7 @@ export async function HomeShelves({
   profileId: string;
   feed: KidsFeedParams;
 }) {
-  // Pool max is 3, so the 4th+ queries just queue behind the others.
+  // Pool max is 2, so the 3rd+ queries just queue behind the others.
   const [continueRows, pickedRows, newRows, playlistRows, likedRows] =
     await Promise.all([
       getContinueWatching(profileId),

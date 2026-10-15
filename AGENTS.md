@@ -564,6 +564,25 @@ extra fields silently break discovery.
   a bare exit 1 with no error text. Stop the dev server
   (`lsof -ti:3100 | xargs kill`) to free slots, or just retry —
   migrate is idempotent and resumes cleanly.
+- **Prod `53300` "remaining connection slots are reserved"** = lambda
+  pools squatting slots: Vercel freezes event loops between
+  invocations, so `pg.Pool`'s `idleTimeoutMillis` never fires — each
+  warm lambda holds up to `max` conns for its whole warm lifetime
+  (plan: `docs/plans/db-connections-plan.md`). Ops runbook:
+  - Diagnose: `SELECT application_name, state, count(*) FROM
+    pg_stat_activity WHERE datname = current_database() GROUP BY
+    1,2` — app conns are tagged `nibrastube`.
+  - Relief: `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+    WHERE datname = current_database() AND state = 'idle' AND
+    now() - state_change > interval '90 seconds'` — pools reconnect
+    on demand.
+  - Permanent cure if it recurs: Aiven built-in PgBouncer pool
+    (transaction mode) for the app URL; keep a direct URL for
+    `db:migrate`/`pg_dump` (pooling breaks advisory locks).
+  - `db:migrate` exiting 1 with no error *even as avnadmin* = stale
+    `drizzle.__drizzle_migrations` hashes — dry-run, then
+    `npx tsx scripts/reconcile-migration-hashes.ts --apply`. NEVER
+    edit a migration `.sql` once applied anywhere.
 - `npm`/`gh` may be missing from PATH in non-interactive shells
   (`npm: command not found`); prepend
   `export PATH="/opt/homebrew/bin:$PATH"`.

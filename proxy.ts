@@ -11,6 +11,36 @@ import {
 import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
 
+// Kid sessions probe profile existence on every matched request —
+// caching the result for 60 s avoids a DB round-trip (and a checked-out
+// pool connection for the lambda's warm lifetime) per navigation.
+// Module-scope TTL map, per-lambda: unstable_cache throws
+// `incrementalCache missing` under the standalone middleware entry on
+// next<16.2, since that template never injects IncrementalCache. The
+// map grows only with distinct profile ids — fine for a family app. A
+// stale hit keeps a deleted profile's kid session alive until the
+// entry expires; the redirect below still clears the stale cookies on
+// the next nav after that.
+const PROFILE_EXISTS_TTL_MS = 60_000;
+const profileExistsCache = new Map<
+  string,
+  { exists: boolean; expiresAt: number }
+>();
+
+async function profileExists(profileId: string): Promise<boolean> {
+  const hit = profileExistsCache.get(profileId);
+  if (hit && hit.expiresAt > Date.now()) return hit.exists;
+  const exists = !!(await db.query.profiles.findFirst({
+    where: eq(profiles.id, profileId),
+    columns: { id: true },
+  }));
+  profileExistsCache.set(profileId, {
+    exists,
+    expiresAt: Date.now() + PROFILE_EXISTS_TTL_MS,
+  });
+  return exists;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const session = await getRequestSession(request);
@@ -24,11 +54,10 @@ export async function proxy(request: NextRequest) {
     // treat the device as signed-out. Server components can't delete
     // cookies, so this is the only place the JWT gets revoked. (Proxy
     // always runs on the Node.js runtime, so the DB lookup is safe.)
-    const profileExists = await db.query.profiles.findFirst({
-      where: eq(profiles.id, session.profileId),
-      columns: { id: true },
-    });
-    if (!profileExists) {
+    // The cached existence result can lag ≤60 s behind a deletion —
+    // acceptable, since the next nav after expiry still lands here and
+    // clears the stale cookies.
+    if (!(await profileExists(session.profileId))) {
       const res = NextResponse.redirect(new URL("/login", request.url));
       res.cookies.delete("session");
       res.cookies.delete("activeProfileId");
@@ -84,8 +113,14 @@ export async function proxy(request: NextRequest) {
   //    Without a session AND without a matching lock, it's off-limits.
   if (pathname.startsWith("/kids/")) {
     const profileIdInUrl = pathname.split("/")[2];
-    if (activeProfileId && profileIdInUrl && activeProfileId !== profileIdInUrl) {
-      return NextResponse.redirect(new URL(`/kids/${activeProfileId}`, request.url));
+    if (
+      activeProfileId &&
+      profileIdInUrl &&
+      activeProfileId !== profileIdInUrl
+    ) {
+      return NextResponse.redirect(
+        new URL(`/kids/${activeProfileId}`, request.url)
+      );
     }
     if (!session && activeProfileId !== profileIdInUrl) {
       return NextResponse.redirect(

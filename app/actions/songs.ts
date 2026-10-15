@@ -6,7 +6,11 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { songs, users, videos } from "@/lib/db/schema";
-import { getSession, requireParentUnlocked } from "@/lib/auth";
+import {
+  getSession,
+  parentSession,
+  requireParentUnlocked,
+} from "@/lib/auth";
 import {
   getVideoDetails,
   listVideoComments,
@@ -198,8 +202,8 @@ export async function saveSongCommenterHandle(
   _prevState: HandleSaveState,
   formData: FormData
 ): Promise<HandleSaveState> {
-  const session = await getSession();
-  if (!session) return { error: "Not signed in." };
+  const user = parentSession(await getSession());
+  if (!user) return { error: "Not signed in." };
   await requireParentUnlocked();
 
   const parsed = z.object({ handle: z.string() }).safeParse({
@@ -222,7 +226,7 @@ export async function saveSongCommenterHandle(
   await db
     .update(users)
     .set({ songCommenterHandle: handle })
-    .where(eq(users.id, session.user.id));
+    .where(eq(users.id, user.id));
 
   // Fresh storedHandle prop for the card on the same round-trip.
   revalidatePath("/parent/dashboard");
@@ -237,8 +241,8 @@ export async function previewSongImport(
   _prevState: SongImportState,
   formData: FormData
 ): Promise<SongImportState> {
-  const session = await getSession();
-  if (!session) return { error: "Not signed in." };
+  const user = parentSession(await getSession());
+  if (!user) return { error: "Not signed in." };
   await requireParentUnlocked();
 
   const parsed = previewSchema.safeParse({
@@ -246,7 +250,7 @@ export async function previewSongImport(
   });
   if (!parsed.success) return { error: "Enter a YouTube link." };
 
-  const handle = await getSongCommenterHandle(session.user.id);
+  const handle = await getSongCommenterHandle(user.id);
   if (!handle) {
     return { error: "Save a song commenter handle first." };
   }
@@ -270,8 +274,8 @@ export async function importSongs(
   _prevState: SongImportState,
   formData: FormData
 ): Promise<SongImportState> {
-  const session = await getSession();
-  if (!session) return { error: "Not signed in." };
+  const user = parentSession(await getSession());
+  if (!user) return { error: "Not signed in." };
   await requireParentUnlocked();
 
   const parsed = importSchema.safeParse({
@@ -280,7 +284,7 @@ export async function importSongs(
   });
   if (!parsed.success) return { error: "Missing import details." };
 
-  const handle = await getSongCommenterHandle(session.user.id);
+  const handle = await getSongCommenterHandle(user.id);
   const videoId = parseYouTubeVideoId(parsed.data.videoId);
   if (!handle || !videoId) {
     return { error: "Missing import details." };
@@ -310,7 +314,7 @@ export async function importSongs(
         endSeconds: s.endSeconds,
         sourceCommentId: result.sourceCommentId,
         sourceHandle: handle,
-        importedBy: session.user.id,
+        importedBy: user.id,
       }))
     )
     .onConflictDoUpdate({

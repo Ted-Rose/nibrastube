@@ -1,4 +1,3 @@
-import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
@@ -14,20 +13,33 @@ import { profiles } from "@/lib/db/schema";
 
 // Kid sessions probe profile existence on every matched request —
 // caching the result for 60 s avoids a DB round-trip (and a checked-out
-// pool connection for the lambda's warm lifetime) per navigation. Args
-// are part of the cache key, so each profileId gets its own entry. A
-// deleted profile is detected at most 60 s late; the redirect below
-// still clears the stale cookies on the next nav after the entry
-// expires.
-const profileExists = unstable_cache(
-  async (profileId: string) =>
-    !!(await db.query.profiles.findFirst({
-      where: eq(profiles.id, profileId),
-      columns: { id: true },
-    })),
-  ["profile-exists"],
-  { revalidate: 60 }
-);
+// pool connection for the lambda's warm lifetime) per navigation.
+// Module-scope TTL map, per-lambda: unstable_cache throws
+// `incrementalCache missing` under the standalone middleware entry on
+// next<16.2, since that template never injects IncrementalCache. The
+// map grows only with distinct profile ids — fine for a family app. A
+// stale hit keeps a deleted profile's kid session alive until the
+// entry expires; the redirect below still clears the stale cookies on
+// the next nav after that.
+const PROFILE_EXISTS_TTL_MS = 60_000;
+const profileExistsCache = new Map<
+  string,
+  { exists: boolean; expiresAt: number }
+>();
+
+async function profileExists(profileId: string): Promise<boolean> {
+  const hit = profileExistsCache.get(profileId);
+  if (hit && hit.expiresAt > Date.now()) return hit.exists;
+  const exists = !!(await db.query.profiles.findFirst({
+    where: eq(profiles.id, profileId),
+    columns: { id: true },
+  }));
+  profileExistsCache.set(profileId, {
+    exists,
+    expiresAt: Date.now() + PROFILE_EXISTS_TTL_MS,
+  });
+  return exists;
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

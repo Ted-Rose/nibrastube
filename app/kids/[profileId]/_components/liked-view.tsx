@@ -1,6 +1,10 @@
+import Link from "next/link";
+import { House } from "@phosphor-icons/react/dist/ssr";
 import { EmptyState } from "@/components/empty-state";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
+import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
+import { getSession, parentSession } from "@/lib/auth";
 import {
   getLikedVideos,
   getPlaylists,
@@ -27,9 +31,32 @@ export async function LikedView({
   const playlistRows = await getPlaylists(profileId);
   const ViewIcon = KIDS_VIEWS.liked.icon;
 
+  // "Home" goes role-dependent: a parent session heads back to the
+  // dashboard, everyone else (kid session or a kid-locked device with
+  // only the activeProfileId cookie) lands on this profile's feed —
+  // the picker isn't reachable from a locked device anyway.
+  const parent = parentSession(await getSession());
+  const homeHref = parent ? "/parent/dashboard" : `/kids/${profileId}`;
+
   return (
     <>
-      <FeedHeader title={feedTitle(feed)} />
+      <FeedHeader
+        title={feedTitle(feed)}
+        actions={
+          <Link
+            href={homeHref}
+            // /parent/dashboard is auth-conditional — proxy.ts may 307
+            // it to the PIN gate, and a prefetched redirect pollutes
+            // the router cache. The kids feed href resolves directly.
+            prefetch={parent ? false : undefined}
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
+          >
+            <House size={20} weight="fill" />
+            Home
+            <LinkPendingSpinner size={20} weight="bold" />
+          </Link>
+        }
+      />
 
       {rows.length === 0 ? (
         <EmptyState

@@ -18,8 +18,8 @@ import {
   ShelfSkeleton,
   VideoGridSkeleton,
 } from "@/components/video-grid-skeleton";
-import { BackLink } from "./back-link";
-import { FeedHeader } from "./feed-header";
+import { BackLink } from "@/components/back-link";
+import { FeedHeader } from "@/components/feed-header";
 import { HomeShelves } from "./home-shelves";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 

@@ -5,7 +5,7 @@ import {
   kidsPortalUrl,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
-import { FeedHeader } from "./feed-header";
+import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
 // Channels tab — one tile per approved channel (including mid-backfill

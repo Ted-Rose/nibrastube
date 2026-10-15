@@ -73,7 +73,13 @@ app/
   kids/[profileId]/             Kids portal — 5 feed tabs, sticky header,
                                 debounced search; streams via Suspense
     _components/                Route-private view code: per-view server
-                                components, KIDS_VIEWS table, feed-header
+                                components, KIDS_VIEWS table
+  songs/                        Public song catalog — no sign-in required;
+                                session only adds the "Yours" tab, "Your
+                                imports" shelf, owner-only delete
+    _components/                Route-private view code mirroring the
+                                kids feed: SONGS_VIEWS table, per-view
+                                server components, catalog-header
   kids/[profileId]/watch/[videoId]/  Watch page → <WatchExperience>
   actions/                      Server actions (auth, profiles, pinning,
                                 channels, invites, safety)
@@ -91,11 +97,24 @@ components/
                                 /kids, "icon" lock in the kids header
   kids-header.tsx               Sticky frosted 2-row kids header; row 1
                                 collapses on phone scroll (transform only)
-  kids-view-tabs.tsx            Always-visible 5-tab strip for the feeds
+  kids-view-tabs.tsx            Always-visible tab strip for the feeds
+                                (kids portal + /songs; per-tab icon prop)
   kids-sort-chips.tsx           Link-based sort chips (rewrite ?sort/?dir)
+  feed-header.tsx               Feed view title row (h1 + actions slot)
+  back-link.tsx                 "All channels/playlists/…" drill-in exit
   video-shelf.tsx               Horizontal snap-scroll card shelf
   empty-state.tsx               Shared kids empty-state card + CTA link
-  kids-tile-card.tsx            Channel/playlist tile ("avatar"/"cover")
+  kids-tile-card.tsx            Channel/playlist/compilation tile
+                                ("avatar"/"cover", `noun` for the count)
+  song-card.tsx                 /songs catalog card — links to the
+                                ?song=<uuid> in-app player overlay
+  song-card-menu.tsx            Owner-only ⋮ "Delete song" on the card
+  song-catalog-grid.tsx         Windowed song grid (sentinel paging)
+  song-player-overlay.tsx       Modal IFrame player for ?song= — plays
+                                the startSeconds→endSeconds segment,
+                                closes on ENDED/Escape/backdrop, snaps
+                                rogue suggested videos back to the
+                                segment
   video-grid-skeleton.tsx       Grid + shelf skeletons (Suspense fallbacks)
   pusher-listener.tsx           Subscribes `profile-<id>`, router.refresh() on events
   daily-sync-ping.tsx           Once/day/device POST to /api/sync-channels
@@ -103,6 +122,12 @@ components/
 lib/
   auth.ts                       JWT encrypt/decrypt, login/logout, getSession
   profiles.ts                   assertCanManageProfile, getManageableProfiles
+  kids-feed.ts                  Kids feed params/URL builder + row queries
+  songs-feed.ts                 /songs catalog params/URL builder + queries
+  yt-player.ts                  Shared YouTube IFrame-API types + the
+                                ensureYouTubeAPI script loader (the
+                                Window.YT global lives here — declaring
+                                it per-component collides as TS2717)
   youtube.ts                    YouTube Data API wrappers + ISO-8601 duration parse
   channel-sync.ts               backfillChannel / pollChannel / syncAllChannels
   pusher.ts                     pusherServer + getPusherClient factories
@@ -211,10 +236,26 @@ release APK on `v*` tags.
 - **Kids feed code is route-private:** `app/kids/[profileId]/_components/`
   holds the per-view server components (`videos-view`, `channels-view`,
   `liked-view`, `playlists-view` + `playlist-detail-view`,
-  `history-feed-view`), `home-shelves`, `back-link`, the `KIDS_VIEWS`
-  config table (labels, icons, titles, placeholders) and `feed-header`.
-  `feed-content.tsx` picks the view; everything below the header
-  streams under Suspense.
+  `history-feed-view`), `home-shelves` and the `KIDS_VIEWS`
+  config table (labels, icons, titles, placeholders). `feed-header` and
+  `back-link` live in `components/` — the public `/songs` catalog
+  shares them and the rest of the kids chrome (`KidsHeader`,
+  `KidsViewTabs`, `KidsSortChips`, `KidsSearch`, `EmptyState`,
+  skeletons). `feed-content.tsx` picks the view; everything below the
+  header streams under Suspense.
+- **The `/songs` catalog is public** — `proxy.ts`'s matcher doesn't
+  cover it. Anonymous visitors and kid-locked devices (no session) get
+  the read-only catalog plus signup chrome; a parent session adds the
+  "Yours" tab (`songs.importedBy`), the "Your imports" shelf, a ⋮
+  delete menu on their own rows and a Parent portal link. `deleteSong`
+  re-verifies `importedBy === session.user.id` server-side. Kid-locked
+  devices also get a Videos pill back to `/kids/<activeProfileId>` —
+  the kids header links here via its MusicNotes button (the parent
+  dashboard has a "Song catalog" button too). Song cards open the
+  `?song=<uuid>` overlay player in-app (IFrame API, `start`/`end`
+  segment params, ENDED → close; rogue suggested-video loads snap back
+  to the segment); `?song=` is not a feed param, so tab/sort/search
+  navigation closes the overlay.
 
 ## Conventions
 

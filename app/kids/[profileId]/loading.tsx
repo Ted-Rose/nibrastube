@@ -13,7 +13,8 @@ export default function KidsPortalLoading() {
           </div>
           <div className="grid grid-cols-5 gap-0.5 pb-2 sm:flex sm:gap-2 sm:pb-3">
             {/* sm+ widths approximate the real content-width pills
-                (icon + label in kids-view-tabs.tsx) */}
+                (icons come from tabIcon in
+                _components/view-config.tsx) */}
             {["sm:w-28", "sm:w-32", "sm:w-24", "sm:w-28", "sm:w-28"].map(
               (w, i) => (
                 <div

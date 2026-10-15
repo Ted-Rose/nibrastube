@@ -99,16 +99,15 @@ async function main() {
   try {
     const { rows } = await pool.query<MigrationRow>(
       "SELECT id, hash, created_at FROM drizzle.__drizzle_migrations" +
-        " ORDER BY created_at"
+        " ORDER BY created_at, id"
     );
 
     if (rows.length !== local.length) {
-      console.error(
+      throw new Error(
         `Cannot align: ${rows.length} stored row(s) vs ` +
           `${local.length} journal entr(ies) — inspect the table by` +
           " hand before reconciling."
       );
-      process.exit(1);
     }
 
     const updates: { row: MigrationRow; next: (typeof local)[0] }[] =
@@ -142,13 +141,26 @@ async function main() {
       );
       return;
     }
-    for (const { row, next } of updates) {
-      await pool.query(
-        "UPDATE drizzle.__drizzle_migrations SET hash = $1," +
-          " created_at = $2 WHERE hash = $3",
-        [next.hash, next.when, row.hash]
-      );
-      console.log(`updated row id ${row.id} (${next.tag})`);
+    await pool.query("BEGIN");
+    try {
+      for (const { row, next } of updates) {
+        const result = await pool.query(
+          "UPDATE drizzle.__drizzle_migrations SET hash = $1," +
+            " created_at = $2 WHERE id = $3",
+          [next.hash, next.when, row.id]
+        );
+        if (result.rowCount !== 1) {
+          throw new Error(
+            `UPDATE matched ${result.rowCount} row(s) for id ` +
+              `${row.id} (${next.tag}) — aborting`
+          );
+        }
+        console.log(`updated row id ${row.id} (${next.tag})`);
+      }
+      await pool.query("COMMIT");
+    } catch (err) {
+      await pool.query("ROLLBACK");
+      throw err;
     }
     console.log(`Reconciled ${updates.length} row(s)`);
   } finally {
@@ -157,6 +169,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error(err instanceof Error ? err.message : err);
   process.exit(1);
 });

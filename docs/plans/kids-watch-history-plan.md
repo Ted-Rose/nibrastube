@@ -1,5 +1,7 @@
 # Plan: Kids Watch History
 
+**Status: implemented** (merged in #26)
+
 Feature branch prefix: `feature/` (e.g. `feature/kids-watch-history`).
 
 ## Goal

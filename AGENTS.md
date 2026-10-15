@@ -1,135 +1,336 @@
 # NibrasTube — Agent Guide
 
-Parent-curated, whitelist-only YouTube player for kids. Parents approve
-specific videos or entire channels; kids can only watch approved content.
-Product spec: `prd.md` (unchecked boxes = roadmap, not bugs).
+Guidance for AI agents working in this repository. Read before
+editing; **trust the code over any doc that disagrees**. Known-stale
+docs:
 
-## Stack
+- `README.md` still shows `npx drizzle-kit push` and port 3000 — the
+  real flow is migration files (`npm run db:generate` + `db:migrate`)
+  and the dev server on port 3100.
+- `prd.md` is the product spec — unchecked boxes are roadmap, not
+  bugs.
+- `docs/plans/*-plan.md` each carry a status header — check it before
+  treating a plan as pending work.
 
-- Next.js 16 App Router (Turbopack), React 19, TypeScript, ESM (`"type": "module"`)
-- PostgreSQL via Drizzle ORM (`drizzle-orm/node-postgres` + `pg` Pool)
-- Auth: JWT (`jose`) in an httpOnly `session` cookie, bcryptjs passwords
+## What this is
+
+Single repo (not a workspace). Parent-curated, whitelist-only YouTube
+player for kids: parents approve specific videos or entire channels;
+kids can only watch approved content.
+
+- Next.js 16 App Router (Turbopack), React 19, TypeScript, ESM
+  (`"type": "module"`)
+- PostgreSQL via Drizzle ORM (`drizzle-orm/node-postgres` + `pg`
+  Pool) — hosted on Aiven (production DB; local `.env` points at it,
+  see "Known gaps & sharp edges")
+- Auth: JWT (`jose`) in an httpOnly `session` cookie, bcryptjs
+  passwords
 - Real-time: Pusher (server: `pusher`, client: `pusher-js`)
 - UI: Tailwind CSS 4 + shadcn/ui (`components.json` style `base-mira`,
   baseColor `olive`), Phosphor icons, `next-themes`
 - Validation: zod. HTTP client: axios (YouTube Data API only)
 
-## Commands
+Deploy targets: the Next.js app at a public HTTPS URL (the Capacitor
+APK just loads `server.url`, so a deploy is required for the Android
+app to work) and a signed Android APK built by GitHub Actions (see
+"Android APK").
 
-```bash
-npm run dev         # dev server (Turbopack)
-npm run typecheck   # tsc --noEmit — run before finishing any change
-npm run lint        # eslint (eslint-config-next)
-npm run format      # prettier --write (uses prettier-plugin-tailwindcss)
-npm run db:generate # drizzle-kit generate → new migration in drizzle/
-npm run db:migrate  # drizzle-kit migrate — MUST run as the avnadmin DB
-                    # user; ai_agent lacks DDL rights and fails silently
-                    # (exit 1). Always invoke as:
-                    #   DATABASE_URL="$(grep -m1 avnadmin .env | cut -d= -f2-)" \
-                    #     npm run db:migrate
-npm run videos:refresh -- --dry-run   # re-fetch videos rows missing
-                                    # YouTube fields (filters: --stale
-                                    # --missing cols --ids --channel
-                                    # --whitelisted --all --where;
-                                    # --prune deletes YT-dead videos)
-```
+Remotes: `origin` = my fork (`Ted-Rose/nibrastube`), `upstream` =
+source (`shamimhcp1/nibrastube`). **ALL GitHub operations (issues,
+PRs, comments, reviews, releases) target the fork** — pass
+`--repo Ted-Rose/nibrastube` to every `gh` call; never touch upstream
+unless explicitly asked. Repo is configured for **squash-merge only**
+PRs (`.github/settings.yml`); `main` is protected (no force pushes or
+deletions, enforced for admins).
 
-No test suite exists — verify with `typecheck` + `lint` + manual run.
-DB schema changes: edit `lib/db/schema.ts`, then `npm run db:generate`
-(commit the generated `drizzle/` files), `npm run db:migrate` to apply.
-Repo is configured for **squash-merge only** PRs (`.github/settings.yml`).
-Remotes: `origin` = my fork (`Ted-Rose/nibrastube`), `upstream` = source.
-All `gh` operations (issues, PRs, comments, reviews) go to the fork —
-pass `--repo Ted-Rose/nibrastube` when in doubt.
+## Layout
 
-## Architecture
-
-Route protection lives in `proxy.ts` (Next 16's middleware replacement —
-it always runs on the Node.js runtime, so DB calls in it are safe).
-Kid sessions (`session` JWT with `role: "kid"`) are handled first:
-every matched path redirects to `/kids/<session.profileId>` except that
-profile's own feed/watch pages, which pass through (and re-pin a stale
-`activeProfileId`); a session whose profile was deleted gets both
-cookies cleared and lands on `/login`. For parents: `/` redirects to
-`/kids/<activeProfileId>` (kid-locked device),
-`/parent/dashboard` (session) or `/signup`; `/kids` needs a session;
-`/kids/:profileId/*` needs a session OR an `activeProfileId` cookie
-matching that profile (other profiles snap back to the locked one);
-`/parent/*` needs `session` **and** the `parentUnlocked` cookie —
-kid-locked devices bounce to `/kids`, missing/stale unlock redirects
-to `/kids?gate=1`, which auto-opens the PIN modal; `/login`/`/signup`
-redirect signed-in users to `/parent/dashboard`. `proxy.ts` also
+Route protection lives in `proxy.ts` (Next 16's middleware
+replacement — it always runs on the Node.js runtime, so DB calls in
+it are safe). Kid sessions (`session` JWT with `role: "kid"`) are
+handled first: every matched path redirects to
+`/kids/<session.profileId>` except that profile's own feed/watch
+pages, which pass through (and re-pin a stale `activeProfileId`); a
+session whose profile was deleted gets both cookies cleared and lands
+on `/login`. For parents: `/` redirects to
+`/kids/<activeProfileId>` (kid-locked device), `/parent/dashboard`
+(session) or `/signup`; `/kids` needs a session; `/kids/:profileId/*`
+needs a session OR an `activeProfileId` cookie matching that profile
+(other profiles snap back to the locked one); `/parent/*` needs
+`session` **and** the `parentUnlocked` cookie — kid-locked devices
+bounce to `/kids`, missing/stale unlock redirects to `/kids?gate=1`,
+which auto-opens the PIN modal; `/login`/`/signup` redirect
+signed-in users to `/parent/dashboard`. `proxy.ts` also
 rolling-refreshes `session` (reissues JWTs older than ~1 day, whole
-payload so kid claims survive). There is
-**no** `middleware.ts` — do not create one; extend `proxy.ts` instead.
+payload so kid claims survive). There is **no** `middleware.ts` — do
+not create one; extend `proxy.ts` instead.
 
-All mutations are Server Actions in `app/actions/*.ts` (`"use server"`).
-Pages are Server Components that query Drizzle directly; client components
-(`"use client"`) exist only where interactivity requires them.
+All mutations are Server Actions in `app/actions/*.ts`
+(`"use server"`). Pages are Server Components that query Drizzle
+directly; client components (`"use client"`) exist only where
+interactivity requires them.
 
 ```
 app/
   page.tsx                      Redirect stub — proxy.ts routes `/` to
-                                /kids/<activeProfileId>, /parent/dashboard
-                                or /signup
+                                /kids/<activeProfileId>,
+                                /parent/dashboard or /signup
   login/ signup/                Unified auth — one identifier+password
                                 form serves parents (email) and kids
                                 (profiles.username)
   invite/[token]/               Accept shared-access invite
-  parent/dashboard/             Search YouTube, pin videos, approve channels
+  parent/dashboard/             Search YouTube, pin videos, approve
+                                channels, import song compilations
   parent/profiles/              Manage kids + send invites
   kids/                         "Who's watching?" profile picker
-  kids/[profileId]/             Kids portal — 5 feed tabs, sticky header,
-                                debounced search; streams via Suspense
-    _components/                Route-private view code: per-view server
-                                components, KIDS_VIEWS table, feed-header
+  kids/[profileId]/             Kids portal — 5 feed tabs, sticky
+                                header, debounced search; streams via
+                                Suspense
+    _components/                Route-private view code: per-view
+                                server components, KIDS_VIEWS table,
+                                feed-header
   kids/[profileId]/watch/[videoId]/  Watch page → <WatchExperience>
-  actions/                      Server actions (auth, profiles, pinning,
-                                channels, invites, safety)
-  api/sync-channels/            Daily channel sync trigger (GET + POST)
+  actions/                      Server actions (auth, profiles,
+                                pinning, channels, playlists, songs,
+                                invites, safety, refresh)
+  api/sync-channels/            Daily channel sync trigger (GET+POST)
   api/watch-progress/           POST upsert for resume position
+  api/video-reactions/          POST like/dislike per profile+video
 components/
-  ui/                           shadcn primitives (button, card, input, label)
-  watch-experience.tsx          YouTube IFrame player: auto-advance, resume,
-                                rogue-video snapback, progress beacons
-  fullscreen-player.tsx         Fullscreen wrapper w/ iOS CSS-overlay fallback
+  ui/                           shadcn primitives (button, card,
+                                input, label)
+  watch-experience.tsx          YouTube IFrame player: auto-advance,
+                                resume, rogue-video snapback,
+                                progress beacons
+  fullscreen-player.tsx         Fullscreen wrapper w/ iOS CSS-overlay
+                                fallback
   parental-gate*.tsx            4-digit Parent PIN modal (portals to
-                                document.body — header transform/filter
-                                would clip an inline fixed overlay)
+                                document.body — header transform/
+                                filter would clip an inline overlay)
   kids-footer-gate.tsx          PIN gate trigger — "footer" button on
                                 /kids, "icon" lock in the kids header
-  kid-logout-button.tsx         Sign-out icon in the kids header, shown
-                                only for kid-session devices
-  kids-header.tsx               Sticky frosted 2-row kids header; row 1
-                                collapses on phone scroll (transform only)
-  kids-view-tabs.tsx            Always-visible 5-tab strip for the feeds
-  kids-sort-chips.tsx           Link-based sort chips (rewrite ?sort/?dir)
+  kid-logout-button.tsx         Sign-out icon in the kids header,
+                                shown only for kid-session devices
+  kids-header.tsx               Sticky frosted 2-row kids header;
+                                row 1 collapses on phone scroll
+                                (transform only)
+  kids-view-tabs.tsx            Always-visible 5-tab strip for feeds
+  kids-sort-chips.tsx           Link-based sort chips (rewrite
+                                ?sort/?dir)
   video-shelf.tsx               Horizontal snap-scroll card shelf
-  empty-state.tsx               Shared kids empty-state card + CTA link
-  kids-tile-card.tsx            Channel/playlist tile ("avatar"/"cover")
-  video-grid-skeleton.tsx       Grid + shelf skeletons (Suspense fallbacks)
-  pusher-listener.tsx           Subscribes `profile-<id>`, router.refresh() on events
-  daily-sync-ping.tsx           Once/day/device POST to /api/sync-channels
+  empty-state.tsx               Shared kids empty-state card + CTA
+  kids-tile-card.tsx            Channel/playlist tile
+                                ("avatar"/"cover")
+  video-grid-skeleton.tsx       Grid + shelf skeletons (Suspense
+                                fallbacks)
+  song-import-form.tsx          Parent form: paste a compilation URL,
+                                preview parsed songs, import
+  pusher-listener.tsx           Subscribes `profile-<id>`,
+                                router.refresh() on events
+  daily-sync-ping.tsx           Once/day/device POST to
+                                /api/sync-channels
   pwa-register.tsx              Registers public/sw.js
 lib/
-  auth.ts                       JWT encrypt/decrypt, login/loginKid/logout,
-                                getSession, isKidSession/parentSession helpers
-  profiles.ts                   assertCanManageProfile, getManageableProfiles
-  youtube.ts                    YouTube Data API wrappers + ISO-8601 duration parse
-  channel-sync.ts               backfillChannel / pollChannel / syncAllChannels
-  pusher.ts                     pusherServer + getPusherClient factories
+  auth.ts                       JWT encrypt/decrypt,
+                                login/loginKid/logout, getSession,
+                                isKidSession/parentSession helpers
+  profiles.ts                   assertCanManageProfile,
+                                getManageableProfiles
+  youtube.ts                    YouTube Data API wrappers +
+                                ISO-8601 duration parse
+  song-timestamps.ts            Pure parser for timestamped
+                                tracklist comments → ParsedSong[]
+  channel-sync.ts               backfillChannel / pollChannel /
+                                syncAllChannels
+  pusher.ts                     pusherServer + getPusherClient
+                                factories
   db/schema.ts                  All tables (single file)
   db/index.ts                   pg Pool → drizzle client
   utils.ts                      cn() (clsx + tailwind-merge)
-  format.ts                     formatDuration() → "m:ss"/"h:mm:ss" labels
-public/sw.js                    PWA service worker (cache-first static only)
-scripts/generate-icons.mjs      Regenerates PWA icons in public/icons/
-android/                      Capacitor 8 Android project (generated,
-                              committed) — WebView loads server.url
-capacitor.config.ts           appId + server.url (from CAPACITOR_SERVER_URL)
-capacitor-www/                Placeholder webDir for `cap sync` (SSR app
-                              has no static export; APK loads remote URL)
+  format.ts                     formatDuration() → "m:ss"/"h:mm:ss"
+public/sw.js                    PWA service worker (cache-first
+                                static only)
+scripts/generate-icons.mjs      Regenerates PWA icons in
+                                public/icons/
+scripts/test-song-parser.ts     Ad-hoc checks for the song parser
+                                (npx tsx …) — see "Testing"
+android/                        Capacitor 8 Android project
+                                (generated, committed) — WebView loads
+                                server.url
+capacitor.config.ts             appId + server.url (from
+                                CAPACITOR_SERVER_URL)
+capacitor-www/                  Placeholder webDir for `cap sync`
+                                (SSR app has no static export; APK
+                                loads remote URL)
+docs/plans/                     Implementation plans with status
+                                headers (see Conventions)
+.devin/skills/                  Agent skills (see "Agent config
+                                layout")
+.devin/workflows/               Workflow docs (create-pr.md)
 ```
+
+## Data model (`lib/db/schema.ts`)
+
+- `users` — parents; `parentPin` (default "0000") gates parent areas;
+  `songCommenterHandle` = YT handle whose timestamped comments get
+  imported as songs
+- `profiles` — kids, owned by `parentId`; avatars are emoji strings;
+  optional `username` (unique, shares the login-identifier namespace
+  with `users.email`) + `passwordHash` enable kid login
+- `videos` — global YouTube video cache, PK = YouTube video ID
+- `channels` — global YouTube channel cache, PK = `UC...` ID, stores
+  `uploadsPlaylistId`
+- `songs` — global registry of songs parsed from timestamped comments
+  on compilation videos (title + `videoId` + `startSeconds`/`endSeconds`;
+  `endSeconds` NULL = play to video end). NOT whitelist-tied — shared
+  by everyone
+- `whitelisted_videos` — (profileId, videoId) pins; `viaChannelId`
+  NULL = manual pin, set = added by channel sync
+- `whitelisted_channels` — (profileId, channelId) approvals with
+  `backfillComplete` / `backfillPageToken` resumable-backfill state
+  and `lastSyncAt`
+- `channel_video_exclusions` — tombstones so unpinning a
+  channel-synced video isn't undone by the next sync
+- `channel_sync_exclusions` — (parentId, channelId) mutes: channel
+  sync skips the channel for all profiles owned by that parent
+- `watch_progress` — (profileId, videoId) resume position +
+  `completed`
+- `watch_history` — per-profile watch events grouped by day
+- `video_reactions` — per-(profile, video) like/dislike
+- `playlists` + `playlist_items` — kid playlists with manual ordering
+- `daily_syncs` — one row per UTC date = dedup lock for the daily
+  sync
+- `shared_access` + `invites` — second-parent access via token links
+
+## Business rules & invariants (the contract)
+
+- **Whitelist is absolute.** Kids never see unapproved content: the
+  watch page redirects non-whitelisted videoIds, the player polls
+  every 500ms and snaps back if a "More videos" suggestion hijacks
+  the embed, and `/api/watch-progress` rejects non-whitelisted
+  writes.
+- **Every mutating server action** must call `getSession()` then
+  `assertCanManageProfile(session, profileId)` (owner or
+  `shared_access` row). Watch-progress also accepts the
+  `activeProfileId` cookie matching the profile (a locked kid device
+  may lack a manageable session).
+- **Three auth cookies:** `session` = JWT (1 year, rolling refresh
+  via `proxy.ts`) in one of two scopes — `role: "parent"` carries
+  `user` (a `users` row), `role: "kid"` carries `profileId` + `name`
+  and pins the device to that profile's pages. Kid sessions are
+  minted by the unified login (`loginKid`); they fail closed on every
+  parent check (`assertCanManageProfile`, `requireParentUnlocked`,
+  `setParentUnlocked`, `verifyParentPin`) since they carry no `user`
+  — call sites needing `session.user` must go through
+  `parentSession()` or a `role === "parent"` guard. `decrypt`
+  normalizes pre-role parent JWTs to `role: "parent"` so old sessions
+  survive. `parentUnlocked` = signed JWT (scope `parent-unlock`,
+  bound to the session user, 24h exp) inside a browser-session cookie
+  set by `verifyParentPin`/login/signup, cleared by "Kids Corner"
+  (`lockParentPortal`) — `/parent/*` is unreachable without it, and
+  parent-mutating server actions re-verify it via
+  `requireParentUnlocked()` (invite acceptance excepted — the token
+  is the credential); `activeProfileId` = which kid profile the
+  device is locked to (1 year; also read by `/api/watch-progress` &
+  `/api/video-reactions`) — set on kid login too as a compat shim,
+  with the signed session winning wherever they disagree. The `/kids`
+  picker needs a **parent** session and lists owned+shared profiles
+  (`getManageableProfiles`); `/kids/<id>` pages allow the matching
+  `activeProfileId` lock, a matching kid session, or a managing
+  parent session (`canViewProfile`). PIN verification is server-side
+  (`verifyParentPin` reads `users.parentPin` from the DB, with a
+  500 ms delay on failures to throttle brute force — login failures
+  get the same delay) — never pass the PIN to client components. Kid
+  credentials are owner-only (`setKidCredentials` requires
+  `profiles.parentId === session.user.id`, like `deleteProfile`); kid
+  passwords can be 4 chars vs parents' 6.
+- **Channel sync:** approving a channel backfills its uploads
+  playlist in the background (`after()`), resumable via
+  `backfillPageToken`. Daily sync (`/api/sync-channels`, pinged
+  once/day by clients) polls newest uploads until it hits a known
+  videoId. Manual unpin of a synced video → tombstone; un-approving a
+  channel removes its `viaChannelId` pins and clears its tombstones.
+  YouTube quota errors abort the run early. `channel_sync_exclusions`
+  are keyed by profile owner; paused channels are filtered in
+  `syncAllChannels` and abort mid-flight via the approval re-check,
+  and approving a paused channel skips the backfill.
+- **Song imports:** parents paste a compilation-video URL in the
+  dashboard; `app/actions/songs.ts` fetches the video's comments,
+  finds the one by `users.songCommenterHandle`, and parses its
+  timestamped tracklist (`lib/song-timestamps.ts`) into `songs` rows.
+  Re-import identity = `sourceCommentId`; (videoId, startSeconds) is
+  unique.
+- **Real-time:** after any whitelist change, trigger Pusher on
+  channel `profile-<profileId>` with `video-pinned`/`video-unpinned`;
+  `PusherListener` calls `router.refresh()`. Import `pusherServer`
+  dynamically inside actions.
+- **Watch progress:** client flushes on pause/end/pagehide
+  (sendBeacon) and every ~10s while playing; server upserts guarded
+  by `sentAt` so late beacons can't overwrite newer positions.
+  `completed` ≥95%.
+- **Kids portal chrome:** the feed page has no footer — the parent
+  gate is the lock icon in `KidsHeader` (`KidsFooterGate` with
+  `variant="icon"`); the `/kids` picker keeps the labelled "footer"
+  variant. The PIN modal and its verifying spinner portal to
+  `document.body` — rendered inline inside the header, its
+  backdrop-filter and collapse transform would clip the fixed
+  overlay.
+- **Kids search is type-ahead:** `KidsSearch` debounces input 300 ms,
+  then `router.replace`s inside `startTransition` (`scroll: false`)
+  — a native GET form would be a full navigation with no pending
+  state. Only `q` changes; the URL is rebuilt from the live
+  `searchParams`, so view/channel/list/date/sort/dir survive
+  untouched.
+- **Home shelves:** the plain Videos tab (no `q`, no `channel`)
+  renders "Continue watching", "Picked for you", "New for you",
+  "Your playlists" and "Liked" shelves above the All-videos grid,
+  streaming in their own Suspense boundary; empty shelves don't
+  render. Watch-page autoplay rebuilds its queue from the card href's
+  feed params, so shelf cards carry the params that reproduce the
+  right queue — the home feed for the video shelves, `view=foryou`
+  for the Picked-for-you shelf, `view=liked` for the Liked shelf
+  (playlist tiles deep-link to their drill-in).
+- **Kids feed code is route-private:**
+  `app/kids/[profileId]/_components/` holds the per-view server
+  components (`videos-view`, `channels-view`, `liked-view`,
+  `playlists-view` + `playlist-detail-view`, `history-feed-view`,
+  `foryou-view`), `home-shelves`, `back-link`, the `KIDS_VIEWS`
+  config table (labels, icons, titles, placeholders) and
+  `feed-header`. `feed-content.tsx` picks the view; everything below
+  the header streams under Suspense. `foryou` is a sixth feed with NO
+  tab — it's reached via the "Picked for you" home shelf's see-all
+  link (and its cards' `?view=foryou` autoplay context); a 6th phone
+  tab was rejected for cramped tap targets.
+
+## Commands
+
+```bash
+npm run dev         # dev server (Turbopack), runs on port 3100 via
+                    # .vscode/launch.json (npm run dev -p 3100)
+npm run typecheck   # tsc --noEmit — run before finishing any change
+npm run lint        # eslint (eslint-config-next)
+npm run build       # full production build check
+npm run format      # prettier --write (uses
+                    # prettier-plugin-tailwindcss)
+npm run db:generate # drizzle-kit generate → new migration in
+                    # drizzle/ — safe, touches files only
+npm run db:migrate  # drizzle-kit migrate — MUST run as the avnadmin
+                    # DB user; ai_agent lacks DDL rights and fails
+                    # silently (exit 1). Always invoke as:
+                    #   DATABASE_URL="$(grep -m1 avnadmin .env |
+                    #     cut -d= -f2-)" npm run db:migrate
+npm run videos:refresh -- --dry-run   # re-fetch videos rows missing
+                    # YouTube fields (filters: --stale --missing cols
+                    # --ids --channel --whitelisted --all --where;
+                    # --prune deletes YT-dead videos — destructive,
+                    # dry-run first)
+npx tsx scripts/test-song-parser.ts   # ad-hoc checks for the song
+                                      # parser — see "Testing"
+```
+
+DB schema changes: edit `lib/db/schema.ts`, then `npm run
+db:generate` (commit the generated `drizzle/` files), `npm run
+db:migrate` to apply.
 
 ## Android APK
 
@@ -137,183 +338,202 @@ Capacitor wrapper — see `docs/ANDROID_APK.md`. Requires the app to be
 deployed at a public HTTPS URL (set `CAPACITOR_SERVER_URL` locally /
 `APP_URL` repo variable in CI). `.github/workflows/android-release.yml`
 builds a debug APK on the `android` branch / dispatch and a signed
-release APK on `v*` tags.
+release APK on `v*` tags — do not push `v*` tags or commits to
+`android` casually; each push spends CI and signed releases go
+straight to GitHub Releases.
 
-## Data model (`lib/db/schema.ts`)
+## Conventions / rules
 
-- `users` — parents; `parentPin` (default "0000") gates parent areas
-- `profiles` — kids, owned by `parentId`; avatars are emoji strings;
-  optional `username` (unique, shares the login-identifier namespace
-  with `users.email`) + `passwordHash` enable kid login
-- `videos` — global YouTube video cache, PK = YouTube video ID
-- `channels` — global YouTube channel cache, PK = `UC...` ID, stores
-  `uploadsPlaylistId`
-- `whitelisted_videos` — (profileId, videoId) pins; `viaChannelId` NULL =
-  manual pin, set = added by channel sync
-- `whitelisted_channels` — (profileId, channelId) approvals with
-  `backfillComplete` / `backfillPageToken` resumable-backfill state and
-  `lastSyncAt`
-- `channel_video_exclusions` — tombstones so unpinning a channel-synced
-  video isn't undone by the next sync
-- `channel_sync_exclusions` — (parentId, channelId) mutes: channel sync
-  skips the channel for all profiles owned by that parent
-- `watch_progress` — (profileId, videoId) resume position + `completed`
-- `daily_syncs` — one row per UTC date = dedup lock for the daily sync
-- `shared_access` + `invites` — second-parent access via token links
+Repo-local style:
 
-## Business rules & invariants
-
-- **Whitelist is absolute.** Kids never see unapproved content: the watch
-  page redirects non-whitelisted videoIds, the player polls every 500ms
-  and snaps back if a "More videos" suggestion hijacks the embed, and
-  `/api/watch-progress` rejects non-whitelisted writes.
-- **Every mutating server action** must call `getSession()` then
-  `assertCanManageProfile(session, profileId)` (owner or `shared_access`
-  row). Watch-progress also accepts the `activeProfileId` cookie matching
-  the profile (a locked kid device may lack a manageable session).
-- **Three auth cookies:** `session` = JWT (1 year, rolling
-  refresh via `proxy.ts`) in one of two scopes — `role: "parent"`
-  carries `user` (a `users` row), `role: "kid"` carries `profileId` +
-  `name` and pins the device to that profile's pages. Kid sessions are
-  minted by the unified login (`loginKid`); they fail closed on every
-  parent check (`assertCanManageProfile`, `requireParentUnlocked`,
-  `setParentUnlocked`, `verifyParentPin`) since they carry no `user` —
-  call sites needing `session.user` must go through `parentSession()`
-  or a `role === "parent"` guard. `decrypt` normalizes pre-role parent
-  JWTs to `role: "parent"` so old sessions survive.
-  `parentUnlocked` = signed JWT (scope
-  `parent-unlock`, bound to the session user, 24h exp) inside a
-  browser-session cookie set by `verifyParentPin`/login/signup, cleared
-  by "Kids Corner" (`lockParentPortal`) — `/parent/*` is unreachable
-  without it, and parent-mutating server actions re-verify it via
-  `requireParentUnlocked()` (invite acceptance excepted — the token is
-  the credential); `activeProfileId` = which kid profile the device is
-  locked to (1 year; also read by `/api/watch-progress` &
-  `/api/video-reactions`) — set on kid login too as a compat shim, with
-  the signed session winning wherever they disagree.
-  The `/kids` picker needs a **parent** session and lists
-  owned+shared profiles (`getManageableProfiles`); `/kids/<id>` pages
-  allow the matching `activeProfileId` lock, a matching kid session,
-  or a managing parent session
-  (`canViewProfile`). PIN verification is server-side
-  (`verifyParentPin` reads `users.parentPin` from the DB, with a 500 ms
-  delay on failures to throttle brute force — login failures get the
-  same delay) — never pass the PIN to
-  client components. Kid credentials are owner-only
-  (`setKidCredentials` requires `profiles.parentId === session.user.id`,
-  like `deleteProfile`); kid passwords can be 4 chars vs parents' 6.
-- **Channel sync:** approving a channel backfills its uploads playlist in
-  the background (`after()`), resumable via `backfillPageToken`. Daily
-  sync (`/api/sync-channels`, pinged once/day by clients) polls newest
-  uploads until it hits a known videoId. Manual unpin of a synced video →
-  tombstone; un-approving a channel removes its `viaChannelId` pins and
-  clears its tombstones. YouTube quota errors abort the run early.
-  `channel_sync_exclusions` are keyed by profile owner; paused channels
-  are filtered in `syncAllChannels` and abort mid-flight via the
-  approval re-check, and approving a paused channel skips the backfill.
-- **Real-time:** after any whitelist change, trigger Pusher on channel
-  `profile-<profileId>` with `video-pinned`/`video-unpinned`;
-  `PusherListener` calls `router.refresh()`. Import `pusherServer`
-  dynamically inside actions.
-- **Watch progress:** client flushes on pause/end/pagehide (sendBeacon)
-  and every ~10s while playing; server upserts guarded by `sentAt` so
-  late beacons can't overwrite newer positions. `completed` ≥95%.
-- **Kids portal chrome:** the feed page has no footer — the parent gate
-  is the lock icon in `KidsHeader` (`KidsFooterGate` with
-  `variant="icon"`); the `/kids` picker keeps the labelled "footer"
-  variant. The PIN modal and its verifying spinner portal to
-  `document.body` — rendered inline inside the header, its
-  backdrop-filter and collapse transform would clip the fixed overlay.
-- **Kids search is type-ahead:** `KidsSearch` debounces input 300 ms,
-  then `router.replace`s inside `startTransition` (`scroll: false`) —
-  a native GET form would be a full navigation with no pending state.
-  Only `q` changes; the URL is rebuilt from the live `searchParams`,
-  so view/channel/list/date/sort/dir survive untouched.
-- **Home shelves:** the plain Videos tab (no `q`, no `channel`) renders
-  "Continue watching", "Picked for you", "New for you", "Your
-  playlists" and "Liked" shelves above the All-videos grid, streaming
-  in their own Suspense boundary; empty shelves don't render.
-  Watch-page autoplay rebuilds its queue from the card href's feed
-  params, so shelf cards carry the params that reproduce the right
-  queue — the home feed for the video shelves, `view=foryou` for the
-  Picked-for-you shelf, `view=liked` for the Liked shelf (playlist
-  tiles deep-link to their drill-in).
-- **Kids feed code is route-private:** `app/kids/[profileId]/_components/`
-  holds the per-view server components (`videos-view`, `channels-view`,
-  `liked-view`, `playlists-view` + `playlist-detail-view`,
-  `history-feed-view`, `foryou-view`), `home-shelves`, `back-link`, the
-  `KIDS_VIEWS` config table (labels, icons, titles, placeholders) and
-  `feed-header`. `feed-content.tsx` picks the view; everything below
-  the header streams under Suspense. `foryou` is a sixth feed with NO
-  tab — it's reached via the "Picked for you" home shelf's see-all
-  link (and its cards' `?view=foryou` autoplay context); a 6th phone
-  tab was rejected for cramped tap targets.
-
-## Conventions
-
-- Style: 2 spaces, double quotes, 80-col width. **Prettier config says
-  `semi: false` but all code uses semicolons** — match surrounding code;
-  be aware `npm run format` will strip semicolons repo-wide (fix the
-  config or the code, don't mix). Tailwind class order is enforced by
-  `prettier-plugin-tailwindcss` (`cn`/`cva` aware).
+- Style: 2 spaces, double quotes, 80-col width. **Prettier config
+  says `semi: false` but all code uses semicolons** — match
+  surrounding code; be aware `npm run format` will strip semicolons
+  repo-wide (fix the config or the code, don't mix). Tailwind class
+  order is enforced by `prettier-plugin-tailwindcss` (`cn`/`cva`
+  aware).
 - Icons: `@phosphor-icons/react` in client components,
   `@phosphor-icons/react/dist/ssr` in server components.
 - Kids UI style: big rounded cards (`rounded-[32px]`/`rounded-3xl`),
-  heavy fonts (`font-black`), playful emoji avatars, slate/primary palette.
+  heavy fonts (`font-black`), playful emoji avatars, slate/primary
+  palette.
 - Forms use server actions via `<form action={...}>`; validation with
   zod `safeParse` on FormData.
 - Branch names must use a prefix: `feature/` for new functionality,
   `fix/` for bug fixes, `chore/` for maintenance/tooling, `docs/` for
-  documentation, `refactor/` for restructuring without behavior change
-  (e.g. `feature/kids-profile-switcher`, `fix/dark-mode-titles`).
+  documentation, `refactor/` for restructuring without behavior
+  change (e.g. `feature/kids-profile-switcher`,
+  `fix/dark-mode-titles`).
 - Path alias `@/*` → repo root (`tsconfig.json`).
 - Env vars needed: `DATABASE_URL`, `JWT_SECRET`, `YOUTUBE_API_KEY`,
   `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER`
   (see `.env`, never commit it).
+- Long-lived work is usually done in **git worktrees** under the
+  sibling dir `nibrastube-wt/<name>` (`git worktree add
+  ../nibrastube-wt/<name> -b <branch> origin/main`) — the main
+  checkout often holds the user's uncommitted work; do NOT switch
+  branches in it.
 
-## Known sharp edges
+Workflow rules (workspace-wide conventions — follow them all):
 
-- `lib/auth.ts` falls back to `JWT_SECRET="secret"` — dev only, always set
-  the env var.
-- Parent PIN is stored/compared in plaintext — acceptable for a family
-  app, but don't build security-critical features on it.
+1. **Max 79 chars per line, every file type** (code, md, config).
+   Verify: `awk 'length > 79 {print FILENAME":"NR}' <file>`. Fix
+   violations you introduce plus long lines in files already being
+   modified. Exempt: Prettier's `printWidth: 80` may emit 80-char
+   lines in TS/TSX (formatter output — don't hand-tune it), and the
+   vendored upstream docs under
+   `.devin/skills/vercel-react-best-practices/` stay verbatim.
+   Historical `docs/plans/*` files carry pre-existing long lines
+   (tables/code blocks) — don't re-wrap them unless rewriting the
+   section anyway.
+2. **Commit format** `Type: Capitalized message` —
+   `Feat:`/`Fix:`/`Docs:`/`Refactor:`/`Test:`/`Chore:`.
+3. **Commit on feature branches only, never `main`.** Stage only
+   files changed this session, by path — never `git add -A`,
+   `git add .` or `git commit -a`; run `git status` first; leave the
+   user's dirty files alone; never commit plan/scratch markdown
+   (plan files live in `docs/plans/` — see rule 11 — but only commit
+   them when the task is planning work).
+4. **Dangerous commands — never run these:**
+   - `npm run db:migrate` under the default `ai_agent` DB user — it
+     fails silently (exit 1, no error). The ONLY sanctioned form is
+     the avnadmin one-liner in "Commands". Generating migration files
+     (`npm run db:generate`) is always safe.
+   - `npx drizzle-kit push` — bypasses migration files; README's
+     mention is stale.
+   - `npm run videos:refresh -- --prune` — deletes rows; dry-run
+     first.
+   - Pushing `v*` tags or commits to the `android` branch — triggers
+     signed release builds.
+   - `git push --force`, deleting branches, rewriting history.
+   - Anything writing to the production Aiven DB beyond the
+     sanctioned migrate — if a task genuinely needs it, write the
+     change and tell the user the command to run.
+5. **Scoped verification** — no test suite exists; verify with
+   `npm run typecheck` + `npm run lint` (+ `npm run build` for
+   infra-level changes) and a manual run. When touching the song
+   parser, run `npx tsx scripts/test-song-parser.ts`.
+6. **PR bodies go to a temp file** + `gh pr create --body-file`,
+   never inline `--body`; delete the temp file after. See
+   `.devin/workflows/create-pr.md`.
+7. **Every PR body includes a UI verification / QC section** —
+   concrete steps (which pages to open, which buttons to click,
+   expected result) exercising the change end-to-end through the UI.
+   Omit only when the change is genuinely unreachable from the UI —
+   then give an equivalent (curl command, script, log line).
+8. **`origin` is the user's fork** — all GitHub operations target
+   `Ted-Rose/nibrastube`; never upstream unless asked.
+9. **No secrets in code.** Secrets live in `.env` (gitignored) and in
+   GitHub secrets/vars (`ANDROID_KEYSTORE_BASE64`, `KEY_ALIAS`,
+   `KEYSTORE_PASSWORD`, `KEY_PASSWORD`, `APP_URL` var) for release
+   signing. Never print or commit `.env` values or keystores
+   (`*.p12`/`*.keystore`/`*.jks` are gitignored).
+10. **Keep docs in sync:** update this file (AGENTS.md is the repo's
+    contract doc for future sessions) after functionality changes,
+    and update the status header of any `docs/plans/*-plan.md` the
+    change implements.
+11. **Plans live in `docs/plans/`** as `<feature>-plan.md`
+    (multi-file plans get a subdirectory), each with a status header:
+    `implemented` / `partial` / `in progress` / `not implemented` /
+    `reverted`.
+12. **Test login for UI verification:** parent account
+    `tester@example.com` / `password`, parent PIN `0000`. Use it when
+    asked to log in and exercise the UI; if it fails where you're
+    testing, ask the user rather than hunting for credentials.
+13. **This file is self-updating.** When you hit local-setup,
+    infrastructure, or missing-tooling friction — a CLI that isn't
+    installed, a non-obvious way to run the project locally, a
+    required version or local path — don't grind through many failing
+    alternatives. Missing tool → tell the user what to install.
+    Working flow or local quirk discovered → write it into this
+    AGENTS.md and commit the doc update alongside the work that
+    discovered it.
+
+## Agent config layout
+
+- `AGENTS.md` (this file) — the contract doc every agent reads;
+  `CLAUDE.md` just `@`-imports it.
+- `.devin/skills/fix-good-first-issue/` — pick up a "good first
+  issue", fix it, open a draft PR, watch checks.
+- `.devin/skills/implement-plan/` — execute a `docs/plans/*-plan.md`
+  file with implementer → reviewer → fixer subagents.
+- `.devin/skills/vercel-react-best-practices/` — vendored React/Next
+  performance rules (SKILL.md index + per-rule files).
+- `.devin/workflows/create-pr.md` — PR body via `--body-file`.
+- `.devin/config.local.json` — permission allowlist, user-local and
+  untracked (gitignored).
+
+Skill frontmatter must be plain `name:` + `description:` only —
+extra fields silently break discovery.
+
+## Known gaps & sharp edges (do NOT "fix" without asking)
+
+- `lib/auth.ts` falls back to `JWT_SECRET="secret"` — dev only,
+  always set the env var.
+- Parent PIN is stored/compared in plaintext — acceptable for a
+  family app, but don't build security-critical features on it.
 - `getPusherClient` has a hardcoded fallback Pusher key.
-- Dev machine sits behind a TLS-intercepting proxy (Netskope). Node-side
-  calls (axios → YouTube) need `NODE_EXTRA_CA_CERTS` (set in `~/.zshrc`);
-  Turbopack ignores that var — `.env` carries
-  `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1` so `next/font`'s
-  Google Fonts downloads validate. Without it every render retries the
-  font fetch and stalls for seconds. Do NOT move it to
-  `experimental.turbopackUseSystemTlsCerts` in next.config — the config
-  key broke tailwindcss module resolution (env var does not).
-- `/kids/<uuid>` is effectively a capability URL: `activeProfileId` is
-  the profile UUID, so anyone who learns a UUID can self-set the cookie
-  and view that feed without a session. Unguessable UUIDs keep the risk
-  low — this is the accepted model. Kid-session JWTs close the forgeable-
-  cookie hole for logged-in kids (signed, server-bound), but the lock
-  cookie stays for picker flow and backwards compat.
+- `capacitor-www/` is an intentional placeholder — the app is SSR and
+  has no static export; the APK loads the remote URL. Don't try to
+  make `next build` produce an export.
+- Dev machine sits behind a TLS-intercepting proxy (Netskope).
+  Node-side calls (axios → YouTube) need `NODE_EXTRA_CA_CERTS` (set
+  in `~/.zshrc`); Turbopack ignores that var — `.env` carries
+  `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1` so
+  `next/font`'s Google Fonts downloads validate. Without it every
+  render retries the font fetch and stalls for seconds. Do NOT move
+  it to `experimental.turbopackUseSystemTlsCerts` in next.config —
+  the config key broke tailwindcss module resolution (env var does
+  not).
+- `/kids/<uuid>` is effectively a capability URL: `activeProfileId`
+  is the profile UUID, so anyone who learns a UUID can self-set the
+  cookie and view that feed without a session. Unguessable UUIDs keep
+  the risk low — this is the accepted model. Kid-session JWTs close
+  the forgeable-cookie hole for logged-in kids (signed, server-bound),
+  but the lock cookie stays for picker flow and backwards compat.
 - YouTube Data API quota is finite (10k units/day); searches are 100
-  units each — prefer `videos`/`playlistItems` endpoints in sync code.
-- Dev server runs on **port 3100** (`.vscode/launch.json` frees the port
-  then runs `npm run dev -- -p 3100`) — VSCode stop leaves orphaned
-  `next-server` processes holding the port + `.next/dev/lock`, so
-  re-launching without the kill prefix caused EADDRINUSE. A stray
-  `p_projects/yarn.lock` (parent dir, no package.json) once made
-  Turbopack infer that 3.8 GB dir as workspace root → slow boots; it was
-  deleted — do NOT set `turbopack.root` in next.config to fix this, it
-  breaks tailwindcss resolution. If weird resolution errors appear,
-  `rm -rf .next` (cache poisoning persists across restarts).
-- `.env` active `DATABASE_URL` is the `ai_agent` DB user, which has no
-  SELECT on app tables and no DDL rights — `npm run db:migrate` under it
-  exits 1 with no error text. For migrations and read-only DB inspection
-  use the `avnadmin` URL in `.env` (grab it with
-  `grep -m1 avnadmin .env | cut -d= -f2-` — works whether that line is
-  commented out or active). Aiven prod; localhost URL is dev.
-- The Aiven DB has a small connection limit (max_connections=20) — the
-  dev server can exhaust slots, so `npm run db:migrate` (or psql) may
-  fail mid-run with "remaining connection slots are reserved" or a
-  bare exit 1 with no error text. Stop the dev server
-  (`lsof -ti:3100 | xargs kill`) to free slots, or just retry — migrate
-  is idempotent and resumes cleanly.
-- `npm` may be missing from PATH in non-interactive shells (`npm:
-  command not found`); prepend `export PATH="/opt/homebrew/bin:$PATH"`.
+  units each — prefer `videos`/`playlistItems` endpoints in sync
+  code.
+- Dev server runs on **port 3100** (`.vscode/launch.json` frees the
+  port then runs `npm run dev -- -p 3100`) — VSCode stop leaves
+  orphaned `next-server` processes holding the port +
+  `.next/dev/lock`, so re-launching without the kill prefix caused
+  EADDRINUSE. A stray `p_projects/yarn.lock` (parent dir, no
+  package.json) once made Turbopack infer that 3.8 GB dir as
+  workspace root → slow boots; it was deleted — do NOT set
+  `turbopack.root` in next.config to fix this, it breaks tailwindcss
+  resolution. If weird resolution errors appear, `rm -rf .next`
+  (cache poisoning persists across restarts).
+- **`.env` connects to the production Aiven Postgres** — every local
+  `npm run dev`, script, or DB command touches live data. The active
+  `DATABASE_URL` is the `ai_agent` user, which has no SELECT on app
+  tables and no DDL rights — `npm run db:migrate` under it exits 1
+  with no error text. For migrations and DB inspection use the
+  `avnadmin` URL in `.env` (grab it with `grep -m1 avnadmin .env |
+  cut -d= -f2-` — works whether that line is commented out or
+  active). `avnadmin` is full-access **production** — treat every
+  write as live. Aiven prod; localhost URL is dev.
+- The Aiven DB has a small connection limit (max_connections=20) —
+  the dev server can exhaust slots, so `npm run db:migrate` (or psql)
+  may fail mid-run with "remaining connection slots are reserved" or
+  a bare exit 1 with no error text. Stop the dev server
+  (`lsof -ti:3100 | xargs kill`) to free slots, or just retry —
+  migrate is idempotent and resumes cleanly.
+- `npm`/`gh` may be missing from PATH in non-interactive shells
+  (`npm: command not found`); prepend
+  `export PATH="/opt/homebrew/bin:$PATH"`.
+
+## Testing
+
+No test suite exists. Verify with:
+
+1. `npm run typecheck` and `npm run lint` — required before finishing
+   any change.
+2. `npm run build` — for infra/config-level changes.
+3. `npx tsx scripts/test-song-parser.ts` — ad-hoc assertions for the
+   song timestamp parser (`lib/song-timestamps.ts` +
+   `parseYouTubeVideoId`); run it when touching song-import code.
+4. Manual run on `http://localhost:3100` for UI changes — log in with
+   the test account (Conventions rule 12) and walk the flow end to
+   end; that's also what every PR's UI-verification section should
+   describe.

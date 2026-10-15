@@ -1,5 +1,7 @@
 # Plan: Exclude Channels from Sync (parent-scoped)
 
+**Status: implemented** (merged in #27)
+
 Feature branch prefix: `feature/` (e.g. `feature/channel-sync-exclusion`).
 
 ## Goal

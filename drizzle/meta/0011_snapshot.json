@@ -1,5 +1,5 @@
 {
-  "id": "52142b6a-1a4b-4c23-b9bd-3ee8676f8948",
+  "id": "f0ef38a9-ae55-4fa6-8cba-c1709cac1ec5",
   "prevId": "658724a7-84d1-4af1-a1da-bbb94792375d",
   "version": "7",
   "dialect": "postgresql",
@@ -509,18 +509,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "username": {
-          "name": "username",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "password_hash": {
-          "name": "password_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "swipe_enabled": {
           "name": "swipe_enabled",
           "type": "boolean",
@@ -553,15 +541,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "profiles_username_unique": {
-          "name": "profiles_username_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "username"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -633,6 +613,124 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.songs": {
+      "name": "songs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "video_id": {
+          "name": "video_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_seconds": {
+          "name": "start_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_seconds": {
+          "name": "end_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_comment_id": {
+          "name": "source_comment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_handle": {
+          "name": "source_handle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "imported_by": {
+          "name": "imported_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "songs_video_start_uniq": {
+          "name": "songs_video_start_uniq",
+          "columns": [
+            {
+              "expression": "video_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "start_seconds",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "songs_video_id_videos_id_fk": {
+          "name": "songs_video_id_videos_id_fk",
+          "tableFrom": "songs",
+          "tableTo": "videos",
+          "columnsFrom": [
+            "video_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "songs_imported_by_users_id_fk": {
+          "name": "songs_imported_by_users_id_fk",
+          "tableFrom": "songs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "imported_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.users": {
       "name": "users",
       "schema": "",
@@ -668,6 +766,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'0000'"
+        },
+        "song_commenter_handle": {
+          "name": "song_commenter_handle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

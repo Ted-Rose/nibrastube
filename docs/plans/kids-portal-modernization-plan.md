@@ -1,5 +1,7 @@
 # Plan: Kids Portal Modernization (`/kids/[profileId]`)
 
+**Status: implemented** (merged in #28)
+
 Integration branch: `feature/kids-portal-modernization` → **one** squash
 PR to the fork's `main` at the end (`--repo Ted-Rose/nibrastube`).
 Work-package branches: `feature/kpm-wpN-<slug>`. They can't be nested

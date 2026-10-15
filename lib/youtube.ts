@@ -348,6 +348,128 @@ export async function getUploadsPage(
   };
 }
 
+// Accepts watch?v=, youtu.be/, /live/, /shorts/, /embed/ URLs,
+// music.youtube.com, junk params like si=, and bare 11-char IDs.
+const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
+export function parseYouTubeVideoId(input: string): string | null {
+  const s = input.trim();
+  if (VIDEO_ID_RE.test(s)) return s;
+
+  let url: URL;
+  try {
+    url = new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`);
+  } catch {
+    return null;
+  }
+
+  const host = url.hostname.replace(/^(www|m|music)\./, "");
+  if (host === "youtu.be") {
+    const id = url.pathname.split("/")[1] ?? "";
+    return VIDEO_ID_RE.test(id) ? id : null;
+  }
+  if (host === "youtube.com" || host === "youtube-nocookie.com") {
+    const v = url.searchParams.get("v");
+    if (v && VIDEO_ID_RE.test(v)) return v;
+    const m = /^\/(?:live|shorts|embed|v)\/([A-Za-z0-9_-]{11})/.exec(
+      url.pathname
+    );
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// channels.list?part=id&forHandle=<handle> — resolves @name → UC... id.
+// Returns null when the handle doesn't exist.
+export async function resolveChannelHandle(
+  handle: string
+): Promise<string | null> {
+  if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
+
+  const response = await axios.get(`${BASE_URL}/channels`, {
+    params: {
+      part: "id",
+      forHandle: handle,
+      key: API_KEY,
+    },
+  });
+  return response.data.items?.[0]?.id ?? null;
+}
+
+export interface VideoComment {
+  id: string;
+  authorChannelId: string | null;
+  authorDisplayName: string;
+  text: string; // textFormat=plainText
+  publishedAt: string | null;
+}
+
+interface YTCommentSnippet {
+  textDisplay?: string;
+  authorDisplayName?: string;
+  authorChannelId?: { value?: string };
+  publishedAt?: string;
+}
+
+interface YTCommentThread {
+  snippet?: {
+    topLevelComment?: { id: string; snippet?: YTCommentSnippet };
+  };
+  replies?: {
+    comments?: { id: string; snippet?: YTCommentSnippet }[];
+  };
+}
+
+// commentThreads.list, paginated and capped at 500 threads to bound
+// latency. part=replies yields up to 5 inline replies per thread — the
+// target user's tracklist is often a reply. Threads with
+// totalReplyCount > 5 whose hidden replies hold the tracklist are a
+// known v1 limitation (comments.list?parentId= is the escape hatch).
+const COMMENT_PAGE_LIMIT = 5;
+
+export async function listVideoComments(
+  videoId: string
+): Promise<VideoComment[]> {
+  if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
+
+  const comments: VideoComment[] = [];
+  const push = (id: string, s?: YTCommentSnippet) => {
+    if (!s?.textDisplay) return;
+    comments.push({
+      id,
+      authorChannelId: s.authorChannelId?.value ?? null,
+      authorDisplayName: s.authorDisplayName ?? "",
+      text: s.textDisplay,
+      publishedAt: s.publishedAt ?? null,
+    });
+  };
+
+  let pageToken: string | undefined;
+  for (let page = 0; page < COMMENT_PAGE_LIMIT; page++) {
+    const response = await axios.get(`${BASE_URL}/commentThreads`, {
+      params: {
+        part: "snippet,replies",
+        videoId,
+        maxResults: 100,
+        textFormat: "plainText",
+        pageToken,
+        key: API_KEY,
+      },
+    });
+    for (const thread of (response.data.items ?? []) as YTCommentThread[]) {
+      const top = thread.snippet?.topLevelComment;
+      if (top) push(top.id, top.snippet);
+      for (const reply of thread.replies?.comments ?? []) {
+        push(reply.id, reply.snippet);
+      }
+    }
+    pageToken = response.data.nextPageToken;
+    if (!pageToken) break;
+  }
+
+  return comments;
+}
+
 export async function getVideosBatch(ids: string[]): Promise<FullVideoDetails[]> {
   if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
   if (ids.length === 0) return [];

@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { VideoGridSkeleton } from "@/components/video-grid-skeleton";
-import { getSession } from "@/lib/auth";
+import { getSession, parentSession } from "@/lib/auth";
 import {
   parseSongsFeedParams,
   songsCatalogUrl,
@@ -104,7 +104,7 @@ export default async function SongsPage({ searchParams }: SongsPageProps) {
         )}
 
         <Suspense fallback={<VideoGridSkeleton />}>
-          <FeedContent feed={feed} userId={session?.user.id ?? null} />
+          <FeedContent feed={feed} userId={parentSession(session)?.id ?? null} />
         </Suspense>
       </main>
 

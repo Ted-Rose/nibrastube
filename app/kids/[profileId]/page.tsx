@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
-import { UserSwitch } from "@phosphor-icons/react/dist/ssr";
+import { MusicNotes, UserSwitch } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import PusherListener from "@/components/pusher-listener";
 import DailySyncPing from "@/components/daily-sync-ping";
@@ -24,7 +24,11 @@ import {
   type KidsView,
 } from "@/lib/kids-feed";
 import { FeedContent } from "./_components/feed-content";
-import { KIDS_VIEWS, searchPlaceholder } from "./_components/view-config";
+import {
+  KIDS_VIEWS,
+  searchPlaceholder,
+  tabIcon,
+} from "./_components/view-config";
 
 interface KidsPortalProps {
   params: Promise<{ profileId: string }>;
@@ -75,12 +79,16 @@ export default async function KidsPortalPage({
       KidsView,
       Partial<KidsFeedParams>,
     ])[]
-  ).map(([key, overrides]) => ({
-    key,
-    label: KIDS_VIEWS[key].label,
-    href: kidsPortalUrl(profileId, feed, overrides),
-    active: view === key,
-  }));
+  ).map(([key, overrides]) => {
+    const active = view === key;
+    return {
+      key,
+      label: KIDS_VIEWS[key].label,
+      href: kidsPortalUrl(profileId, feed, overrides),
+      active,
+      icon: tabIcon(key, active),
+    };
+  });
 
   return (
     <div className="min-h-screen bg-[#F0F4FF]">
@@ -107,6 +115,15 @@ export default async function KidsPortalPage({
                 placeholder={searchPlaceholder(feed, profile.name)}
               />
             </div>
+            {/* Song catalog is public — a plain link is fine, no
+                prefetch caveat like the auth-conditional /kids. */}
+            <Link
+              href="/songs"
+              aria-label="Song catalog"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+            >
+              <MusicNotes size={24} weight="bold" />
+            </Link>
             {isKidSession(session) ? (
               // A kid session can't switch profiles — proxy bounces
               // /kids back to their own feed — so the identity renders

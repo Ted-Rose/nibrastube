@@ -7,7 +7,7 @@ import {
   kidsPortalUrl,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
-import { FeedHeader } from "./feed-header";
+import { FeedHeader } from "@/components/feed-header";
 import { PlaylistDetailView } from "./playlist-detail-view";
 import { feedTitle } from "./view-config";
 

@@ -55,6 +55,11 @@ const importSchema = z.object({
   returnTo: z.string().optional(),
 });
 
+const deleteSchema = z.object({
+  songId: z.uuid(),
+});
+
+
 // The commenter handle is a stored preference — it never round-trips
 // through the client as a form field.
 async function getSongCommenterHandle(userId: string): Promise<string | null> {
@@ -337,4 +342,32 @@ export async function importSongs(
       : "/parent/dashboard";
   const sep = base.includes("?") ? "&" : "?";
   redirect(`${base}${sep}songsVideo=${videoId}`);
+}
+
+// Owner-only delete from the public catalog (or a dashboard list
+// later). Songs are global rows — deleting one affects every viewer —
+// so it's gated like a parent mutation AND on
+// songs.importedBy === session.user.id. Rows whose importing account
+// was deleted have importedBy null: unowned, they simply can't be
+// deleted through the UI (admin cleanup is manual).
+export async function deleteSong(songId: string) {
+  const user = parentSession(await getSession());
+  if (!user) return { error: "Not signed in." };
+  await requireParentUnlocked();
+
+  const parsed = deleteSchema.safeParse({ songId });
+  if (!parsed.success) return { error: "Missing song id." };
+
+  const song = await db.query.songs.findFirst({
+    where: eq(songs.id, parsed.data.songId),
+  });
+  // One message whether the row is missing or someone else's — the
+  // caller learns nothing about song ids it doesn't own.
+  if (!song || song.importedBy !== user.id) {
+    return { error: "Couldn't delete that song." };
+  }
+
+  await db.delete(songs).where(eq(songs.id, song.id));
+  revalidatePath("/songs");
+  return { deleted: true };
 }

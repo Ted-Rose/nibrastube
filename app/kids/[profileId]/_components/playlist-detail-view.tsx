@@ -12,8 +12,8 @@ import {
   type KidsFeedParams,
   type KidsPlaylist,
 } from "@/lib/kids-feed";
-import { BackLink } from "./back-link";
-import { FeedHeader } from "./feed-header";
+import { BackLink } from "@/components/back-link";
+import { FeedHeader } from "@/components/feed-header";
 import { feedTitle } from "./view-config";
 
 // One playlist opened from the Playlists tab — kid-ordered rows with the

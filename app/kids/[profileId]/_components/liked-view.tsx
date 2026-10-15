@@ -8,7 +8,7 @@ import {
   kidsPortalUrl,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
-import { FeedHeader } from "./feed-header";
+import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
 // Liked tab — videos the kid tapped 👍 on, newest reaction first.

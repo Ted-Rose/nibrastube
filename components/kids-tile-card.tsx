@@ -13,16 +13,20 @@ export function KidsTileCard({
   count,
   thumbnail,
   variant,
+  noun = "video",
 }: {
   href: string;
   title: string;
   count: number;
   thumbnail?: string | null;
   variant: "cover" | "avatar";
+  // What the caption counts — "video" for channels/playlists, "song"
+  // for the compilations grid on /songs.
+  noun?: string;
 }) {
   const caption = (
     <>
-      {count} {count === 1 ? "video" : "videos"}
+      {count} {count === 1 ? noun : `${noun}s`}
     </>
   );
 

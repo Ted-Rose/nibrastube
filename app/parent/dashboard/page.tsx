@@ -465,9 +465,18 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   return (
     <div className="container mx-auto py-6 sm:py-10 px-4">
       <DailySyncPing />
-      <div className="mb-6 sm:mb-10">
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Parent Portal</h1>
-        <p className="text-muted-foreground mt-1">Search and approve videos for your kids</p>
+      <div className="mb-6 sm:mb-10 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Parent Portal</h1>
+          <p className="text-muted-foreground mt-1">Search and approve videos for your kids</p>
+        </div>
+        {/* The public song catalog — reachable without the parent
+            lock, so a plain Link/Button suffices. */}
+        <Link href="/songs">
+          <Button variant="outline" size="touch">
+            <MusicNotes size={20} className="mr-2" /> Song catalog
+          </Button>
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">

@@ -1,5 +1,7 @@
 # Plan: Unified Parent + Kid Login
 
+**Status: in progress** (`feature/kid-login`, unmerged)
+
 Feature branch prefix: `feature/` (e.g. `feature/kid-login`).
 
 ## Goal

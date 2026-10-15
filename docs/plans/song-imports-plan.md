@@ -1,5 +1,7 @@
 # Plan: Song imports from comment timestamps
 
+**Status: implemented** (merged in #30)
+
 Feature branch prefix: `feature/` (e.g. `feature/song-imports`).
 
 ## Goal

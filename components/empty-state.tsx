@@ -11,7 +11,14 @@ export function EmptyState({
 }: {
   icon: ReactNode;
   message: string;
-  action?: { label: string; href: string };
+  action?: {
+    label: string;
+    href: string;
+    // Set false for hrefs behind auth redirects (e.g. /parent/*, which
+    // proxy.ts 307s for locked parents) so a prefetched redirect can't
+    // pollute the router's segment cache. Undefined = default prefetch.
+    prefetch?: boolean;
+  };
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-[40px] shadow-sm border-4 border-slate-100">
@@ -22,6 +29,7 @@ export function EmptyState({
       {action && (
         <Link
           href={action.href}
+          prefetch={action.prefetch}
           className="mt-8 inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-lg font-black text-white shadow-md focus-visible:ring-4 focus-visible:ring-primary/40 focus-visible:outline-none motion-safe:transition-transform motion-safe:hover:scale-105"
         >
           {action.label}

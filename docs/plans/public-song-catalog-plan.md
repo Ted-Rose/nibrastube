@@ -1,6 +1,7 @@
 # Plan: Public song catalog (`/songs`)
 
-**Status: in progress** (`feature/public-song-catalog`, unmerged)
+**Status: implemented** (`feature/public-song-catalog`, squash-merged
+to main)
 
 Feature branch prefix: `feature/` (e.g. `feature/public-song-catalog`).
 Depends on `feature/song-imports` (the `songs` registry + import flow).

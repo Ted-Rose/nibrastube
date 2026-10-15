@@ -24,65 +24,11 @@ import { classifySwipe } from "@/lib/gestures";
 import type { SwipeDirection } from "@/lib/gestures";
 import { cn } from "@/lib/utils";
 import type { VideoReaction, WatchStatus } from "@/lib/kids-feed";
-
-interface YTPlayerEvent {
-  data: number;
-}
-
-interface YTPlayer {
-  destroy(): void;
-  loadVideoById(videoId: string): void;
-  loadVideoById(args: { videoId: string; startSeconds?: number }): void;
-  getCurrentTime(): number;
-  getDuration(): number;
-  getPlayerState(): number;
-  getVideoData(): { video_id?: string } | undefined;
-  getVideoUrl(): string;
-  pauseVideo(): void;
-  playVideo(): void;
-}
-
-interface YTNamespace {
-  Player: new (
-    el: HTMLElement,
-    opts: {
-      videoId: string;
-      width: string;
-      height: string;
-      playerVars?: Record<string, number>;
-      events?: {
-        onReady?: (event: { target: YTPlayer }) => void;
-        onStateChange?: (event: YTPlayerEvent) => void;
-      };
-    }
-  ) => YTPlayer;
-  PlayerState: {
-    ENDED: number;
-    PLAYING: number;
-    PAUSED: number;
-    BUFFERING: number;
-  };
-}
-
-declare global {
-  interface Window {
-    YT?: YTNamespace;
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-// getVideoData() is undocumented — it is absent on some widget builds
-// and before the player is ready, so fall back to the documented
-// getVideoUrl() and parse its v= param.
-function loadedVideoId(p: YTPlayer): string | undefined {
-  if (typeof p.getVideoData === "function") {
-    return p.getVideoData()?.video_id;
-  }
-  if (typeof p.getVideoUrl === "function") {
-    return /[?&]v=([^&]+)/.exec(p.getVideoUrl())?.[1];
-  }
-  return undefined;
-}
+import {
+  ensureYouTubeAPI,
+  loadedVideoId,
+  type YTPlayer,
+} from "@/lib/yt-player";
 
 interface PlaylistVideo {
   id: string;
@@ -443,24 +389,7 @@ export function WatchExperience({
       });
     };
 
-    if (window.YT?.Player) {
-      createPlayer();
-    } else {
-      const prev = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        prev?.();
-        createPlayer();
-      };
-      if (
-        !document.querySelector(
-          'script[src="https://www.youtube.com/iframe_api"]'
-        )
-      ) {
-        const tag = document.createElement("script");
-        tag.src = "https://www.youtube.com/iframe_api";
-        document.head.appendChild(tag);
-      }
-    }
+    ensureYouTubeAPI(createPlayer);
 
     // Embedded Shorts loop internally and never emit ENDED, so also
     // poll playback position: advance when the video is nearly over or

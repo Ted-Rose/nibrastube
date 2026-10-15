@@ -23,7 +23,7 @@ export function ProfileCreateForm() {
           id="avatar"
           name="avatar"
           placeholder="👦"
-          defaultValue="�"
+          defaultValue="👶"
         />
       </div>
       <div className="space-y-2">

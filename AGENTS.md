@@ -21,7 +21,7 @@ kids can only watch approved content.
 - Next.js 16 App Router (Turbopack), React 19, TypeScript, ESM
   (`"type": "module"`)
 - PostgreSQL via Drizzle ORM (`drizzle-orm/node-postgres` + `pg`
-  Pool) — hosted on Aiven (production DB; local `.env` points at it,
+  Pool) — hosted on Neon (production DB; local `.env` points at it,
   see "Known gaps & sharp edges")
 - Auth: JWT (`jose`) in an httpOnly `session` cookie, bcryptjs
   passwords
@@ -359,11 +359,10 @@ npm run format      # prettier --write (uses
                     # prettier-plugin-tailwindcss)
 npm run db:generate # drizzle-kit generate → new migration in
                     # drizzle/ — safe, touches files only
-npm run db:migrate  # drizzle-kit migrate — MUST run as the avnadmin
-                    # DB user; ai_agent lacks DDL rights and fails
-                    # silently (exit 1). Always invoke as:
-                    #   DATABASE_URL="$(grep -m1 avnadmin .env |
-                    #     cut -d= -f2-)" npm run db:migrate
+npm run db:migrate  # drizzle-kit migrate — runs against
+                    # DATABASE_URL_UNPOOLED (Neon's direct endpoint)
+                    # via drizzle.config.ts; the pooled URL breaks
+                    # migrate's session behavior
 npm run videos:refresh -- --dry-run   # re-fetch videos rows missing
                     # YouTube fields (filters: --stale --missing cols
                     # --ids --channel --whitelisted --all --where;
@@ -410,9 +409,11 @@ Repo-local style:
   change (e.g. `feature/kids-profile-switcher`,
   `fix/dark-mode-titles`).
 - Path alias `@/*` → repo root (`tsconfig.json`).
-- Env vars needed: `DATABASE_URL`, `JWT_SECRET`, `YOUTUBE_API_KEY`,
-  `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER`
-  (see `.env`, never commit it).
+- Env vars needed: `DATABASE_URL` (Neon pooled endpoint),
+  `DATABASE_URL_UNPOOLED` (direct endpoint — used by drizzle-kit
+  migrate), `JWT_SECRET`, `YOUTUBE_API_KEY`, `PUSHER_APP_ID`,
+  `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER` (see `.env`,
+  never commit it).
 - Long-lived work is usually done in **git worktrees** under the
   sibling dir `nibrastube-wt/<name>` (`git worktree add
   ../nibrastube-wt/<name> -b <branch> origin/main`) — the main
@@ -440,10 +441,12 @@ Workflow rules (workspace-wide conventions — follow them all):
    (plan files live in `docs/plans/` — see rule 11 — but only commit
    them when the task is planning work).
 4. **Dangerous commands — never run these:**
-   - `npm run db:migrate` under the default `ai_agent` DB user — it
-     fails silently (exit 1, no error). The ONLY sanctioned form is
-     the avnadmin one-liner in "Commands". Generating migration files
-     (`npm run db:generate`) is always safe.
+   - `npm run db:migrate` against `DATABASE_URL` (the pooled
+     endpoint) — PgBouncer transaction pooling breaks migrate's
+     session behavior; `drizzle.config.ts` already prefers
+     `DATABASE_URL_UNPOOLED`, so the plain command is correct.
+     Generating migration files (`npm run db:generate`) is always
+     safe.
    - `npx drizzle-kit push` — bypasses migration files; README's
      mention is stale.
    - `npm run videos:refresh -- --prune` — deletes rows; dry-run
@@ -451,7 +454,7 @@ Workflow rules (workspace-wide conventions — follow them all):
    - Pushing `v*` tags or commits to the `android` branch — triggers
      signed release builds.
    - `git push --force`, deleting branches, rewriting history.
-   - Anything writing to the production Aiven DB beyond the
+   - Anything writing to the production Neon DB beyond the
      sanctioned migrate — if a task genuinely needs it, write the
      change and tell the user the command to run.
 5. **Scoped verification** — no test suite exists; verify with
@@ -549,21 +552,18 @@ extra fields silently break discovery.
   `turbopack.root` in next.config to fix this, it breaks tailwindcss
   resolution. If weird resolution errors appear, `rm -rf .next`
   (cache poisoning persists across restarts).
-- **`.env` connects to the production Aiven Postgres** — every local
-  `npm run dev`, script, or DB command touches live data. The active
-  `DATABASE_URL` is the `ai_agent` user, which has no SELECT on app
-  tables and no DDL rights — `npm run db:migrate` under it exits 1
-  with no error text. For migrations and DB inspection use the
-  `avnadmin` URL in `.env` (grab it with `grep -m1 avnadmin .env |
-  cut -d= -f2-` — works whether that line is commented out or
-  active). `avnadmin` is full-access **production** — treat every
-  write as live. Aiven prod; localhost URL is dev.
-- The Aiven DB has a small connection limit (max_connections=20) —
-  the dev server can exhaust slots, so `npm run db:migrate` (or psql)
-  may fail mid-run with "remaining connection slots are reserved" or
-  a bare exit 1 with no error text. Stop the dev server
-  (`lsof -ti:3100 | xargs kill`) to free slots, or just retry —
-  migrate is idempotent and resumes cleanly.
+- **`.env` connects to the production Neon Postgres** — every local
+  `npm run dev`, script, or DB command touches live data. Two URLs:
+  `DATABASE_URL` is the pooled (PgBouncer) endpoint the app uses,
+  `DATABASE_URL_UNPOOLED` is the direct endpoint for
+  `drizzle-kit migrate` (`drizzle.config.ts` prefers it) and DB
+  inspection/`pg_dump`. Both are full-access **production** — treat
+  every write as live.
+- The pooled `DATABASE_URL` runs through Neon's PgBouncer in
+  transaction mode — session-level features (`SET`, `LISTEN`,
+  advisory locks) don't survive between statements. The app uses
+  none of them, which is why `drizzle-kit migrate`/`pg_dump` must go
+  through `DATABASE_URL_UNPOOLED`.
 - `npm`/`gh` may be missing from PATH in non-interactive shells
   (`npm: command not found`); prepend
   `export PATH="/opt/homebrew/bin:$PATH"`.

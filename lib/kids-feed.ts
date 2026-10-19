@@ -131,6 +131,15 @@ export function kidsPortalUrl(
 
 export type WatchStatus = 0 | 1 | 2; // 0 new, 1 started, 2 watched
 
+// Hard-coded 13+ audience gate: YouTube exposes no "13+" rating — the
+// only under-13 signal is the uploader's "made for kids" flag, so rows
+// flagged true are hidden from every feed (and from the watch page,
+// whose playlist comes from these queries). NULL = unknown → visible.
+const visibleVideo = or(
+  isNull(videos.madeForKids),
+  eq(videos.madeForKids, false)
+);
+
 // Only the columns the feed grid and the watch-page playlist actually
 // render. The full `videos` row carries description/tags/raw JSONB
 // (~9KB/row); fetching it for ~2k whitelisted videos made every feed
@@ -213,6 +222,7 @@ export async function getKidsVideos(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        visibleVideo,
         q ? ilike(videos.title, `%${q}%`) : undefined,
         channelId ? eq(videos.channelId, channelId) : undefined
       )
@@ -253,6 +263,7 @@ export async function getContinueWatching(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        visibleVideo,
         gt(watchProgress.positionSeconds, 0),
         eq(watchProgress.completed, false),
         or(
@@ -301,6 +312,7 @@ export async function getNewForYou(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        visibleVideo,
         gte(whitelistedVideos.pinnedAt, cutoff),
         or(isNull(watchProgress.completed), eq(watchProgress.completed, false)),
         or(
@@ -349,6 +361,7 @@ export async function getLikedVideos(
       and(
         eq(videoReactions.profileId, profileId),
         eq(videoReactions.reaction, "like"),
+        visibleVideo,
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )
@@ -399,6 +412,7 @@ export async function getWatchHistory(
     .where(
       and(
         eq(watchHistory.profileId, profileId),
+        visibleVideo,
         date ? eq(watchHistory.watchedOn, date) : undefined,
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
@@ -581,6 +595,7 @@ export async function getRecommendedVideos(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        visibleVideo,
         // Disliked videos drop out of the tab entirely.
         sql`${videoReactions.reaction} is distinct from 'dislike'`,
         shortsOnly ? eq(videos.isShort, true) : undefined,
@@ -628,6 +643,7 @@ export async function getKidsChannels(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        visibleVideo,
         isNotNull(videos.channelId)
       )
     )
@@ -705,7 +721,9 @@ export const getPlaylists = cache(async function getPlaylists(
     .select({
       id: playlists.id,
       name: playlists.name,
-      videoCount: count(whitelistedVideos.videoId),
+      // videos.id (not whitelistedVideos.videoId) so items hidden by the
+      // 13+ gate — join condition below — don't count.
+      videoCount: count(videos.id),
       coverThumbnail: sql<string | null>`(
         array_agg(${videos.thumbnail} order by ${playlistItems.position} asc)
         filter (where ${videos.thumbnail} is not null)
@@ -726,7 +744,10 @@ export const getPlaylists = cache(async function getPlaylists(
         eq(whitelistedVideos.videoId, playlistItems.videoId)
       )
     )
-    .leftJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .leftJoin(
+      videos,
+      and(eq(videos.id, whitelistedVideos.videoId), visibleVideo)
+    )
     .where(eq(playlists.profileId, profileId))
     .groupBy(playlists.id, playlists.name, playlists.createdAt)
     .orderBy(asc(playlists.createdAt));
@@ -782,6 +803,7 @@ export async function getPlaylistVideos(
     .where(
       and(
         eq(playlistItems.playlistId, playlistId),
+        visibleVideo,
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )

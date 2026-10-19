@@ -5,6 +5,7 @@ import {
   desc,
   eq,
   ilike,
+  isNull,
   or,
   sql,
 } from "drizzle-orm";
@@ -155,6 +156,13 @@ function toFeedSong(row: SongRow, viewerId?: string): FeedSong {
   };
 }
 
+// Same hard-coded 13+ gate as kids-feed: uploader-flagged "made for
+// kids" compilations (the API's only under-13 signal) hide their songs.
+const visibleVideo = or(
+  isNull(videos.madeForKids),
+  eq(videos.madeForKids, false)
+);
+
 // Song length = end - start; an open end borrows the compilation's
 // duration. Null when the video's duration is also unknown — those
 // rows sort last on the length sort.
@@ -199,6 +207,7 @@ export async function getSongs(
     .innerJoin(videos, eq(videos.id, songs.videoId))
     .where(
       and(
+        visibleVideo,
         feed.video ? eq(songs.videoId, feed.video) : undefined,
         // "mine" fails closed: a missing session id filters to zero
         // rows instead of dropping the predicate and listing
@@ -246,7 +255,7 @@ export async function getCompilations({
     })
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
-    .where(q ? ilike(videos.title, `%${q}%`) : undefined)
+    .where(and(visibleVideo, q ? ilike(videos.title, `%${q}%`) : undefined))
     .groupBy(
       videos.id,
       videos.title,
@@ -263,7 +272,7 @@ export async function getSong(id: string): Promise<FeedSong | null> {
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
-    .where(eq(songs.id, id))
+    .where(and(eq(songs.id, id), visibleVideo))
     .limit(1)
     .then((rows) => rows[0]);
   return row ? toFeedSong(row) : null;
@@ -278,6 +287,7 @@ export async function getNewSongs(
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
+    .where(visibleVideo)
     .orderBy(desc(songs.createdAt))
     .limit(limit);
   return rows.map((row) => toFeedSong(row, viewerId));
@@ -292,7 +302,7 @@ export async function getUserSongs(
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
-    .where(eq(songs.importedBy, userId))
+    .where(and(eq(songs.importedBy, userId), visibleVideo))
     .orderBy(desc(songs.createdAt))
     .limit(limit);
   return rows.map((row) => toFeedSong(row, userId));

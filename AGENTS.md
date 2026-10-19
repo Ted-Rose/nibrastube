@@ -174,6 +174,8 @@ lib/
                                 syncAllChannels
   pusher.ts                     pusherServer + getPusherClient
                                 factories
+  notify.ts                     notifyAdmin() — Telegram sendMessage;
+                                no-ops without TELEGRAM_* env vars
   db/schema.ts                  All tables (single file)
   db/index.ts                   pg Pool → drizzle client
   utils.ts                      cn() (clsx + tailwind-merge)

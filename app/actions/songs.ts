@@ -81,6 +81,7 @@ async function getOrFetchVideo(
   });
 
   if (existing?.fetchedAt) {
+    if (existing.madeForKids === true) return null; // 13+ gate
     return {
       id: existing.id,
       title: existing.title,
@@ -95,7 +96,7 @@ async function getOrFetchVideo(
   } catch {
     return null;
   }
-  if (!details) return null;
+  if (!details || details.madeForKids === true) return null;
 
   if (persist) {
     if (!existing) {

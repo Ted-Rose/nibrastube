@@ -12,7 +12,9 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { z } from "zod";
+import { notifyAdmin } from "@/lib/notify";
 
 export interface AuthFormState {
   error?: string;
@@ -104,6 +106,15 @@ export async function signup(
   // Signing up already proves the password — treat the parent portal as
   // unlocked on this device.
   await setParentUnlocked();
+  // Admin notification goes through after() so the Telegram POST stays
+  // off the signup path and still runs once redirect() below responds.
+  after(async () => {
+    const total = await db.$count(users);
+    await notifyAdmin(
+      `New NibrasTube signup: ${newUser.email} ` +
+        `(${newUser.name ?? "no name"}) — total users: ${total}`
+    );
+  });
   redirect(callback);
 }
 

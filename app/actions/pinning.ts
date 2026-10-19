@@ -27,14 +27,25 @@ export async function pinVideo(profileId: string, videoId: string) {
     where: eq(videos.id, videoId),
   });
 
-  if (!existingVideo) {
+  if (!existingVideo || !existingVideo.fetchedAt) {
+    // Covers first pin and self-heal of rows cached before the
+    // rich-metadata columns existed.
     const details = await getVideoDetails(videoId);
-    await db.insert(videos).values(videoRowValues(details));
-  } else if (!existingVideo.fetchedAt) {
-    // Self-heal rows cached before the rich-metadata columns existed
-    const details = await getVideoDetails(videoId);
-    const { id, ...updates } = videoRowValues(details);
-    await db.update(videos).set(updates).where(eq(videos.id, id));
+    // 13+ gate: refuse uploader-flagged "made for kids" videos — the
+    // API's only under-13 signal.
+    if (details.madeForKids === true) {
+      console.log("Pinning blocked: made-for-kids video", videoId);
+      return;
+    }
+    if (!existingVideo) {
+      await db.insert(videos).values(videoRowValues(details));
+    } else {
+      const { id, ...updates } = videoRowValues(details);
+      await db.update(videos).set(updates).where(eq(videos.id, id));
+    }
+  } else if (existingVideo.madeForKids === true) {
+    console.log("Pinning blocked: made-for-kids video", videoId);
+    return;
   }
 
   // 2. Pin the video to the profile (manual pin: viaChannelId stays null)

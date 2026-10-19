@@ -258,16 +258,17 @@ export async function searchYouTube(query: string): Promise<YouTubeVideo[]> {
     },
   });
 
-  return response.data.items.map((item: YTSearchItem) => ({
-    id: item.id.videoId,
-    title: item.snippet.title,
-    thumbnail: pickThumbnail(item.snippet.thumbnails),
-    channelTitle: item.snippet.channelTitle,
-    publishedAt: item.snippet.publishedAt
-      ? new Date(item.snippet.publishedAt)
-      : null,
-    durationSeconds: null, // search results don't include contentDetails
-  }));
+  // search.list returns no audience/embed flags, so hydrate the hits via
+  // videos.list — getVideosBatch drops non-embeddable and made-for-kids
+  // results (the API's only under-13 signal). Search order is preserved.
+  const ids = (response.data.items as YTSearchItem[])
+    .map((item) => item.id.videoId)
+    .filter((id): id is string => !!id);
+  const byId = new Map((await getVideosBatch(ids)).map((v) => [v.id, v]));
+  return ids.flatMap((id) => {
+    const v = byId.get(id);
+    return v ? [v] : [];
+  });
 }
 
 export async function getVideoDetails(
@@ -510,6 +511,9 @@ export async function getVideosBatch(ids: string[]): Promise<FullVideoDetails[]>
     for (const item of (response.data.items || []) as YTVideoItem[]) {
       // Only embeddable videos can play in the IFrame embed
       if (item.status?.embeddable !== true) continue;
+      // 13+ gate: the API exposes no "13+" rating — the only under-13
+      // signal is the uploader's "made for kids" flag, so flag it out.
+      if (item.status?.madeForKids === true) continue;
       results.push(mapVideoItem(item));
     }
   }

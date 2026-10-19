@@ -1,3 +1,4 @@
+import { cache } from "react";
 import {
   and,
   asc,
@@ -115,6 +116,20 @@ export interface FeedSong {
   canDelete: boolean;
 }
 
+// The subset of FeedSong the ?song= player needs for its queue —
+// serializing the whole row (thumbnail, channelTitle, canDelete)
+// would only bloat the overlay's client props.
+export type SongQueueEntry = Pick<
+  FeedSong,
+  | "id"
+  | "title"
+  | "videoId"
+  | "videoTitle"
+  | "videoDuration"
+  | "startSeconds"
+  | "endSeconds"
+>;
+
 // The raw select row: FeedSong's fields plus the importer's user id,
 // which feeds the "Yours" filter and the canDelete stamp in
 // toFeedSong. Server-side only — it must not reach client props.
@@ -176,8 +191,10 @@ const SONGS_LIMIT = 240;
 // The catalog grid: all imported songs joined to their compilation
 // video, optionally filtered to one compilation (?video=), one
 // importer (view=mine) or a title search (q matches song OR
-// compilation title), ordered per sort/dir.
-export async function getSongs(
+// compilation title), ordered per sort/dir. Cached per request: the
+// ?song= overlay builds its play queue from the same call the grid
+// makes, so the two share one DB round trip.
+export const getSongs = cache(async function getSongs(
   feed: SongsFeedParams,
   importedByUserId?: string
 ): Promise<FeedSong[]> {
@@ -231,7 +248,7 @@ export async function getSongs(
     .limit(SONGS_LIMIT);
 
   return rows.map((row) => toFeedSong(row, importedByUserId));
-}
+});
 
 export interface FeedCompilation {
   id: string;

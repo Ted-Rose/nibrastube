@@ -57,6 +57,8 @@ export default async function SongsPage({ searchParams }: SongsPageProps) {
       ? `/kids/${activeProfileId}`
       : null;
 
+  const userId = parentSession(session)?.id ?? null;
+
   const tabDefs: readonly (readonly [
     SongsView,
     Partial<SongsFeedParams>,
@@ -104,7 +106,7 @@ export default async function SongsPage({ searchParams }: SongsPageProps) {
         )}
 
         <Suspense fallback={<VideoGridSkeleton />}>
-          <FeedContent feed={feed} userId={parentSession(session)?.id ?? null} />
+          <FeedContent feed={feed} userId={userId} />
         </Suspense>
       </main>
 
@@ -112,6 +114,8 @@ export default async function SongsPage({ searchParams }: SongsPageProps) {
         <Suspense fallback={null}>
           <SongOverlay
             songId={songId}
+            feed={feed}
+            userId={userId}
             closeHref={songsCatalogUrl(feed)}
           />
         </Suspense>

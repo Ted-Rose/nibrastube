@@ -137,11 +137,14 @@ components/
                                 ?song=<uuid> in-app player overlay
   song-card-menu.tsx            Owner-only ⋮ "Delete song" on the card
   song-catalog-grid.tsx         Windowed song grid (sentinel paging)
-  song-player-overlay.tsx       Modal IFrame player for ?song= —
-                                plays the startSeconds→endSeconds
-                                segment, closes on ENDED/Escape/
-                                backdrop, snaps rogue suggested
-                                videos back to the segment
+  song-player-overlay.tsx       Full-screen IFrame player for
+                                ?song= — watch-page chrome
+                                (FullscreenPlayer); plays the
+                                segment then auto-advances through
+                                the feed's song queue in place,
+                                closing at queue end or on Escape;
+                                snaps rogue suggested videos back
+                                to the segment
   video-grid-skeleton.tsx       Grid + shelf skeletons (Suspense
                                 fallbacks)
   song-import-form.tsx          Parent form: paste a compilation URL,
@@ -352,10 +355,12 @@ docs/plans/                     Implementation plans with status
   `/kids/<activeProfileId>` — the kids header links here via its
   MusicNotes button (the parent dashboard has a "Song catalog"
   button too). Song cards open the `?song=<uuid>` overlay player
-  in-app (IFrame API, `start`/`end` segment params, ENDED → close;
-  rogue suggested-video loads snap back to the segment); `?song=` is
-  not a feed param, so tab/sort/search navigation closes the
-  overlay.
+  in-app — a watch-page-style full-screen IFrame player that plays
+  each song's `start`/`end` segment, then auto-advances through the
+  feed's song queue in place (the ?song= URL follows via
+  replaceState; last song or Escape → close; rogue suggested-video
+  loads snap back to the segment); `?song=` is not a feed param, so
+  tab/sort/search navigation closes the overlay.
 
 ## Commands
 

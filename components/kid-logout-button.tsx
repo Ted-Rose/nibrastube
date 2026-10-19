@@ -11,6 +11,7 @@ export function KidLogoutButton() {
   return (
     <form action={logoutAction}>
       <Button
+        type="submit"
         variant="ghost"
         size="icon-touch"
         aria-label="Log out"

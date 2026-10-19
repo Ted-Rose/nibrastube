@@ -408,24 +408,49 @@ export async function getWatchHistory(
 // interest. Scoring (see docs/kids-recommendations-plan.md):
 //   channel_affinity = Σ per watch_history row on that channel:
 //     3 if watched_on ≥ today−7, 2 if ≥ today−30, else 1
-//   video_score = affinity × (0.25 if completed else 1)
+//   affinity_score = affinity × (0.25 if completed else 1)
+//   flat_score =
 //     + 8 if in-progress-not-completed   ("continue watching")
 //     + 5 if the channel has any 'like'
 //     + 4 if the video itself is 'liked'
 //     − 20 if the channel has a 'dislike'
 //   disliked videos are excluded entirely.
+// Depth blend — rn is the row's position under the plain
+// affinity+flat ranking; popularity = 0.5^((rn−1)/120) halves every
+// ~120 rows, so the deeper a kid scrolls the less their most-watched
+// channels dominate. Raw affinity is unbounded (a hyper-watched
+// channel would outscore discovery forever), so it first squashes
+// into a bounded 0–40 scale: weight = 40·a/(a+15). The slack is
+// filled by a discovery score that favors low-affinity channels (+10
+// at affinity 0, fading to 0 by affinity 10) and fresh uploads, minus
+// a per-channel round-robin penalty (−2·ln(1 + position within own
+// channel)) so the biggest catalog can't flood the tail — deep pages
+// interleave every channel's videos evenly. The crossfade is per-row
+// and exponential, so less-favored channels mix in gradually, and the
+// more a channel is watched the deeper its videos persist before
+// discovery takes over:
+//   order = weight(affinity_score)·popularity + flat_score
+//           + discovery·(1 − popularity)
+// Postgres allows window functions in ORDER BY, so rn and the
+// within-channel position live in the same ORDER BY — one stable
+// ordering means offset paging can't duplicate or skip rows between
+// pages.
 // No history → all affinities 0 → ordering collapses to newest-first,
 // so the tab still works on day one. Same { video, progress, reaction }
 // row shape as getKidsVideos; inner-joins whitelisted_videos so unpin
 // hides and re-pin returns. sort/dir/channel/list/date are ignored —
-// the ranking IS the sort; only q filters titles. Capped at `limit`
-// rows: the whitelist runs thousands deep and kids never scroll that
-// far. Ranking leans on current_date (recency tiers + md5 shuffle), so
-// never wrap this in unstable_cache/"use cache" — that would freeze
-// the daily re-rank.
+// the ranking IS the sort; only q filters titles. Pages of `limit`
+// rows at `offset` — the grid's sentinel fetches deeper pages via the
+// loadMoreForYou action. Ranking leans on current_date (recency tiers
+// + md5 shuffle), so never wrap this in unstable_cache/"use cache" —
+// that would freeze the daily re-rank.
 export async function getRecommendedVideos(
   profileId: string,
-  { q, limit = 60 }: { q?: string; limit?: number } = {}
+  {
+    q,
+    limit = 60,
+    offset = 0,
+  }: { q?: string; limit?: number; offset?: number } = {}
 ) {
   // Per-channel watch recency/frequency — the dominant signal.
   const channelAffinity = db.$with("channel_affinity").as(
@@ -480,13 +505,41 @@ export async function getRecommendedVideos(
     and (${videos.durationSeconds} is null
          or ${watchProgress.positionSeconds} < ${videos.durationSeconds})`;
 
-  const score = sql<number>`
+  // Popularity signal — the part that fades with scroll depth.
+  const affinityScore = sql<number>`
     coalesce(${channelAffinity.affinity}, 0)
-      * case when ${watchProgress.completed} then 0.25 else 1 end
-    + case when ${inProgress} then 8 else 0 end
+      * case when ${watchProgress.completed} then 0.25 else 1 end`;
+  // Explicit kid signals — apply at every depth.
+  const flatScore = sql<number>`
+    case when ${inProgress} then 8 else 0 end
     + case when ${channelFlags.hasLike} then 5 else 0 end
     + case when ${videoReactions.reaction} = 'like' then 4 else 0 end
     - case when ${channelFlags.hasDislike} then 20 else 0 end`;
+
+  // Position under the plain personalized ranking — the depth dial.
+  const rank = sql`row_number() over (
+    order by ${affinityScore} + ${flatScore} desc,
+             ${videos.publishedAt} desc nulls last,
+             md5(${videos.id} || current_date))`;
+  const popularity = sql`power(0.5, (${rank} - 1) / 120.0)`;
+  // Squash affinity into a bounded 0–40 scale so one hyper-watched
+  // channel can't outscore discovery at any depth.
+  const affinityWeight = sql`
+    40.0 * ${affinityScore} / (${affinityScore} + 15.0)`;
+  // The video's position inside its own channel (newest first) — the
+  // round-robin dial that spreads one channel's catalog across the
+  // tail instead of letting it flood consecutive pages.
+  const withinChannel = sql`row_number() over (
+    partition by ${videos.channelId}
+    order by ${videos.publishedAt} desc nulls last,
+             md5(${videos.id} || current_date))`;
+  const discovery = sql`
+    10 - least(10, coalesce(${channelAffinity.affinity}, 0))
+    + case
+        when ${videos.publishedAt} >= current_date - 30 then 4
+        when ${videos.publishedAt} >= current_date - 90 then 2
+        else 0 end
+    - 2.0 * ln(1 + ${withinChannel})`;
 
   return db
     .with(channelAffinity, channelFlags)
@@ -528,11 +581,14 @@ export async function getRecommendedVideos(
     // published_at) rotate daily via the md5 seed instead of a random
     // order that reshuffles on every refresh.
     .orderBy(
-      desc(score),
+      sql`${affinityWeight} * ${popularity}
+          + ${flatScore}
+          + ${discovery} * (1 - ${popularity}) desc`,
       sql`${videos.publishedAt} desc nulls last`,
       sql`md5(${videos.id} || current_date)`
     )
-    .limit(limit);
+    .limit(limit)
+    .offset(offset);
 }
 
 export interface KidsChannel {

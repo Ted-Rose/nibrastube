@@ -98,7 +98,8 @@ app/
   kids/[profileId]/watch/[videoId]/  Watch page → <WatchExperience>
   actions/                      Server actions (auth, profiles,
                                 pinning, channels, playlists, songs,
-                                invites, safety, refresh)
+                                invites, safety, refresh, kids-feed —
+                                For-You infinite-scroll paging)
   api/sync-channels/            Daily channel sync trigger (GET+POST)
   api/watch-progress/           POST upsert for resume position
   api/video-reactions/          POST like/dislike per profile+video

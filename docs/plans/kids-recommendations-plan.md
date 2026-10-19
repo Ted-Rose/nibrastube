@@ -236,6 +236,29 @@ right.
 - **Making `foryou` the default landing view** — deliberate one-line
   change deferred until the ranking is validated in production.
 
+## Addendum: infinite scroll + depth-decayed popularity (later change)
+
+- The feed is now **infinitely scrollable**: `getRecommendedVideos`
+  takes `offset`, the grid's sentinel calls the `loadMoreForYou`
+  server action (`app/actions/kids-feed.ts`, gated by
+  `canViewProfile`) for the next 60-row page, and `KidsVideoGrid`'s
+  `loadMore` prop appends deduped pages client-side.
+- **Popularity fades with scroll depth.** `rn` = the row's position
+  under the plain affinity ranking; `popularity = 0.5^((rn−1)/120)`
+  halves every ~2 pages. Final order =
+  `weight(affinity)·popularity + flat_score + discovery·(1−popularity)`
+  where `weight(a) = 40·a/(a+15)` squashes raw affinity into 0–40 (a
+  hyper-watched channel can't outscore discovery forever) and
+  `discovery` rewards low-affinity channels (+10 at affinity 0, fading
+  to 0 by affinity 10), fresh uploads, and even channel spread
+  (`−2·ln(1 + position within own channel)` — a big catalog's Nth
+  video sinks with N, so deep pages interleave channels instead of
+  the largest one flooding). Deeper scrolling thus shifts gradually
+  and evenly from most-watched to newer, less-favored channels with
+  no hard cutoff. `rn`/`within` are window functions inside the same
+  ORDER BY (Postgres allows this), keeping offset paging a single
+  stable ordering — no dupes/skips between pages.
+
 ## Verification
 
 1. `npm run typecheck` and `npm run lint` pass.

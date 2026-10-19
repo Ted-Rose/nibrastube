@@ -4,6 +4,7 @@ import { ForYouView } from "./foryou-view";
 import { HistoryFeedView } from "./history-feed-view";
 import { LikedView } from "./liked-view";
 import { PlaylistsView } from "./playlists-view";
+import { ShortsView } from "./shorts-view";
 import { VideosView } from "./videos-view";
 
 // Everything below the view menu fetches feed rows and streams in under
@@ -23,6 +24,8 @@ export function FeedContent({
   switch (feed.view) {
     case "foryou":
       return <ForYouView profileId={profileId} feed={feed} />;
+    case "shorts":
+      return <ShortsView profileId={profileId} feed={feed} />;
     case "channels":
       return <ChannelsView profileId={profileId} feed={feed} />;
     case "liked":

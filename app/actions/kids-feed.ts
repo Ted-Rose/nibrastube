@@ -25,3 +25,22 @@ export async function loadMoreForYou(
     offset: Math.max(0, Math.floor(offset) || 0),
   });
 }
+
+// Same paging gate as loadMoreForYou, restricted to Shorts — backs the
+// Shorts feed's infinite scroll.
+export async function loadMoreShorts(
+  profileId: string,
+  q: string,
+  offset: number
+) {
+  const session = await getSession();
+  const activeProfileId = (await cookies()).get("activeProfileId")?.value;
+  if (!(await canViewProfile(session, profileId, activeProfileId))) {
+    throw new Error("Not authorized for this profile");
+  }
+  return getRecommendedVideos(profileId, {
+    q,
+    offset: Math.max(0, Math.floor(offset) || 0),
+    shortsOnly: true,
+  });
+}

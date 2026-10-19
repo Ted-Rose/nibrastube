@@ -51,6 +51,7 @@ export interface FullVideoDetails extends YouTubeVideo {
   definition: string | null;
   viewCount: number | null;
   likeCount: number | null;
+  isShort: boolean;
   raw: unknown;
 }
 
@@ -130,6 +131,20 @@ export function parseIsoDuration(iso?: string): number | null {
   return +(m[1] ?? 0) * 3600 + +(m[2] ?? 0) * 60 + +(m[3] ?? 0);
 }
 
+// The Data API exposes no "is a Short" flag, so derive it: <=60s or the
+// "#shorts" hashtag in title/description/uploader tags. (3-minute Shorts
+// that aren't tagged slip through — we can't see the vertical aspect
+// ratio that defines them.)
+function looksLikeShort(
+  durationSeconds: number | null,
+  ...text: (string | string[] | null | undefined)[]
+): boolean {
+  if (durationSeconds !== null && durationSeconds <= 60) return true;
+  return text
+    .flatMap((t) => (Array.isArray(t) ? t : [t]))
+    .some((t) => t?.toLowerCase().includes("#shorts"));
+}
+
 // Prefer the largest thumbnail the API actually returned
 function pickThumbnail(t?: YTThumbnails): string {
   return (
@@ -173,6 +188,12 @@ function mapVideoItem(item: YTVideoItem): FullVideoDetails {
     definition: cd?.definition ?? null,
     viewCount: stats?.viewCount != null ? Number(stats.viewCount) : null,
     likeCount: stats?.likeCount != null ? Number(stats.likeCount) : null,
+    isShort: looksLikeShort(
+      parseIsoDuration(cd?.duration),
+      s.title,
+      s.description,
+      s.tags
+    ),
     raw: item,
   };
 }
@@ -201,6 +222,7 @@ export function videoRowValues(v: FullVideoDetails) {
     definition: v.definition,
     viewCount: v.viewCount,
     likeCount: v.likeCount,
+    isShort: v.isShort,
     fetchedAt: new Date(),
     raw: v.raw,
   };

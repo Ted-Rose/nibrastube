@@ -72,7 +72,12 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
         )
       : feed.view === "foryou"
         ? await getRecommendedVideos(profileId, { q: feed.q })
-        : feed.view === "liked"
+        : feed.view === "shorts"
+          ? await getRecommendedVideos(profileId, {
+              q: feed.q,
+              shortsOnly: true,
+            })
+          : feed.view === "liked"
           ? await getLikedVideos(profileId, { q: feed.q })
           : await getKidsVideos(profileId, {
               q: feed.q,
@@ -91,16 +96,21 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
         ? uniqueByVideo(await getWatchHistory(profileId))
         : feed.view === "foryou"
           ? await getRecommendedVideos(profileId)
-          : feed.view === "liked"
-            ? await getLikedVideos(profileId)
-            : await getKidsVideos(profileId, {
-                sort: feed.sort,
-                dir: feed.dir,
-              });
+          : feed.view === "shorts"
+            ? await getRecommendedVideos(profileId, { shortsOnly: true })
+            : feed.view === "liked"
+              ? await getLikedVideos(profileId)
+              : await getKidsVideos(profileId, {
+                  sort: feed.sort,
+                  dir: feed.dir,
+                });
     currentIndex = rows.findIndex((r) => r.video.id === videoId);
   }
 
-  if (currentIndex === -1 && (playlistId || feed.view === "foryou")) {
+  if (
+    currentIndex === -1 &&
+    (playlistId || feed.view === "foryou" || feed.view === "shorts")
+  ) {
     // The playlist was deleted or emptied mid-session, or the video
     // re-ranked below the For-You cap — degrade to the full approved
     // list rather than bouncing back to the portal.

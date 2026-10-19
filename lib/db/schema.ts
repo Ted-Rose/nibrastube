@@ -52,6 +52,9 @@ export const videos = pgTable("videos", {
   definition: text("definition"), // hd | sd
   viewCount: bigint("view_count", { mode: "number" }),
   likeCount: bigint("like_count", { mode: "number" }),
+  // YouTube's API exposes no Shorts flag — derived at fetch time:
+  // duration <= 60s or "#shorts" in title/description/tags.
+  isShort: boolean("is_short").default(false).notNull(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }), // last API refresh; null = stale row from before these columns
   raw: jsonb("raw"), // full videos.list item for fields we didn't promote
   createdAt: timestamp("created_at").defaultNow().notNull(),

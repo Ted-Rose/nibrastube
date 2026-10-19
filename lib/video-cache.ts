@@ -40,6 +40,7 @@ export async function upsertVideoRows(details: FullVideoDetails[]) {
         definition: sql`excluded.definition`,
         viewCount: sql`excluded.view_count`,
         likeCount: sql`excluded.like_count`,
+        isShort: sql`excluded.is_short`,
         fetchedAt: sql`excluded.fetched_at`,
         raw: sql`excluded.raw`,
       },

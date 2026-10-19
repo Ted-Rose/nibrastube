@@ -92,6 +92,13 @@
       "when": 1792052280517,
       "tag": "0012_good_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792418709275,
+      "tag": "0013_chemical_valkyrie",
+      "breakpoints": true
     }
   ]
 }

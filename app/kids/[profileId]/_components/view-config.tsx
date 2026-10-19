@@ -1,6 +1,7 @@
 import type { Icon } from "@phosphor-icons/react";
 import {
   ClockCounterClockwise,
+  DeviceMobile,
   Heart,
   MonitorPlay,
   Play,
@@ -18,7 +19,7 @@ interface KidsViewConfig {
   placeholder: (profileName: string, feed: KidsFeedParams) => string;
 }
 
-// The six kids feeds, in tab order. Everything per-view that the shell or
+// The kids feeds, in tab/shelf order. Everything per-view that the shell or
 // views need — labels, icons, default titles, search placeholders — lives
 // here so the page no longer carries parallel ternary chains.
 export const KIDS_VIEWS: Record<KidsView, KidsViewConfig> = {
@@ -27,6 +28,12 @@ export const KIDS_VIEWS: Record<KidsView, KidsViewConfig> = {
     icon: Sparkle,
     title: "Picked for You",
     placeholder: (profileName) => `Search ${profileName}'s picks...`,
+  },
+  shorts: {
+    label: "Shorts",
+    icon: DeviceMobile,
+    title: "Shorts",
+    placeholder: (profileName) => `Search ${profileName}'s shorts...`,
   },
   videos: {
     label: "Videos",

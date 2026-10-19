@@ -25,18 +25,26 @@ export async function HomeShelves({
   feed: KidsFeedParams;
 }) {
   // Pool max is 3, so the 4th+ queries just queue behind the others.
-  const [continueRows, pickedRows, newRows, playlistRows, likedRows] =
-    await Promise.all([
-      getContinueWatching(profileId),
-      getRecommendedVideos(profileId, { limit: 20 }),
-      getNewForYou(profileId),
-      getPlaylists(profileId),
-      getLikedVideos(profileId, { limit: 20 }),
-    ]);
+  const [
+    continueRows,
+    pickedRows,
+    shortsRows,
+    newRows,
+    playlistRows,
+    likedRows,
+  ] = await Promise.all([
+    getContinueWatching(profileId),
+    getRecommendedVideos(profileId, { limit: 20 }),
+    getRecommendedVideos(profileId, { limit: 20, shortsOnly: true }),
+    getNewForYou(profileId),
+    getPlaylists(profileId),
+    getLikedVideos(profileId, { limit: 20 }),
+  ]);
 
   if (
     continueRows.length === 0 &&
     pickedRows.length === 0 &&
+    shortsRows.length === 0 &&
     newRows.length === 0 &&
     playlistRows.length === 0 &&
     likedRows.length === 0
@@ -55,6 +63,7 @@ export async function HomeShelves({
   // Liked-shelf cards keep the Liked queue they were picked from.
   const homeFeedQuery = kidsFeedQuery(feed);
   const foryouFeedQuery = kidsFeedQuery(feed, { view: "foryou" });
+  const shortsFeedQuery = kidsFeedQuery(feed, { view: "shorts" });
   const likedFeedQuery = kidsFeedQuery(feed, { view: "liked" });
   const watchHref = (videoId: string, feedQuery: string) =>
     `/kids/${profileId}/watch/${videoId}${feedQuery}`;
@@ -87,6 +96,26 @@ export async function HomeShelves({
             <VideoCard
               key={video.id}
               href={watchHref(video.id, foryouFeedQuery)}
+              video={video}
+              profileId={profileId}
+              progress={progress}
+              reaction={reaction}
+              size="compact"
+              eager={takeEager()}
+            />
+          ))}
+        </VideoShelf>
+      )}
+
+      {shortsRows.length > 0 && (
+        <VideoShelf
+          title="Shorts"
+          seeAllHref={kidsPortalUrl(profileId, feed, { view: "shorts" })}
+        >
+          {shortsRows.map(({ video, progress, reaction }) => (
+            <VideoCard
+              key={video.id}
+              href={watchHref(video.id, shortsFeedQuery)}
               video={video}
               profileId={profileId}
               progress={progress}

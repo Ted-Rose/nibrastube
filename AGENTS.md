@@ -99,7 +99,8 @@ app/
   actions/                      Server actions (auth, profiles,
                                 pinning, channels, playlists, songs,
                                 invites, safety, refresh, kids-feed —
-                                For-You infinite-scroll paging)
+                                For-You + Shorts infinite-scroll
+                                paging)
   api/sync-channels/            Daily channel sync trigger (GET+POST)
   api/watch-progress/           POST upsert for resume position
   api/video-reactions/          POST like/dislike per profile+video
@@ -206,7 +207,9 @@ docs/plans/                     Implementation plans with status
 - `profiles` — kids, owned by `parentId`; avatars are emoji strings;
   optional `username` (unique, shares the login-identifier namespace
   with `users.email`) + `passwordHash` enable kid login
-- `videos` — global YouTube video cache, PK = YouTube video ID
+- `videos` — global YouTube video cache, PK = YouTube video ID;
+  `isShort` marks Shorts (derived at fetch time: ≤60 s or `#shorts`
+  in title/description/tags — the API exposes no flag)
 - `channels` — global YouTube channel cache, PK = `UC...` ID, stores
   `uploadsPlaylistId`
 - `songs` — global registry of songs parsed from timestamped comments
@@ -311,28 +314,32 @@ docs/plans/                     Implementation plans with status
   `searchParams`, so view/channel/list/date/sort/dir survive
   untouched.
 - **Home shelves:** the plain Videos tab (no `q`, no `channel`)
-  renders "Continue watching", "Picked for you", "New for you",
-  "Your playlists" and "Liked" shelves above the All-videos grid,
-  streaming in their own Suspense boundary; empty shelves don't
+  renders "Continue watching", "Picked for you", "Shorts", "New for
+  you", "Your playlists" and "Liked" shelves above the All-videos
+  grid, streaming in their own Suspense boundary; empty shelves don't
   render. Watch-page autoplay rebuilds its queue from the card href's
   feed params, so shelf cards carry the params that reproduce the
   right queue — the home feed for the video shelves, `view=foryou`
-  for the Picked-for-you shelf, `view=liked` for the Liked shelf
-  (playlist tiles deep-link to their drill-in).
+  for the Picked-for-you shelf, `view=shorts` for the Shorts shelf,
+  `view=liked` for the Liked shelf (playlist tiles deep-link to
+  their drill-in).
 - **Kids feed code is route-private:**
   `app/kids/[profileId]/_components/` holds the per-view server
   components (`videos-view`, `channels-view`, `liked-view`,
   `playlists-view` + `playlist-detail-view`, `history-feed-view`,
-  `foryou-view`), `home-shelves` and the `KIDS_VIEWS` config table
+  `foryou-view`, `shorts-view`), `home-shelves` and the `KIDS_VIEWS`
+  config table
   (labels, icons, titles, placeholders). `feed-header` and
   `back-link` live in `components/` — the public `/songs` catalog
   shares them and the rest of the kids chrome (`KidsHeader`,
   `KidsViewTabs`, `KidsSortChips`, `KidsSearch`, `EmptyState`,
   skeletons). `feed-content.tsx` picks the view; everything below
-  the header streams under Suspense. `foryou` is a sixth feed with NO
-  tab — it's reached via the "Picked for you" home shelf's see-all
-  link (and its cards' `?view=foryou` autoplay context); a 6th phone
-  tab was rejected for cramped tap targets.
+  the header streams under Suspense. `foryou` and `shorts` are feeds
+  with NO tab — each is reached via its home shelf's see-all link
+  ("Picked for you", "Shorts"; `?view=foryou`/`?view=shorts` also
+  carry the autoplay context); a 6th phone tab was rejected for
+  cramped tap targets. `shorts` runs the same For-You ranking plus
+  `eq(videos.isShort, true)` and pages via `loadMoreShorts`.
 - **The `/songs` catalog is public** — `proxy.ts`'s matcher doesn't
   cover it. Anonymous visitors and kid-locked devices (no session)
   get the read-only catalog plus signup chrome; a parent session

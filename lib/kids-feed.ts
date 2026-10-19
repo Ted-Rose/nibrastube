@@ -34,7 +34,8 @@ export type KidsView =
   | "liked"
   | "playlists"
   | "history"
-  | "foryou";
+  | "foryou"
+  | "shorts";
 export type VideoReaction = "like" | "dislike";
 export type KidsSort = "age" | "status";
 export type KidsDir = "asc" | "desc";
@@ -77,7 +78,8 @@ export function parseKidsFeedParams(
     rawView === "liked" ||
     rawView === "playlists" ||
     rawView === "history" ||
-    rawView === "foryou"
+    rawView === "foryou" ||
+    rawView === "shorts"
       ? rawView
       : "videos";
   const rawChannel = first(raw.channel);
@@ -450,7 +452,14 @@ export async function getRecommendedVideos(
     q,
     limit = 60,
     offset = 0,
-  }: { q?: string; limit?: number; offset?: number } = {}
+    // Shorts tab — same ranking, restricted to videos.is_short.
+    shortsOnly = false,
+  }: {
+    q?: string;
+    limit?: number;
+    offset?: number;
+    shortsOnly?: boolean;
+  } = {}
 ) {
   // Per-channel watch recency/frequency — the dominant signal.
   const channelAffinity = db.$with("channel_affinity").as(
@@ -574,6 +583,7 @@ export async function getRecommendedVideos(
         eq(whitelistedVideos.profileId, profileId),
         // Disliked videos drop out of the tab entirely.
         sql`${videoReactions.reaction} is distinct from 'dislike'`,
+        shortsOnly ? eq(videos.isShort, true) : undefined,
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )

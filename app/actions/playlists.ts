@@ -7,9 +7,11 @@ import { db } from "@/lib/db";
 import {
   playlistItems,
   playlists,
+  videos,
   whitelistedVideos,
 } from "@/lib/db/schema";
 import { assertCanEditKidData } from "@/lib/profiles";
+import { suitableVideo } from "@/lib/video-suitability";
 
 const MAX_PLAYLISTS = 50;
 const MAX_ITEMS = 500;
@@ -140,6 +142,17 @@ export async function addToPlaylist(
   });
   if (!approved) throw new Error("Video is not approved for this profile");
 
+  // A pin on a restricted video is inert — it can never play — so it
+  // has no place in a playlist either (unreachable via the kids UI,
+  // but a crafted action call could otherwise add one).
+  const video = await db.query.videos.findFirst({
+    where: eq(videos.id, videoId),
+    columns: { ageRestricted: true },
+  });
+  if (video?.ageRestricted === true) {
+    throw new Error("Video is age-restricted");
+  }
+
   const [{ total, maxPosition }] = await db
     .select({
       total: count(playlistItems.videoId),
@@ -216,11 +229,15 @@ export async function setPlaylistOrder(
   const ids = parsed.data;
 
   // Compare against the same visible set the client sorted — item rows
-  // outlive unpins (no FK to whitelisted_videos), so a bare select would
-  // include hidden rows the client can't see and reject every posted set.
+  // outlive unpins (no FK to whitelisted_videos) and restricted pins
+  // stay inert, so a bare select would include hidden rows the client
+  // can't see and reject every posted set. Mirrors getPlaylistVideos:
+  // join videos + suitableVideo so an inert restricted pin can't wedge
+  // the reorder.
   const existing = await db
     .select({ videoId: playlistItems.videoId })
     .from(playlistItems)
+    .innerJoin(videos, eq(videos.id, playlistItems.videoId))
     .innerJoin(
       whitelistedVideos,
       and(
@@ -228,7 +245,9 @@ export async function setPlaylistOrder(
         eq(whitelistedVideos.videoId, playlistItems.videoId)
       )
     )
-    .where(eq(playlistItems.playlistId, playlist.id));
+    .where(
+      and(eq(playlistItems.playlistId, playlist.id), suitableVideo)
+    );
   const idSet = new Set(ids);
   if (
     existing.length !== ids.length ||

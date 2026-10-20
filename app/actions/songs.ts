@@ -81,7 +81,12 @@ async function getOrFetchVideo(
   });
 
   if (existing?.fetchedAt) {
-    if (existing.madeForKids === true) return null; // 13+ gate
+    // Unvetted-surface gates: the 13+ made-for-kids flag and the 18+
+    // hard floor both refuse — a song imported from a restricted
+    // video would be invisible to every /songs query forever.
+    if (existing.madeForKids === true || existing.ageRestricted === true) {
+      return null;
+    }
     return {
       id: existing.id,
       title: existing.title,
@@ -96,7 +101,13 @@ async function getOrFetchVideo(
   } catch {
     return null;
   }
-  if (!details || details.madeForKids === true) return null;
+  if (
+    !details ||
+    details.madeForKids === true ||
+    details.ageRestricted === true
+  ) {
+    return null;
+  }
 
   if (persist) {
     if (!existing) {

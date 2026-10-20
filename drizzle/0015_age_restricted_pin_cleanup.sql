@@ -3,8 +3,11 @@
 -- `suitableVideo` guard now hides every age-restricted video from
 -- kids, but existing pins on restricted videos would linger as inert
 -- rows (5 pins on 3 videos as of 2026-10-20). Tombstone the
--- channel-synced ones first so the next sync neither re-pins nor
--- re-fetches them, then delete every pin on a restricted video —
+-- channel-synced ones first so the next sync can't re-pin them
+-- (tombstones stop re-pinning only — pollChannel still re-fetches
+-- the video each run since getExcludedVideoIds filters after
+-- getVideosBatch, which is harmless), then delete every pin on a
+-- restricted video —
 -- manual and synced. The `videos` rows stay: they're inert once
 -- unpinned, and deleting them would cascade
 -- watch_history/watch_progress/video_reactions for no gain.

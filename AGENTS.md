@@ -203,7 +203,8 @@ capacitor-www/                  Placeholder webDir for `cap sync`
                                 (SSR app has no static export; APK
                                 loads remote URL)
 docs/plans/                     Implementation plans with status
-                                headers (see Conventions)
+                                headers — deleted once fully
+                                implemented (see Conventions)
 .devin/skills/                  Agent skills (see "Agent config
                                 layout")
 .devin/workflows/               Workflow docs (create-pr.md)
@@ -496,7 +497,8 @@ Workflow rules (workspace-wide conventions — follow them all):
    `git add .` or `git commit -a`; run `git status` first; leave the
    user's dirty files alone; never commit plan/scratch markdown
    (plan files live in `docs/plans/` — see rule 11 — but only commit
-   them when the task is planning work).
+   them for planning work, or briefly inside the implementing PR per
+   rule 11's commit-then-delete flow).
 4. **Dangerous commands — never run these:**
    - `npm run db:migrate` against `DATABASE_URL` (the pooled
      endpoint) — PgBouncer transaction pooling breaks migrate's
@@ -535,12 +537,17 @@ Workflow rules (workspace-wide conventions — follow them all):
    (`*.p12`/`*.keystore`/`*.jks` are gitignored).
 10. **Keep docs in sync:** update this file (AGENTS.md is the repo's
     contract doc for future sessions) after functionality changes,
-    and update the status header of any `docs/plans/*-plan.md` the
-    change implements.
+    and delete any `docs/plans/*-plan.md` the change fully implements
+    (see rule 11).
 11. **Plans live in `docs/plans/`** as `<feature>-plan.md`
     (multi-file plans get a subdirectory), each with a status header:
     `implemented` / `partial` / `in progress` / `not implemented` /
-    `reverted`.
+    `reverted`. **A fully implemented plan is deleted, not archived**
+    — a done plan only garbages the directory. In the implementing
+    PR, commit the plan file first (reviewers need the context), then
+    delete it in a follow-up commit on the same branch before merge
+    so the done plan never lands in `main`. Only `partial` /
+    `in progress` / `reverted` plans stay, with the header updated.
 12. **Test login for UI verification:** parent account
     `tester@example.com` / `password`, parent PIN `0000`. Use it when
     asked to log in and exercise the UI; if it fails where you're

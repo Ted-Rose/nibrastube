@@ -39,21 +39,12 @@ export async function pinVideo(profileId: string, videoId: string) {
     // rich-metadata columns existed.
     const details = await getVideoDetails(videoId);
     channelId = details.channelId ?? channelId;
-    // 13+ gate: refuse uploader-flagged "made for kids" videos — the
-    // API's only under-13 signal.
-    if (details.madeForKids === true) {
-      console.log("Pinning blocked: made-for-kids video", videoId);
-      return;
-    }
     if (!existingVideo) {
       await db.insert(videos).values(videoRowValues(details));
     } else {
       const { id, ...updates } = videoRowValues(details);
       await db.update(videos).set(updates).where(eq(videos.id, id));
     }
-  } else if (existingVideo.madeForKids === true) {
-    console.log("Pinning blocked: made-for-kids video", videoId);
-    return;
   }
 
   // Hydrate the channel registry for manual pins — approveChannel is

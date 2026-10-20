@@ -250,6 +250,15 @@ docs/plans/                     Implementation plans with status
   every 500ms and snaps back if a "More videos" suggestion hijacks
   the embed, and `/api/watch-progress` rejects non-whitelisted
   writes.
+- **13+ audience gate — unvetted surfaces only.** Videos flagged
+  `madeForKids=true` (YouTube's only under-13 signal) are hidden
+  from YouTube search hydration (`searchYouTube`) and the public
+  `/songs` catalog/imports. Parent-approved content is exempt:
+  `getVideosBatch` must ingest every embeddable video (channel
+  sync's backfill/poll depend on it — filtering here silently
+  empties kids' channels), manual pins accept made-for-kids
+  videos, and `lib/kids-feed.ts` queries do not filter on the
+  flag since everything they return is already whitelisted.
 - **Every mutating server action** must call `getSession()` then
   `assertCanManageProfile(session, profileId)` (owner or
   `shared_access` row). Watch-progress also accepts the

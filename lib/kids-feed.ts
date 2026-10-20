@@ -28,6 +28,10 @@ import {
   whitelistedChannels,
   whitelistedVideos,
 } from "@/lib/db/schema";
+// The 18+ hard floor — every video-returning query below ANDs this in,
+// so an age-restricted pin is inert on every kids surface (and on the
+// watch page, which builds its queue from these functions).
+import { suitableVideo } from "@/lib/video-suitability";
 
 export type KidsView =
   | "videos"
@@ -298,6 +302,7 @@ export async function getKidsVideos(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        suitableVideo,
         typeFilter(type),
         lenFilter(minLen, maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined,
@@ -350,6 +355,7 @@ export async function getContinueWatching(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        suitableVideo,
         typeFilter(type),
         lenFilter(minLen, maxLen),
         gt(watchProgress.positionSeconds, 0),
@@ -412,6 +418,7 @@ export async function getNewForYou(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        suitableVideo,
         typeFilter(type),
         lenFilter(minLen, maxLen),
         gte(whitelistedVideos.pinnedAt, cutoff),
@@ -474,6 +481,7 @@ export async function getLikedVideos(
       and(
         eq(videoReactions.profileId, profileId),
         eq(videoReactions.reaction, "like"),
+        suitableVideo,
         typeFilter(type),
         lenFilter(minLen, maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined
@@ -538,6 +546,7 @@ export async function getWatchHistory(
     .where(
       and(
         eq(watchHistory.profileId, profileId),
+        suitableVideo,
         typeFilter(type),
         lenFilter(minLen, maxLen),
         date ? eq(watchHistory.watchedOn, date) : undefined,
@@ -727,6 +736,7 @@ export async function getRecommendedVideos(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        suitableVideo,
         // Disliked videos drop out of the tab entirely.
         sql`${videoReactions.reaction} is distinct from 'dislike'`,
         typeFilter(type),
@@ -787,6 +797,7 @@ export async function getKidsChannels(
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
+        suitableVideo,
         typeFilter(type),
         lenFilter(minLen, maxLen),
         isNotNull(videos.channelId)
@@ -871,7 +882,7 @@ export const getPlaylists = cache(async function getPlaylists(
       id: playlists.id,
       name: playlists.name,
       // videos.id (not whitelistedVideos.videoId) so items hidden by the
-      // 13+ gate — join condition below — don't count.
+      // 18+ floor — join condition below — don't count.
       videoCount: count(videos.id),
       coverThumbnail: sql<string | null>`(
         array_agg(${videos.thumbnail} order by ${playlistItems.position} asc)
@@ -893,7 +904,10 @@ export const getPlaylists = cache(async function getPlaylists(
         eq(whitelistedVideos.videoId, playlistItems.videoId)
       )
     )
-    .leftJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .leftJoin(
+      videos,
+      and(eq(videos.id, whitelistedVideos.videoId), suitableVideo)
+    )
     .where(eq(playlists.profileId, profileId))
     .groupBy(playlists.id, playlists.name, playlists.createdAt)
     .orderBy(asc(playlists.createdAt));
@@ -959,6 +973,7 @@ export async function getPlaylistVideos(
     .where(
       and(
         eq(playlistItems.playlistId, playlistId),
+        suitableVideo,
         typeFilter(type),
         lenFilter(minLen, maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined

@@ -6,6 +6,7 @@ import { getSession, isKidSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { videos, watchHistory, watchProgress, whitelistedVideos } from "@/lib/db/schema";
 import { assertCanManageProfile } from "@/lib/profiles";
+import { suitableVideo } from "@/lib/video-suitability";
 
 const bodySchema = z.object({
   profileId: z.string().uuid(),
@@ -45,14 +46,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Only track whitelisted content
-  const approved = await db.query.whitelistedVideos.findFirst({
-    where: and(
-      eq(whitelistedVideos.profileId, body.profileId),
-      eq(whitelistedVideos.videoId, body.videoId)
-    ),
-  });
-  if (!approved) return NextResponse.json({ ok: false }, { status: 403 });
+  // Only track whitelisted, kid-suitable content — the `suitableVideo`
+  // 18+ floor rejects even parent-approved age-restricted videos.
+  const approved = await db
+    .select({ videoId: whitelistedVideos.videoId })
+    .from(whitelistedVideos)
+    .innerJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .where(
+      and(
+        eq(whitelistedVideos.profileId, body.profileId),
+        eq(whitelistedVideos.videoId, body.videoId),
+        suitableVideo
+      )
+    )
+    .limit(1);
+  if (approved.length === 0)
+    return NextResponse.json({ ok: false }, { status: 403 });
 
   // Clamp to server time: a far-future client clock must not poison the
   // ordering guard below and permanently block newer updates.

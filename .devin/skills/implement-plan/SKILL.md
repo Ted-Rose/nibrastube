@@ -123,9 +123,13 @@ If the reviewer reported blocker/should-fix findings:
 - Fixers on the same PR run sequentially — one at a time.
 - If a subagent reports the plan is unimplementable as written, stop
   and ask the user rather than improvising.
-- When done, update the plan file's status header in `docs/plans/`
-  (`implemented` / `partial` / `in progress` / `not implemented` /
-  `reverted`) and include that edit in the PR or a follow-up commit.
+- Done plans are deleted, not archived (AGENTS.md rule 11): if the
+  implementation PR added or updated a `docs/plans/*-plan.md`,
+  commit the plan file first (reviewers need the context), then
+  delete it in a follow-up commit on the same branch before merge —
+  a fully implemented plan never lands in `main`. Leave the file
+  only when the outcome is `partial` / `in progress` / `reverted`,
+  with its status header updated accordingly.
 
 ## Final report
 

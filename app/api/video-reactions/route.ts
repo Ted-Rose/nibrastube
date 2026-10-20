@@ -5,8 +5,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession, isKidSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { videoReactions, whitelistedVideos } from "@/lib/db/schema";
+import { videoReactions, videos, whitelistedVideos } from "@/lib/db/schema";
 import { assertCanManageProfile } from "@/lib/profiles";
+import { suitableVideo } from "@/lib/video-suitability";
 
 const bodySchema = z.object({
   profileId: z.string().uuid(),
@@ -41,14 +42,23 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Whitelist is absolute — reactions only on approved videos.
-  const approved = await db.query.whitelistedVideos.findFirst({
-    where: and(
-      eq(whitelistedVideos.profileId, profileId),
-      eq(whitelistedVideos.videoId, videoId)
-    ),
-  });
-  if (!approved) return NextResponse.json({ ok: false }, { status: 403 });
+  // Whitelist is absolute — reactions only on approved videos. The
+  // `suitableVideo` 18+ floor rejects even parent-approved
+  // age-restricted videos.
+  const approved = await db
+    .select({ videoId: whitelistedVideos.videoId })
+    .from(whitelistedVideos)
+    .innerJoin(videos, eq(videos.id, whitelistedVideos.videoId))
+    .where(
+      and(
+        eq(whitelistedVideos.profileId, profileId),
+        eq(whitelistedVideos.videoId, videoId),
+        suitableVideo
+      )
+    )
+    .limit(1);
+  if (approved.length === 0)
+    return NextResponse.json({ ok: false }, { status: 403 });
 
   if (reaction === null) {
     await db

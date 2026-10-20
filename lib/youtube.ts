@@ -260,15 +260,20 @@ export async function searchYouTube(query: string): Promise<YouTubeVideo[]> {
 
   // search.list returns no audience/embed flags, so hydrate the hits via
   // videos.list — getVideosBatch drops non-embeddable results; the 13+
-  // gate (uploader's made-for-kids flag) is applied here since search is
-  // an unvetted surface. Search order is preserved.
+  // gate (uploader's made-for-kids flag) and the 18+ floor (YouTube's
+  // own age-restriction flag) are applied here since search is an
+  // unvetted surface — a restricted video can never play, so offering
+  // it to parents would only produce inert pins. Search order is
+  // preserved.
   const ids = (response.data.items as YTSearchItem[])
     .map((item) => item.id.videoId)
     .filter((id): id is string => !!id);
   const byId = new Map((await getVideosBatch(ids)).map((v) => [v.id, v]));
   return ids.flatMap((id) => {
     const v = byId.get(id);
-    return v && v.madeForKids !== true ? [v] : [];
+    return v && v.madeForKids !== true && v.ageRestricted !== true
+      ? [v]
+      : [];
   });
 }
 

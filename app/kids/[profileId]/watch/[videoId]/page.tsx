@@ -146,6 +146,9 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   if (currentIndex === -1) {
     // If not approved, redirect back to the portal — keep the feed
     // context so a stale Liked-tab link returns to the Liked tab.
+    // The feed queries also apply the `suitableVideo` 18+ floor, so an
+    // age-restricted video lands here and stays unwatchable even when
+    // a parent pinned it.
     redirect(`/kids/${profileId}${kidsFeedQuery(feed)}`);
   }
 

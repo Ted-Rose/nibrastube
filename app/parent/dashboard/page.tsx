@@ -84,6 +84,10 @@ async function PinnedVideosCard({
         id: videos.id,
         title: videos.title,
         thumbnail: videos.thumbnail,
+        // Drives the "Blocked" label — a pinned age-restricted video is
+        // inert on kids surfaces (the `suitableVideo` query guard), so
+        // hiding it here would repeat the invisible-pin UX bug.
+        ageRestricted: videos.ageRestricted,
       })
       .from(whitelistedVideos)
       .innerJoin(videos, eq(whitelistedVideos.videoId, videos.id))

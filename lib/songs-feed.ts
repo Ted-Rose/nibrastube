@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { songs, videos } from "@/lib/db/schema";
+import { suitableVideo } from "@/lib/video-suitability";
 
 export type SongsView = "songs" | "compilations" | "mine";
 export type SongsSort = "recent" | "title" | "length";
@@ -171,8 +172,11 @@ function toFeedSong(row: SongRow, viewerId?: string): FeedSong {
   };
 }
 
-// Same hard-coded 13+ gate as kids-feed: uploader-flagged "made for
-// kids" compilations (the API's only under-13 signal) hide their songs.
+// Same hard-coded 13+ gate as before: uploader-flagged "made for
+// kids" compilations (the API's only under-13 signal) hide their
+// songs. The catalog is an unvetted surface, so every query below
+// also ANDs the shared `suitableVideo` 18+ floor — an age-restricted
+// compilation's songs never display or play.
 const visibleVideo = or(
   isNull(videos.madeForKids),
   eq(videos.madeForKids, false)
@@ -225,6 +229,7 @@ export const getSongs = cache(async function getSongs(
     .where(
       and(
         visibleVideo,
+        suitableVideo,
         feed.video ? eq(songs.videoId, feed.video) : undefined,
         // "mine" fails closed: a missing session id filters to zero
         // rows instead of dropping the predicate and listing
@@ -272,7 +277,13 @@ export async function getCompilations({
     })
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
-    .where(and(visibleVideo, q ? ilike(videos.title, `%${q}%`) : undefined))
+    .where(
+      and(
+        visibleVideo,
+        suitableVideo,
+        q ? ilike(videos.title, `%${q}%`) : undefined
+      )
+    )
     .groupBy(
       videos.id,
       videos.title,
@@ -289,7 +300,7 @@ export async function getSong(id: string): Promise<FeedSong | null> {
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
-    .where(and(eq(songs.id, id), visibleVideo))
+    .where(and(eq(songs.id, id), visibleVideo, suitableVideo))
     .limit(1)
     .then((rows) => rows[0]);
   return row ? toFeedSong(row) : null;
@@ -304,7 +315,7 @@ export async function getNewSongs(
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
-    .where(visibleVideo)
+    .where(and(visibleVideo, suitableVideo))
     .orderBy(desc(songs.createdAt))
     .limit(limit);
   return rows.map((row) => toFeedSong(row, viewerId));
@@ -319,7 +330,7 @@ export async function getUserSongs(
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
-    .where(and(eq(songs.importedBy, userId), visibleVideo))
+    .where(and(eq(songs.importedBy, userId), visibleVideo, suitableVideo))
     .orderBy(desc(songs.createdAt))
     .limit(limit);
   return rows.map((row) => toFeedSong(row, userId));

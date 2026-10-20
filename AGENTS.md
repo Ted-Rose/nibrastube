@@ -251,15 +251,28 @@ docs/plans/                     Implementation plans with status
   every 500ms and snaps back if a "More videos" suggestion hijacks
   the embed, and `/api/watch-progress` rejects non-whitelisted
   writes.
-- **13+ audience gate — unvetted surfaces only.** Videos flagged
-  `madeForKids=true` (YouTube's only under-13 signal) are hidden
-  from YouTube search hydration (`searchYouTube`) and the public
-  `/songs` catalog/imports. Parent-approved content is exempt:
-  `getVideosBatch` must ingest every embeddable video (channel
-  sync's backfill/poll depend on it — filtering here silently
-  empties kids' channels), manual pins accept made-for-kids
-  videos, and `lib/kids-feed.ts` queries do not filter on the
-  flag since everything they return is already whitelisted.
+- **Age suitability — two tiers.** YouTube gives exactly two
+  audience flags, treated differently:
+  - `age_restricted=true` (YouTube's own 18+ flag) is a **hard
+    floor**: the video can never play for kids, even when a parent
+    pinned it. Enforced at query time via the shared
+    `suitableVideo` WHERE fragment (`lib/video-suitability.ts`,
+    `age_restricted IS DISTINCT FROM true` — NULL flags count as
+    suitable) on every display/write surface: all
+    `lib/kids-feed.ts` queries (which also cover the watch page),
+    `lib/songs-feed.ts`, `searchYouTube` hydration, and the
+    `/api/watch-progress` + `/api/video-reactions` whitelist
+    checks. There is no ingest drop — a pin on a restricted video
+    is an inert row, labeled "Blocked" in the dashboard's
+    Approved Videos list so it isn't silently invisible.
+  - `made_for_kids=true` (the only under-13 signal) is filtered
+    **on unvetted surfaces only** — YouTube search hydration and
+    the public `/songs` catalog/imports. Parent-approved content
+    is exempt: `getVideosBatch` must ingest every embeddable
+    video (channel sync's backfill/poll depend on it — filtering
+    here silently empties kids' channels), manual pins accept
+    made-for-kids videos, and `lib/kids-feed.ts` does not filter
+    on the flag.
 - **Every mutating server action** must call `getSession()` then
   `assertCanManageProfile(session, profileId)` (owner or
   `shared_access` row). Watch-progress also accepts the

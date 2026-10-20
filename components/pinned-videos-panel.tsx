@@ -11,6 +11,10 @@ export interface PinnedVideoItem {
   id: string;
   title: string;
   thumbnail: string;
+  // true = YouTube-18+ flag: the query-time `suitableVideo` floor makes
+  // this pin inert on kids surfaces — label it instead of hiding it so
+  // the parent can see (and unpin) the dead entry.
+  ageRestricted?: boolean | null;
 }
 
 // Profiles can accumulate thousands of approved videos via channel sync —
@@ -51,6 +55,12 @@ export function PinnedVideosPanel({
           <img src={v.thumbnail} className="w-16 h-10 object-cover rounded shadow-sm" alt="" />
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium truncate">{v.title}</p>
+            {v.ageRestricted === true && (
+              <p className="text-[11px] font-medium text-destructive">
+                Blocked — YouTube marks this video 18+, so it can never
+                play for kids.
+              </p>
+            )}
           </div>
           <form action={unpinVideo.bind(null, profileId, v.id)}>
             <SubmitButton variant="ghost" size="icon-touch" aria-label={`Unpin ${v.title}`} className="text-destructive opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">

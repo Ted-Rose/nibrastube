@@ -1,11 +1,13 @@
 import { EmptyState } from "@/components/empty-state";
 import { HistoryDatePicker } from "@/components/history-date-picker";
+import { KidsLengthFilter } from "@/components/kids-length-filter";
 import { KidsTypeFilter } from "@/components/kids-type-filter";
 import { HistoryView } from "@/components/history-view";
 import {
   getWatchHistory,
   kidsFeedQuery,
   kidsPortalUrl,
+  maxLenLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { FeedHeader } from "@/components/feed-header";
@@ -28,6 +30,7 @@ export async function HistoryFeedView({
     q: query,
     date: feed.date ?? undefined,
     type: feed.type,
+    maxLen: feed.maxLen,
   });
   const ViewIcon = KIDS_VIEWS.history.icon;
 
@@ -48,14 +51,16 @@ export async function HistoryFeedView({
       label: "All days",
       href: kidsPortalUrl(profileId, feed, { date: null }),
     };
-  } else if (feed.type !== "all") {
+  } else if (feed.type !== "all" || feed.maxLen !== null) {
     emptyMessage =
       feed.type === "shorts"
         ? "No shorts watched yet!"
-        : "No videos watched yet!";
+        : feed.maxLen !== null
+          ? `No videos under ${maxLenLabel(feed.maxLen)} watched yet!`
+          : "No videos watched yet!";
     emptyAction = {
       label: "Show everything",
-      href: kidsPortalUrl(profileId, feed, { type: "all" }),
+      href: kidsPortalUrl(profileId, feed, { type: "all", maxLen: null }),
     };
   }
 
@@ -66,6 +71,7 @@ export async function HistoryFeedView({
         actions={
           <div className="flex flex-wrap items-center gap-3">
             <KidsTypeFilter profileId={profileId} feed={feed} />
+            <KidsLengthFilter maxLen={feed.maxLen} />
             <HistoryDatePicker date={feed.date} />
           </div>
         }

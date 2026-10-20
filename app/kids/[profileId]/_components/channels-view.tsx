@@ -1,17 +1,19 @@
 import { EmptyState } from "@/components/empty-state";
+import { KidsLengthFilter } from "@/components/kids-length-filter";
 import { KidsTileCard } from "@/components/kids-tile-card";
 import { KidsTypeFilter } from "@/components/kids-type-filter";
 import {
   getKidsChannels,
   kidsPortalUrl,
+  maxLenLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
 // Channels tab — one tile per approved channel (including mid-backfill
-// channels with no videos yet). The ?type= filter narrows tiles to
-// channels that actually have shorts/videos and carries into the
+// channels with no videos yet). The ?type=/?max= filters narrow tiles
+// to channels that actually have matching videos and carry into the
 // drill-in's video grid.
 export async function ChannelsView({
   profileId,
@@ -24,6 +26,7 @@ export async function ChannelsView({
   const channelRows = await getKidsChannels(profileId, {
     q: query,
     type: feed.type,
+    maxLen: feed.maxLen,
   });
   const ViewIcon = KIDS_VIEWS.channels.icon;
 
@@ -31,7 +34,12 @@ export async function ChannelsView({
     <>
       <FeedHeader
         title={feedTitle(feed)}
-        actions={<KidsTypeFilter profileId={profileId} feed={feed} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            <KidsTypeFilter profileId={profileId} feed={feed} />
+            <KidsLengthFilter maxLen={feed.maxLen} />
+          </div>
+        }
       />
 
       {channelRows.length === 0 ? (
@@ -44,7 +52,9 @@ export async function ChannelsView({
                 ? "No channels with shorts yet!"
                 : feed.type === "videos"
                   ? "No channels with videos yet!"
-                  : "Ask a grown-up to approve some channels!"
+                  : feed.maxLen !== null
+                    ? `No channels with videos under ${maxLenLabel(feed.maxLen)} yet!`
+                    : "Ask a grown-up to approve some channels!"
           }
           action={
             query
@@ -52,10 +62,13 @@ export async function ChannelsView({
                   label: "Clear search",
                   href: kidsPortalUrl(profileId, feed, { q: "" }),
                 }
-              : feed.type !== "all"
+              : feed.type !== "all" || feed.maxLen !== null
                 ? {
                     label: "Show everything",
-                    href: kidsPortalUrl(profileId, feed, { type: "all" }),
+                    href: kidsPortalUrl(profileId, feed, {
+                      type: "all",
+                      maxLen: null,
+                    }),
                   }
                 : undefined
           }

@@ -42,10 +42,12 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   if (!profile) notFound();
 
   // Autoplay playlist mirrors the grid the kid came from: same channel
-  // filter, search, sort, shorts/videos type — or the kid-ordered
-  // playlist queue. The Shorts feed is intrinsically type "shorts".
+  // filter, search, sort, shorts/videos type, length cap — or the
+  // kid-ordered playlist queue. The Shorts feed is intrinsically type
+  // "shorts".
   const feed = parseKidsFeedParams(await searchParams);
   const type = feed.view === "shorts" ? ("shorts" as const) : feed.type;
+  const maxLen = feed.maxLen;
   const playlistId = feed.view === "playlists" ? feed.list : null;
   const history = feed.view === "history";
   // getWatchHistory returns one row per (video, watched-on day), so a
@@ -67,6 +69,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
     ? await getPlaylistVideos(profileId, playlistId, {
         q: feed.q,
         type,
+        maxLen,
       })
     : history
       ? uniqueByVideo(
@@ -74,18 +77,24 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
             q: feed.q,
             date: feed.date ?? undefined,
             type,
+            maxLen,
           })
         )
       : feed.view === "foryou" || feed.view === "shorts"
-        ? await getRecommendedVideos(profileId, { q: feed.q, type })
+        ? await getRecommendedVideos(profileId, {
+            q: feed.q,
+            type,
+            maxLen,
+          })
         : feed.view === "liked"
-          ? await getLikedVideos(profileId, { q: feed.q, type })
+          ? await getLikedVideos(profileId, { q: feed.q, type, maxLen })
           : await getKidsVideos(profileId, {
               q: feed.q,
               channelId: feed.channel,
               sort: feed.sort,
               dir: feed.dir,
               type,
+              maxLen,
             });
   let currentIndex = rows.findIndex((r) => r.video.id === videoId);
 

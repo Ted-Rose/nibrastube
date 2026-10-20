@@ -8,9 +8,11 @@ import {
   getPlaylists,
   kidsFeedQuery,
   kidsPortalUrl,
+  maxLenLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { EmptyState } from "@/components/empty-state";
+import { KidsLengthFilter } from "@/components/kids-length-filter";
 import { KidsTypeFilter } from "@/components/kids-type-filter";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { KidsSortChips } from "@/components/kids-sort-chips";
@@ -60,11 +62,12 @@ export async function VideosView({
   if (channel === null && !query) {
     return (
       <>
-        {/* The type filter scopes the whole page — shelves and the
-            All-videos grid alike — so on the home layout it sits on
-            top instead of inside a section header. */}
-        <div className="mb-6 flex justify-end">
+        {/* The type/length filters scope the whole page — shelves and
+            the All-videos grid alike — so on the home layout they sit
+            on top instead of inside a section header. */}
+        <div className="mb-6 flex flex-wrap justify-end gap-3">
           <KidsTypeFilter profileId={profileId} feed={feed} />
+          <KidsLengthFilter maxLen={feed.maxLen} />
         </div>
         <Suspense fallback={<ShelfSkeleton />}>
           <HomeShelves profileId={profileId} feed={feed} />
@@ -82,6 +85,7 @@ export async function VideosView({
     sort: feed.sort,
     dir: feed.dir,
     type: feed.type,
+    maxLen: feed.maxLen,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu.
@@ -125,18 +129,23 @@ export async function VideosView({
       ? "No shorts here yet!"
       : feed.type === "videos"
         ? "No videos here yet!"
-        : channelApproved
-          ? "Videos are on the way!"
-          : "Ask a grown-up to pick some videos!";
+        : feed.maxLen !== null
+          ? `No videos under ${maxLenLabel(feed.maxLen)} yet!`
+          : channelApproved
+            ? "Videos are on the way!"
+            : "Ask a grown-up to pick some videos!";
   const emptyAction = query
     ? {
         label: "Clear search",
         href: kidsPortalUrl(profileId, feed, { q: "" }),
       }
-    : feed.type !== "all"
+    : feed.type !== "all" || feed.maxLen !== null
       ? {
           label: "Show everything",
-          href: kidsPortalUrl(profileId, feed, { type: "all" }),
+          href: kidsPortalUrl(profileId, feed, {
+            type: "all",
+            maxLen: null,
+          }),
         }
       : channelApproved
         ? {
@@ -158,6 +167,7 @@ export async function VideosView({
         actions={
           <div className="flex flex-wrap items-center gap-3">
             <KidsTypeFilter profileId={profileId} feed={feed} />
+            <KidsLengthFilter maxLen={feed.maxLen} />
             <KidsSortChips options={sortOptions(profileId, feed)} />
           </div>
         }
@@ -199,6 +209,7 @@ async function AllVideosGrid({
     sort: feed.sort,
     dir: feed.dir,
     type: feed.type,
+    maxLen: feed.maxLen,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu. cache() makes this the same query
@@ -226,13 +237,18 @@ async function AllVideosGrid({
               ? "No shorts yet!"
               : feed.type === "videos"
                 ? "No videos yet!"
-                : "Ask a grown-up to pick some videos!"
+                : feed.maxLen !== null
+                  ? `No videos under ${maxLenLabel(feed.maxLen)} yet!`
+                  : "Ask a grown-up to pick some videos!"
           }
           action={
-            feed.type !== "all"
+            feed.type !== "all" || feed.maxLen !== null
               ? {
                   label: "Show everything",
-                  href: kidsPortalUrl(profileId, feed, { type: "all" }),
+                  href: kidsPortalUrl(profileId, feed, {
+                    type: "all",
+                    maxLen: null,
+                  }),
                 }
               : undefined
           }

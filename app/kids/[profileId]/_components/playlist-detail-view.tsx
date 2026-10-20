@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Play, Playlist } from "@phosphor-icons/react/dist/ssr";
 import { EmptyState } from "@/components/empty-state";
 import type { FeedRow } from "@/components/kids-video-grid";
+import { KidsLengthFilter } from "@/components/kids-length-filter";
 import { KidsTypeFilter } from "@/components/kids-type-filter";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { PlaylistActionsMenu } from "@/components/playlist-actions-menu";
@@ -10,6 +11,7 @@ import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
 import {
   kidsFeedQuery,
   kidsPortalUrl,
+  maxLenLabel,
   type KidsFeedParams,
   type KidsPlaylist,
 } from "@/lib/kids-feed";
@@ -38,10 +40,13 @@ export function PlaylistDetailView({
         label: "Clear search",
         href: kidsPortalUrl(profileId, feed, { q: "" }),
       }
-    : feed.type !== "all"
+    : feed.type !== "all" || feed.maxLen !== null
       ? {
           label: "Show everything",
-          href: kidsPortalUrl(profileId, feed, { type: "all" }),
+          href: kidsPortalUrl(profileId, feed, {
+            type: "all",
+            maxLen: null,
+          }),
         }
       : {
           label: "Find videos",
@@ -62,6 +67,7 @@ export function PlaylistDetailView({
         actions={
           <div className="flex flex-wrap items-center gap-3">
             <KidsTypeFilter profileId={profileId} feed={feed} />
+            <KidsLengthFilter maxLen={feed.maxLen} />
             {rows.length > 0 && (
               <Link
                 href={`/kids/${profileId}/watch/${rows[0].video.id}${kidsFeedQuery(feed)}`}
@@ -93,7 +99,9 @@ export function PlaylistDetailView({
                 ? "No shorts in this playlist!"
                 : feed.type === "videos"
                   ? "No videos in this playlist!"
-                  : "No videos yet! Tap ⋮ on a video to add it."
+                  : feed.maxLen !== null
+                    ? `No videos under ${maxLenLabel(feed.maxLen)} in this playlist!`
+                    : "No videos yet! Tap ⋮ on a video to add it."
           }
           action={emptyAction}
         />

@@ -27,6 +27,7 @@ export async function ShortsView({
   const rows = await getRecommendedVideos(profileId, {
     q: query,
     type: "shorts",
+    maxLen: feed.maxLen,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu.
@@ -69,7 +70,7 @@ export async function ShortsView({
             // exhausted — no paging hook needed.
             loadMore={
               rows.length === 60
-                ? loadMoreShorts.bind(null, profileId, query)
+                ? loadMoreShorts.bind(null, profileId, query, feed.maxLen)
                 : undefined
             }
           />

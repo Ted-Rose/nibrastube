@@ -27,6 +27,7 @@ export async function PlaylistsView({
     ? await getPlaylistVideos(profileId, list, {
         q: query,
         type: feed.type,
+        maxLen: feed.maxLen,
       })
     : [];
   // Playlists snapshot — feeds both playlists views and the shared

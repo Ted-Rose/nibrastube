@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/empty-state";
+import { KidsLengthFilter } from "@/components/kids-length-filter";
 import { KidsTypeFilter } from "@/components/kids-type-filter";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
@@ -8,6 +9,7 @@ import {
   getRecommendedVideos,
   kidsFeedQuery,
   kidsPortalUrl,
+  maxLenLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { FeedHeader } from "@/components/feed-header";
@@ -15,7 +17,7 @@ import { feedTitle, KIDS_VIEWS } from "./view-config";
 
 // For You tab — whitelisted videos ranked by predicted interest (see
 // getRecommendedVideos). No sort chips: the ranking IS the sort; the
-// ?type= filter still applies.
+// ?type=/?max= filters still apply.
 export async function ForYouView({
   profileId,
   feed,
@@ -28,6 +30,7 @@ export async function ForYouView({
   const rows = await getRecommendedVideos(profileId, {
     q: query,
     type: feed.type,
+    maxLen: feed.maxLen,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu.
@@ -38,7 +41,12 @@ export async function ForYouView({
     <>
       <FeedHeader
         title={feedTitle(feed)}
-        actions={<KidsTypeFilter profileId={profileId} feed={feed} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            <KidsTypeFilter profileId={profileId} feed={feed} />
+            <KidsLengthFilter maxLen={feed.maxLen} />
+          </div>
+        }
       />
 
       {rows.length === 0 ? (
@@ -53,7 +61,9 @@ export async function ForYouView({
                 ? "No shorts picked yet!"
                 : feed.type === "videos"
                   ? "No videos picked yet!"
-                  : "Nothing picked yet!"
+                  : feed.maxLen !== null
+                    ? `Nothing under ${maxLenLabel(feed.maxLen)} picked yet!`
+                    : "Nothing picked yet!"
           }
           action={
             query
@@ -61,10 +71,13 @@ export async function ForYouView({
                   label: "Clear search",
                   href: kidsPortalUrl(profileId, feed, { q: "" }),
                 }
-              : feed.type !== "all"
+              : feed.type !== "all" || feed.maxLen !== null
                 ? {
                     label: "Show everything",
-                    href: kidsPortalUrl(profileId, feed, { type: "all" }),
+                    href: kidsPortalUrl(profileId, feed, {
+                      type: "all",
+                      maxLen: null,
+                    }),
                   }
                 : {
                     label: "Find videos",
@@ -88,7 +101,13 @@ export async function ForYouView({
             // exhausted — no paging hook needed.
             loadMore={
               rows.length === 60
-                ? loadMoreForYou.bind(null, profileId, query, feed.type)
+                ? loadMoreForYou.bind(
+                    null,
+                    profileId,
+                    query,
+                    feed.type,
+                    feed.maxLen
+                  )
                 : undefined
             }
           />

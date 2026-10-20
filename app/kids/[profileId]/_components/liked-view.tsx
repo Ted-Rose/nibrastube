@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { House } from "@phosphor-icons/react/dist/ssr";
 import { EmptyState } from "@/components/empty-state";
+import { KidsLengthFilter } from "@/components/kids-length-filter";
 import { KidsTypeFilter } from "@/components/kids-type-filter";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
@@ -10,6 +11,7 @@ import {
   getPlaylists,
   kidsFeedQuery,
   kidsPortalUrl,
+  maxLenLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { FeedHeader } from "@/components/feed-header";
@@ -25,7 +27,11 @@ export async function LikedView({
 }) {
   const { q: query } = feed;
 
-  const rows = await getLikedVideos(profileId, { q: query, type: feed.type });
+  const rows = await getLikedVideos(profileId, {
+    q: query,
+    type: feed.type,
+    maxLen: feed.maxLen,
+  });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu.
   const playlistRows = await getPlaylists(profileId);
@@ -38,6 +44,7 @@ export async function LikedView({
         actions={
           <div className="flex flex-wrap items-center gap-3">
             <KidsTypeFilter profileId={profileId} feed={feed} />
+            <KidsLengthFilter maxLen={feed.maxLen} />
             <Link
               href={`/kids/${profileId}`}
               className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
@@ -62,7 +69,9 @@ export async function LikedView({
                 ? "No liked shorts yet!"
                 : feed.type === "videos"
                   ? "No liked videos yet!"
-                  : "No liked videos yet! Tap the 👍 while watching."
+                  : feed.maxLen !== null
+                    ? `No liked videos under ${maxLenLabel(feed.maxLen)} yet!`
+                    : "No liked videos yet! Tap the 👍 while watching."
           }
           action={
             query
@@ -70,10 +79,13 @@ export async function LikedView({
                   label: "Clear search",
                   href: kidsPortalUrl(profileId, feed, { q: "" }),
                 }
-              : feed.type !== "all"
+              : feed.type !== "all" || feed.maxLen !== null
                 ? {
                     label: "Show everything",
-                    href: kidsPortalUrl(profileId, feed, { type: "all" }),
+                    href: kidsPortalUrl(profileId, feed, {
+                      type: "all",
+                      maxLen: null,
+                    }),
                   }
                 : {
                     label: "Find videos",

@@ -10,6 +10,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lte,
   ne,
   or,
   sql,
@@ -43,6 +44,15 @@ export type KidsDir = "asc" | "desc";
 // the URL); "videos"/"shorts" filter every video list by is_short.
 export type KidsType = "all" | "videos" | "shorts";
 
+// Empty-state phrasing for a ?max= length cap — "under 10 minutes"
+// etc.
+export function maxLenLabel(maxLen: number): string {
+  const mins = Math.round(maxLen / 60);
+  return mins >= 60 && mins % 60 === 0
+    ? `${mins / 60} hour${mins === 60 ? "" : "s"}`
+    : `${mins} minutes`;
+}
+
 export interface KidsFeedParams {
   view: KidsView;
   channel: string | null;
@@ -53,6 +63,8 @@ export interface KidsFeedParams {
   sort: KidsSort;
   dir: KidsDir;
   type: KidsType;
+  // Max duration_seconds a video may have; null = no cap.
+  maxLen: number | null;
   q: string;
 }
 
@@ -104,7 +116,21 @@ export function parseKidsFeedParams(
   const rawType = first(raw.type);
   const type: KidsType =
     rawType === "videos" || rawType === "shorts" ? rawType : "all";
-  return { view, channel, list, date, sort, dir, type, q: first(raw.q) };
+  const rawMax = first(raw.max);
+  // ?max= is seconds; junk/0 falls back to no cap, clamped to 24h.
+  const parsed = /^\d+$/.test(rawMax) ? Number(rawMax) : 0;
+  const maxLen = parsed > 0 ? Math.min(parsed, 86400) : null;
+  return {
+    view,
+    channel,
+    list,
+    date,
+    sort,
+    dir,
+    type,
+    maxLen,
+    q: first(raw.q),
+  };
 }
 
 // Query string (with leading "?", or "") carrying every non-default param.
@@ -122,6 +148,7 @@ export function kidsFeedQuery(
   if (next.sort !== "status") sp.set("sort", next.sort);
   if (next.dir !== "asc") sp.set("dir", next.dir);
   if (next.type !== "all") sp.set("type", next.type);
+  if (next.maxLen !== null) sp.set("max", String(next.maxLen));
   if (next.q) sp.set("q", next.q);
   const qs = sp.toString();
   return qs ? `?${qs}` : "";
@@ -157,6 +184,12 @@ const typeFilter = (type: KidsType | undefined) =>
     : type === "videos"
       ? eq(videos.isShort, false)
       : undefined;
+
+// WHERE fragment for the ?max= length cap — undefined when null so
+// and() drops it. duration_seconds is nullable; a NULL row can't be
+// certified under the cap, so it drops out of capped feeds.
+const lenFilter = (maxLen: number | null | undefined) =>
+  maxLen ? lte(videos.durationSeconds, maxLen) : undefined;
 
 // Only the columns the feed grid and the watch-page playlist actually
 // render. The full `videos` row carries description/tags/raw JSONB
@@ -198,12 +231,14 @@ export async function getKidsVideos(
     sort,
     dir,
     type,
+    maxLen,
   }: {
     q?: string;
     channelId?: string | null;
     sort: KidsSort;
     dir: KidsDir;
     type?: KidsType;
+    maxLen?: number | null;
   }
 ) {
   // 0 = not watched, 1 = started/not finished, 2 = watched or disliked
@@ -249,6 +284,7 @@ export async function getKidsVideos(
         eq(whitelistedVideos.profileId, profileId),
         visibleVideo,
         typeFilter(type),
+        lenFilter(maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined,
         channelId ? eq(videos.channelId, channelId) : undefined
       )
@@ -262,7 +298,11 @@ export async function getKidsVideos(
 // progress is an inner join because the shelf only lists started rows.
 export async function getContinueWatching(
   profileId: string,
-  { limit = 20, type }: { limit?: number; type?: KidsType } = {}
+  {
+    limit = 20,
+    type,
+    maxLen,
+  }: { limit?: number; type?: KidsType; maxLen?: number | null } = {}
 ) {
   return db
     .select({
@@ -291,6 +331,7 @@ export async function getContinueWatching(
         eq(whitelistedVideos.profileId, profileId),
         visibleVideo,
         typeFilter(type),
+        lenFilter(maxLen),
         gt(watchProgress.positionSeconds, 0),
         eq(watchProgress.completed, false),
         or(
@@ -315,7 +356,13 @@ export async function getNewForYou(
     limit = 20,
     days = 14,
     type,
-  }: { limit?: number; days?: number; type?: KidsType } = {}
+    maxLen,
+  }: {
+    limit?: number;
+    days?: number;
+    type?: KidsType;
+    maxLen?: number | null;
+  } = {}
 ) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   return db
@@ -345,6 +392,7 @@ export async function getNewForYou(
         eq(whitelistedVideos.profileId, profileId),
         visibleVideo,
         typeFilter(type),
+        lenFilter(maxLen),
         gte(whitelistedVideos.pinnedAt, cutoff),
         or(isNull(watchProgress.completed), eq(watchProgress.completed, false)),
         or(
@@ -365,7 +413,17 @@ export async function getNewForYou(
 // Same { video, progress, reaction } row shape as getKidsVideos.
 export async function getLikedVideos(
   profileId: string,
-  { q, limit, type }: { q?: string; limit?: number; type?: KidsType } = {}
+  {
+    q,
+    limit,
+    type,
+    maxLen,
+  }: {
+    q?: string;
+    limit?: number;
+    type?: KidsType;
+    maxLen?: number | null;
+  } = {}
 ) {
   const query = db
     .select({
@@ -395,6 +453,7 @@ export async function getLikedVideos(
         eq(videoReactions.reaction, "like"),
         visibleVideo,
         typeFilter(type),
+        lenFilter(maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )
@@ -409,7 +468,17 @@ export async function getLikedVideos(
 // whitelisted_videos — an unpinned video hides and returns on re-pin.
 export async function getWatchHistory(
   profileId: string,
-  { q, date, type }: { q?: string; date?: string; type?: KidsType } = {}
+  {
+    q,
+    date,
+    type,
+    maxLen,
+  }: {
+    q?: string;
+    date?: string;
+    type?: KidsType;
+    maxLen?: number | null;
+  } = {}
 ) {
   return db
     .select({
@@ -447,6 +516,7 @@ export async function getWatchHistory(
         eq(watchHistory.profileId, profileId),
         visibleVideo,
         typeFilter(type),
+        lenFilter(maxLen),
         date ? eq(watchHistory.watchedOn, date) : undefined,
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
@@ -503,11 +573,13 @@ export async function getRecommendedVideos(
     limit = 60,
     offset = 0,
     type = "all",
+    maxLen,
   }: {
     q?: string;
     limit?: number;
     offset?: number;
     type?: KidsType;
+    maxLen?: number | null;
   } = {}
 ) {
   // Per-channel watch recency/frequency — the dominant signal.
@@ -634,6 +706,7 @@ export async function getRecommendedVideos(
         // Disliked videos drop out of the tab entirely.
         sql`${videoReactions.reaction} is distinct from 'dislike'`,
         typeFilter(type),
+        lenFilter(maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )
@@ -661,11 +734,15 @@ export interface KidsChannel {
 // One card per channel that has whitelisted videos (grouped by the video's
 // real publisher, so manual pins count too), plus approved channels with 0
 // videos yet (mid-backfill). Thumbnails come from the channels registry.
-// Under a ?type= filter the count covers only matching videos and
-// channels with none drop out — "which channels have shorts?".
+// Under a ?type=/?max= filter the count covers only matching videos
+// and channels with none drop out — "which channels have shorts?".
 export async function getKidsChannels(
   profileId: string,
-  { q, type = "all" }: { q?: string; type?: KidsType } = {}
+  {
+    q,
+    type = "all",
+    maxLen,
+  }: { q?: string; type?: KidsType; maxLen?: number | null } = {}
 ): Promise<KidsChannel[]> {
   const grouped = await db
     .select({
@@ -682,6 +759,7 @@ export async function getKidsChannels(
         eq(whitelistedVideos.profileId, profileId),
         visibleVideo,
         typeFilter(type),
+        lenFilter(maxLen),
         isNotNull(videos.channelId)
       )
     )
@@ -718,7 +796,7 @@ export async function getKidsChannels(
     const existing = result.get(channel.id);
     // Filtered feeds list only channels that actually have matching
     // videos — a 0-count tile would link to an empty drill-in.
-    if (!existing && type !== "all") continue;
+    if (!existing && (type !== "all" || maxLen != null)) continue;
     if (existing) {
       existing.thumbnail = channel.thumbnail ?? existing.thumbnail;
     } else {
@@ -802,7 +880,11 @@ export const getPlaylists = cache(async function getPlaylists(
 export async function getPlaylistVideos(
   profileId: string,
   playlistId: string,
-  { q, type }: { q?: string; type?: KidsType } = {}
+  {
+    q,
+    type,
+    maxLen,
+  }: { q?: string; type?: KidsType; maxLen?: number | null } = {}
 ) {
   const playlist = await db.query.playlists.findFirst({
     where: and(
@@ -846,6 +928,7 @@ export async function getPlaylistVideos(
         eq(playlistItems.playlistId, playlistId),
         visibleVideo,
         typeFilter(type),
+        lenFilter(maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )

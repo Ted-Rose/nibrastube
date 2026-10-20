@@ -2,13 +2,19 @@
 
 import { db } from "@/lib/db";
 import {
+  channels,
   channelVideoExclusions,
   videos,
   whitelistedVideos,
 } from "@/lib/db/schema";
 import { getSession, requireParentUnlocked } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
-import { getVideoDetails, videoRowValues } from "@/lib/youtube";
+import {
+  channelRowValues,
+  getChannelDetails,
+  getVideoDetails,
+  videoRowValues,
+} from "@/lib/youtube";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
@@ -26,11 +32,13 @@ export async function pinVideo(profileId: string, videoId: string) {
   const existingVideo = await db.query.videos.findFirst({
     where: eq(videos.id, videoId),
   });
+  let channelId = existingVideo?.channelId ?? null;
 
   if (!existingVideo || !existingVideo.fetchedAt) {
     // Covers first pin and self-heal of rows cached before the
     // rich-metadata columns existed.
     const details = await getVideoDetails(videoId);
+    channelId = details.channelId ?? channelId;
     // 13+ gate: refuse uploader-flagged "made for kids" videos — the
     // API's only under-13 signal.
     if (details.madeForKids === true) {
@@ -46,6 +54,29 @@ export async function pinVideo(profileId: string, videoId: string) {
   } else if (existingVideo.madeForKids === true) {
     console.log("Pinning blocked: made-for-kids video", videoId);
     return;
+  }
+
+  // Hydrate the channel registry for manual pins — approveChannel is
+  // the only other writer, and the kids Channels tab reads avatars from
+  // it. Best-effort: an API/quota failure must not break pinning.
+  if (channelId) {
+    const known = await db.query.channels.findFirst({
+      where: eq(channels.id, channelId),
+      columns: { id: true },
+    });
+    if (!known) {
+      try {
+        const details = await getChannelDetails(channelId);
+        if (details) {
+          await db
+            .insert(channels)
+            .values(channelRowValues(details))
+            .onConflictDoNothing();
+        }
+      } catch (err) {
+        console.error(`Channel hydrate failed for ${channelId}:`, err);
+      }
+    }
   }
 
   // 2. Pin the video to the profile (manual pin: viaChannelId stays null)

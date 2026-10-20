@@ -11,7 +11,7 @@ import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
 import {
   kidsFeedQuery,
   kidsPortalUrl,
-  maxLenLabel,
+  lenRangeLabel,
   type KidsFeedParams,
   type KidsPlaylist,
 } from "@/lib/kids-feed";
@@ -40,11 +40,12 @@ export function PlaylistDetailView({
         label: "Clear search",
         href: kidsPortalUrl(profileId, feed, { q: "" }),
       }
-    : feed.type !== "all" || feed.maxLen !== null
+    : feed.type !== "all" || feed.minLen !== null || feed.maxLen !== null
       ? {
           label: "Show everything",
           href: kidsPortalUrl(profileId, feed, {
             type: "all",
+            minLen: null,
             maxLen: null,
           }),
         }
@@ -67,7 +68,7 @@ export function PlaylistDetailView({
         actions={
           <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
-            <KidsLengthFilter maxLen={feed.maxLen} />
+            <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
             {rows.length > 0 && (
               <Link
                 href={`/kids/${profileId}/watch/${rows[0].video.id}${kidsFeedQuery(feed)}`}
@@ -99,8 +100,8 @@ export function PlaylistDetailView({
                 ? "No shorts in this playlist!"
                 : feed.type === "videos"
                   ? "No videos in this playlist!"
-                  : feed.maxLen !== null
-                    ? `No videos under ${maxLenLabel(feed.maxLen)} in this playlist!`
+                  : feed.minLen !== null || feed.maxLen !== null
+                    ? `No videos ${lenRangeLabel(feed.minLen, feed.maxLen)} in this playlist!`
                     : "No videos yet! Tap ⋮ on a video to add it."
           }
           action={emptyAction}

@@ -7,7 +7,7 @@ import {
   getWatchHistory,
   kidsFeedQuery,
   kidsPortalUrl,
-  maxLenLabel,
+  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { FeedHeader } from "@/components/feed-header";
@@ -30,6 +30,7 @@ export async function HistoryFeedView({
     q: query,
     date: feed.date ?? undefined,
     type: feed.type,
+    minLen: feed.minLen,
     maxLen: feed.maxLen,
   });
   const ViewIcon = KIDS_VIEWS.history.icon;
@@ -51,16 +52,24 @@ export async function HistoryFeedView({
       label: "All days",
       href: kidsPortalUrl(profileId, feed, { date: null }),
     };
-  } else if (feed.type !== "all" || feed.maxLen !== null) {
+  } else if (
+    feed.type !== "all" ||
+    feed.minLen !== null ||
+    feed.maxLen !== null
+  ) {
     emptyMessage =
       feed.type === "shorts"
         ? "No shorts watched yet!"
-        : feed.maxLen !== null
-          ? `No videos under ${maxLenLabel(feed.maxLen)} watched yet!`
+        : feed.minLen !== null || feed.maxLen !== null
+          ? `No videos ${lenRangeLabel(feed.minLen, feed.maxLen)} watched yet!`
           : "No videos watched yet!";
     emptyAction = {
       label: "Show everything",
-      href: kidsPortalUrl(profileId, feed, { type: "all", maxLen: null }),
+      href: kidsPortalUrl(profileId, feed, {
+        type: "all",
+        minLen: null,
+        maxLen: null,
+      }),
     };
   }
 
@@ -71,7 +80,7 @@ export async function HistoryFeedView({
         actions={
           <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
-            <KidsLengthFilter maxLen={feed.maxLen} />
+            <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
             <HistoryDatePicker date={feed.date} />
           </div>
         }

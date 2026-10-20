@@ -27,6 +27,7 @@ export async function PlaylistsView({
     ? await getPlaylistVideos(profileId, list, {
         q: query,
         type: feed.type,
+        minLen: feed.minLen,
         maxLen: feed.maxLen,
       })
     : [];

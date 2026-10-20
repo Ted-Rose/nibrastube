@@ -24,11 +24,12 @@ export async function HomeShelves({
   profileId: string;
   feed: KidsFeedParams;
 }) {
-  // The ?type=/?max= filters scope the shelves too. type=shorts would
+  // The ?type=/?min=/?max= filters scope the shelves too. type=shorts would
   // make "Picked for you" identical to the Shorts shelf, and
   // type=videos empties the Shorts shelf — both collapse to a skipped
   // shelf.
   const type = feed.type;
+  const minLen = feed.minLen;
   const maxLen = feed.maxLen;
   // Pool max is 3, so the 4th+ queries just queue behind the others.
   const [
@@ -39,20 +40,26 @@ export async function HomeShelves({
     playlistRows,
     likedRows,
   ] = await Promise.all([
-    getContinueWatching(profileId, { type, maxLen }),
+    getContinueWatching(profileId, { type, minLen, maxLen }),
     type === "shorts"
       ? Promise.resolve([])
-      : getRecommendedVideos(profileId, { limit: 20, type, maxLen }),
+      : getRecommendedVideos(profileId, {
+          limit: 20,
+          type,
+          minLen,
+          maxLen,
+        }),
     type === "videos"
       ? Promise.resolve([])
       : getRecommendedVideos(profileId, {
           limit: 20,
           type: "shorts",
+          minLen,
           maxLen,
         }),
-    getNewForYou(profileId, { type, maxLen }),
+    getNewForYou(profileId, { type, minLen, maxLen }),
     getPlaylists(profileId),
-    getLikedVideos(profileId, { limit: 20, type, maxLen }),
+    getLikedVideos(profileId, { limit: 20, type, minLen, maxLen }),
   ]);
 
   if (

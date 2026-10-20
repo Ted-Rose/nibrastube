@@ -11,7 +11,7 @@ import {
   getPlaylists,
   kidsFeedQuery,
   kidsPortalUrl,
-  maxLenLabel,
+  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { FeedHeader } from "@/components/feed-header";
@@ -30,6 +30,7 @@ export async function LikedView({
   const rows = await getLikedVideos(profileId, {
     q: query,
     type: feed.type,
+    minLen: feed.minLen,
     maxLen: feed.maxLen,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
@@ -44,7 +45,7 @@ export async function LikedView({
         actions={
           <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
-            <KidsLengthFilter maxLen={feed.maxLen} />
+            <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
             <Link
               href={`/kids/${profileId}`}
               className="inline-flex shrink-0 items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
@@ -69,8 +70,8 @@ export async function LikedView({
                 ? "No liked shorts yet!"
                 : feed.type === "videos"
                   ? "No liked videos yet!"
-                  : feed.maxLen !== null
-                    ? `No liked videos under ${maxLenLabel(feed.maxLen)} yet!`
+                  : feed.minLen !== null || feed.maxLen !== null
+                    ? `No liked videos ${lenRangeLabel(feed.minLen, feed.maxLen)} yet!`
                     : "No liked videos yet! Tap the 👍 while watching."
           }
           action={
@@ -79,11 +80,14 @@ export async function LikedView({
                   label: "Clear search",
                   href: kidsPortalUrl(profileId, feed, { q: "" }),
                 }
-              : feed.type !== "all" || feed.maxLen !== null
+              : feed.type !== "all" ||
+                  feed.minLen !== null ||
+                  feed.maxLen !== null
                 ? {
                     label: "Show everything",
                     href: kidsPortalUrl(profileId, feed, {
                       type: "all",
+                      minLen: null,
                       maxLen: null,
                     }),
                   }

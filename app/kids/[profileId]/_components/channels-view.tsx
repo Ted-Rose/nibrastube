@@ -5,7 +5,7 @@ import { KidsTypeFilter } from "@/components/kids-type-filter";
 import {
   getKidsChannels,
   kidsPortalUrl,
-  maxLenLabel,
+  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { FeedHeader } from "@/components/feed-header";
@@ -26,6 +26,7 @@ export async function ChannelsView({
   const channelRows = await getKidsChannels(profileId, {
     q: query,
     type: feed.type,
+    minLen: feed.minLen,
     maxLen: feed.maxLen,
   });
   const ViewIcon = KIDS_VIEWS.channels.icon;
@@ -37,7 +38,7 @@ export async function ChannelsView({
         actions={
           <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
-            <KidsLengthFilter maxLen={feed.maxLen} />
+            <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
           </div>
         }
       />
@@ -52,8 +53,8 @@ export async function ChannelsView({
                 ? "No channels with shorts yet!"
                 : feed.type === "videos"
                   ? "No channels with videos yet!"
-                  : feed.maxLen !== null
-                    ? `No channels with videos under ${maxLenLabel(feed.maxLen)} yet!`
+                  : feed.minLen !== null || feed.maxLen !== null
+                    ? `No channels with videos ${lenRangeLabel(feed.minLen, feed.maxLen)} yet!`
                     : "Ask a grown-up to approve some channels!"
           }
           action={
@@ -62,11 +63,14 @@ export async function ChannelsView({
                   label: "Clear search",
                   href: kidsPortalUrl(profileId, feed, { q: "" }),
                 }
-              : feed.type !== "all" || feed.maxLen !== null
+              : feed.type !== "all" ||
+                  feed.minLen !== null ||
+                  feed.maxLen !== null
                 ? {
                     label: "Show everything",
                     href: kidsPortalUrl(profileId, feed, {
                       type: "all",
+                      minLen: null,
                       maxLen: null,
                     }),
                   }

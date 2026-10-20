@@ -8,7 +8,7 @@ import {
   getPlaylists,
   kidsFeedQuery,
   kidsPortalUrl,
-  maxLenLabel,
+  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { EmptyState } from "@/components/empty-state";
@@ -70,7 +70,7 @@ export async function VideosView({
         <div className="mb-6 flex overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="ml-auto flex shrink-0 items-center gap-3">
             <KidsTypeFilter profileId={profileId} feed={feed} />
-            <KidsLengthFilter maxLen={feed.maxLen} />
+            <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
           </div>
         </div>
         <Suspense fallback={<ShelfSkeleton />}>
@@ -89,6 +89,7 @@ export async function VideosView({
     sort: feed.sort,
     dir: feed.dir,
     type: feed.type,
+    minLen: feed.minLen,
     maxLen: feed.maxLen,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
@@ -133,8 +134,8 @@ export async function VideosView({
       ? "No shorts here yet!"
       : feed.type === "videos"
         ? "No videos here yet!"
-        : feed.maxLen !== null
-          ? `No videos under ${maxLenLabel(feed.maxLen)} yet!`
+        : feed.minLen !== null || feed.maxLen !== null
+          ? `No videos ${lenRangeLabel(feed.minLen, feed.maxLen)} yet!`
           : channelApproved
             ? "Videos are on the way!"
             : "Ask a grown-up to pick some videos!";
@@ -143,11 +144,12 @@ export async function VideosView({
         label: "Clear search",
         href: kidsPortalUrl(profileId, feed, { q: "" }),
       }
-    : feed.type !== "all" || feed.maxLen !== null
+    : feed.type !== "all" || feed.minLen !== null || feed.maxLen !== null
       ? {
           label: "Show everything",
           href: kidsPortalUrl(profileId, feed, {
             type: "all",
+            minLen: null,
             maxLen: null,
           }),
         }
@@ -171,7 +173,7 @@ export async function VideosView({
         actions={
           <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
-            <KidsLengthFilter maxLen={feed.maxLen} />
+            <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
             <KidsSortChips options={sortOptions(profileId, feed)} />
           </div>
         }
@@ -213,6 +215,7 @@ async function AllVideosGrid({
     sort: feed.sort,
     dir: feed.dir,
     type: feed.type,
+    minLen: feed.minLen,
     maxLen: feed.maxLen,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
@@ -241,16 +244,19 @@ async function AllVideosGrid({
               ? "No shorts yet!"
               : feed.type === "videos"
                 ? "No videos yet!"
-                : feed.maxLen !== null
-                  ? `No videos under ${maxLenLabel(feed.maxLen)} yet!`
+                : feed.minLen !== null || feed.maxLen !== null
+                  ? `No videos ${lenRangeLabel(feed.minLen, feed.maxLen)} yet!`
                   : "Ask a grown-up to pick some videos!"
           }
           action={
-            feed.type !== "all" || feed.maxLen !== null
+            feed.type !== "all" ||
+            feed.minLen !== null ||
+            feed.maxLen !== null
               ? {
                   label: "Show everything",
                   href: kidsPortalUrl(profileId, feed, {
                     type: "all",
+                    minLen: null,
                     maxLen: null,
                   }),
                 }

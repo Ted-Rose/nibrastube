@@ -5,11 +5,12 @@ import { getSession } from "@/lib/auth";
 import { getRecommendedVideos, type KidsType } from "@/lib/kids-feed";
 import { canViewProfile } from "@/lib/profiles";
 
-// Client-supplied filters — clamp to a valid KidsType, and ?max= to a
-// positive-integer seconds cap (24h ceiling, like parseKidsFeedParams).
+// Client-supplied filters — clamp to a valid KidsType, and ?min=/?max=
+// to positive-integer seconds bounds (24h ceiling, like
+// parseKidsFeedParams).
 const asKidsType = (t: string): KidsType =>
   t === "videos" || t === "shorts" ? t : "all";
-const asMaxLen = (n: number | null): number | null =>
+const asLenBound = (n: number | null): number | null =>
   typeof n === "number" && Number.isFinite(n) && n > 0
     ? Math.min(Math.floor(n), 86400)
     : null;
@@ -23,6 +24,7 @@ export async function loadMoreForYou(
   profileId: string,
   q: string,
   type: KidsType,
+  minLen: number | null,
   maxLen: number | null,
   offset: number
 ) {
@@ -34,7 +36,8 @@ export async function loadMoreForYou(
   return getRecommendedVideos(profileId, {
     q,
     type: asKidsType(type),
-    maxLen: asMaxLen(maxLen),
+    minLen: asLenBound(minLen),
+    maxLen: asLenBound(maxLen),
     offset: Math.max(0, Math.floor(offset) || 0),
   });
 }
@@ -44,6 +47,7 @@ export async function loadMoreForYou(
 export async function loadMoreShorts(
   profileId: string,
   q: string,
+  minLen: number | null,
   maxLen: number | null,
   offset: number
 ) {
@@ -56,6 +60,7 @@ export async function loadMoreShorts(
     q,
     offset: Math.max(0, Math.floor(offset) || 0),
     type: "shorts",
-    maxLen: asMaxLen(maxLen),
+    minLen: asLenBound(minLen),
+    maxLen: asLenBound(maxLen),
   });
 }

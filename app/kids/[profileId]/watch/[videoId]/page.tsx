@@ -47,6 +47,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   // "shorts".
   const feed = parseKidsFeedParams(await searchParams);
   const type = feed.view === "shorts" ? ("shorts" as const) : feed.type;
+  const minLen = feed.minLen;
   const maxLen = feed.maxLen;
   const playlistId = feed.view === "playlists" ? feed.list : null;
   const history = feed.view === "history";
@@ -69,6 +70,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
     ? await getPlaylistVideos(profileId, playlistId, {
         q: feed.q,
         type,
+        minLen,
         maxLen,
       })
     : history
@@ -77,6 +79,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
             q: feed.q,
             date: feed.date ?? undefined,
             type,
+            minLen,
             maxLen,
           })
         )
@@ -84,16 +87,23 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
         ? await getRecommendedVideos(profileId, {
             q: feed.q,
             type,
+            minLen,
             maxLen,
           })
         : feed.view === "liked"
-          ? await getLikedVideos(profileId, { q: feed.q, type, maxLen })
+          ? await getLikedVideos(profileId, {
+              q: feed.q,
+              type,
+              minLen,
+              maxLen,
+            })
           : await getKidsVideos(profileId, {
               q: feed.q,
               channelId: feed.channel,
               sort: feed.sort,
               dir: feed.dir,
               type,
+              minLen,
               maxLen,
             });
   let currentIndex = rows.findIndex((r) => r.video.id === videoId);

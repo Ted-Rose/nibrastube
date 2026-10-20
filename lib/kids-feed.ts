@@ -44,13 +44,25 @@ export type KidsDir = "asc" | "desc";
 // the URL); "videos"/"shorts" filter every video list by is_short.
 export type KidsType = "all" | "videos" | "shorts";
 
-// Empty-state phrasing for a ?max= length cap — "under 10 minutes"
-// etc.
-export function maxLenLabel(maxLen: number): string {
-  const mins = Math.round(maxLen / 60);
+// Empty-state phrasing for a ?min=/?max= length bound — "under 10
+// minutes", "over 5 minutes", "between 5 minutes and 10 minutes".
+export function maxLenLabel(seconds: number): string {
+  const mins = Math.round(seconds / 60);
   return mins >= 60 && mins % 60 === 0
     ? `${mins / 60} hour${mins === 60 ? "" : "s"}`
     : `${mins} minutes`;
+}
+
+// Same phrasing for the combined band — callers guard that at least
+// one bound is set.
+export function lenRangeLabel(
+  minLen: number | null,
+  maxLen: number | null
+): string {
+  if (minLen !== null && maxLen !== null)
+    return `between ${maxLenLabel(minLen)} and ${maxLenLabel(maxLen)}`;
+  if (minLen !== null) return `over ${maxLenLabel(minLen)}`;
+  return `under ${maxLenLabel(maxLen ?? 0)}`;
 }
 
 export interface KidsFeedParams {
@@ -63,7 +75,8 @@ export interface KidsFeedParams {
   sort: KidsSort;
   dir: KidsDir;
   type: KidsType;
-  // Max duration_seconds a video may have; null = no cap.
+  // Min/max duration_seconds bounds; null = that side unbounded.
+  minLen: number | null;
   maxLen: number | null;
   q: string;
 }
@@ -116,10 +129,12 @@ export function parseKidsFeedParams(
   const rawType = first(raw.type);
   const type: KidsType =
     rawType === "videos" || rawType === "shorts" ? rawType : "all";
-  const rawMax = first(raw.max);
-  // ?max= is seconds; junk/0 falls back to no cap, clamped to 24h.
-  const parsed = /^\d+$/.test(rawMax) ? Number(rawMax) : 0;
-  const maxLen = parsed > 0 ? Math.min(parsed, 86400) : null;
+  // ?min=/?max= are seconds; junk/0 falls back to unbounded, each
+  // clamped to 24h.
+  const bound = (raw: string) => {
+    const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+    return n > 0 ? Math.min(n, 86400) : null;
+  };
   return {
     view,
     channel,
@@ -128,7 +143,8 @@ export function parseKidsFeedParams(
     sort,
     dir,
     type,
-    maxLen,
+    minLen: bound(first(raw.min)),
+    maxLen: bound(first(raw.max)),
     q: first(raw.q),
   };
 }
@@ -148,6 +164,7 @@ export function kidsFeedQuery(
   if (next.sort !== "status") sp.set("sort", next.sort);
   if (next.dir !== "asc") sp.set("dir", next.dir);
   if (next.type !== "all") sp.set("type", next.type);
+  if (next.minLen !== null) sp.set("min", String(next.minLen));
   if (next.maxLen !== null) sp.set("max", String(next.maxLen));
   if (next.q) sp.set("q", next.q);
   const qs = sp.toString();
@@ -176,11 +193,17 @@ const typeFilter = (type: KidsType | undefined) =>
       ? eq(videos.isShort, false)
       : undefined;
 
-// WHERE fragment for the ?max= length cap — undefined when null so
-// and() drops it. duration_seconds is nullable; a NULL row can't be
-// certified under the cap, so it drops out of capped feeds.
-const lenFilter = (maxLen: number | null | undefined) =>
-  maxLen ? lte(videos.durationSeconds, maxLen) : undefined;
+// WHERE fragment for the ?min=/?max= length band — and() drops the
+// undefined side(s). duration_seconds is nullable; a NULL row can't
+// be certified inside the band, so it drops out of bounded feeds.
+const lenFilter = (
+  minLen: number | null | undefined,
+  maxLen: number | null | undefined
+) =>
+  and(
+    minLen ? gte(videos.durationSeconds, minLen) : undefined,
+    maxLen ? lte(videos.durationSeconds, maxLen) : undefined
+  );
 
 // Only the columns the feed grid and the watch-page playlist actually
 // render. The full `videos` row carries description/tags/raw JSONB
@@ -222,6 +245,7 @@ export async function getKidsVideos(
     sort,
     dir,
     type,
+    minLen,
     maxLen,
   }: {
     q?: string;
@@ -229,6 +253,7 @@ export async function getKidsVideos(
     sort: KidsSort;
     dir: KidsDir;
     type?: KidsType;
+    minLen?: number | null;
     maxLen?: number | null;
   }
 ) {
@@ -274,7 +299,7 @@ export async function getKidsVideos(
       and(
         eq(whitelistedVideos.profileId, profileId),
         typeFilter(type),
-        lenFilter(maxLen),
+        lenFilter(minLen, maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined,
         channelId ? eq(videos.channelId, channelId) : undefined
       )
@@ -291,8 +316,14 @@ export async function getContinueWatching(
   {
     limit = 20,
     type,
+    minLen,
     maxLen,
-  }: { limit?: number; type?: KidsType; maxLen?: number | null } = {}
+  }: {
+    limit?: number;
+    type?: KidsType;
+    minLen?: number | null;
+    maxLen?: number | null;
+  } = {}
 ) {
   return db
     .select({
@@ -320,7 +351,7 @@ export async function getContinueWatching(
       and(
         eq(whitelistedVideos.profileId, profileId),
         typeFilter(type),
-        lenFilter(maxLen),
+        lenFilter(minLen, maxLen),
         gt(watchProgress.positionSeconds, 0),
         eq(watchProgress.completed, false),
         or(
@@ -345,11 +376,13 @@ export async function getNewForYou(
     limit = 20,
     days = 14,
     type,
+    minLen,
     maxLen,
   }: {
     limit?: number;
     days?: number;
     type?: KidsType;
+    minLen?: number | null;
     maxLen?: number | null;
   } = {}
 ) {
@@ -380,7 +413,7 @@ export async function getNewForYou(
       and(
         eq(whitelistedVideos.profileId, profileId),
         typeFilter(type),
-        lenFilter(maxLen),
+        lenFilter(minLen, maxLen),
         gte(whitelistedVideos.pinnedAt, cutoff),
         or(isNull(watchProgress.completed), eq(watchProgress.completed, false)),
         or(
@@ -405,11 +438,13 @@ export async function getLikedVideos(
     q,
     limit,
     type,
+    minLen,
     maxLen,
   }: {
     q?: string;
     limit?: number;
     type?: KidsType;
+    minLen?: number | null;
     maxLen?: number | null;
   } = {}
 ) {
@@ -440,7 +475,7 @@ export async function getLikedVideos(
         eq(videoReactions.profileId, profileId),
         eq(videoReactions.reaction, "like"),
         typeFilter(type),
-        lenFilter(maxLen),
+        lenFilter(minLen, maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )
@@ -459,11 +494,13 @@ export async function getWatchHistory(
     q,
     date,
     type,
+    minLen,
     maxLen,
   }: {
     q?: string;
     date?: string;
     type?: KidsType;
+    minLen?: number | null;
     maxLen?: number | null;
   } = {}
 ) {
@@ -502,7 +539,7 @@ export async function getWatchHistory(
       and(
         eq(watchHistory.profileId, profileId),
         typeFilter(type),
-        lenFilter(maxLen),
+        lenFilter(minLen, maxLen),
         date ? eq(watchHistory.watchedOn, date) : undefined,
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
@@ -559,12 +596,14 @@ export async function getRecommendedVideos(
     limit = 60,
     offset = 0,
     type = "all",
+    minLen,
     maxLen,
   }: {
     q?: string;
     limit?: number;
     offset?: number;
     type?: KidsType;
+    minLen?: number | null;
     maxLen?: number | null;
   } = {}
 ) {
@@ -691,7 +730,7 @@ export async function getRecommendedVideos(
         // Disliked videos drop out of the tab entirely.
         sql`${videoReactions.reaction} is distinct from 'dislike'`,
         typeFilter(type),
-        lenFilter(maxLen),
+        lenFilter(minLen, maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )
@@ -726,8 +765,14 @@ export async function getKidsChannels(
   {
     q,
     type = "all",
+    minLen,
     maxLen,
-  }: { q?: string; type?: KidsType; maxLen?: number | null } = {}
+  }: {
+    q?: string;
+    type?: KidsType;
+    minLen?: number | null;
+    maxLen?: number | null;
+  } = {}
 ): Promise<KidsChannel[]> {
   const grouped = await db
     .select({
@@ -743,7 +788,7 @@ export async function getKidsChannels(
       and(
         eq(whitelistedVideos.profileId, profileId),
         typeFilter(type),
-        lenFilter(maxLen),
+        lenFilter(minLen, maxLen),
         isNotNull(videos.channelId)
       )
     )
@@ -780,7 +825,8 @@ export async function getKidsChannels(
     const existing = result.get(channel.id);
     // Filtered feeds list only channels that actually have matching
     // videos — a 0-count tile would link to an empty drill-in.
-    if (!existing && (type !== "all" || maxLen != null)) continue;
+    if (!existing && (type !== "all" || minLen != null || maxLen != null))
+      continue;
     if (existing) {
       existing.thumbnail = channel.thumbnail ?? existing.thumbnail;
     } else {
@@ -864,8 +910,14 @@ export async function getPlaylistVideos(
   {
     q,
     type,
+    minLen,
     maxLen,
-  }: { q?: string; type?: KidsType; maxLen?: number | null } = {}
+  }: {
+    q?: string;
+    type?: KidsType;
+    minLen?: number | null;
+    maxLen?: number | null;
+  } = {}
 ) {
   const playlist = await db.query.playlists.findFirst({
     where: and(
@@ -908,7 +960,7 @@ export async function getPlaylistVideos(
       and(
         eq(playlistItems.playlistId, playlistId),
         typeFilter(type),
-        lenFilter(maxLen),
+        lenFilter(minLen, maxLen),
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )

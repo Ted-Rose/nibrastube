@@ -9,7 +9,7 @@ import {
   getRecommendedVideos,
   kidsFeedQuery,
   kidsPortalUrl,
-  maxLenLabel,
+  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { FeedHeader } from "@/components/feed-header";
@@ -30,6 +30,7 @@ export async function ForYouView({
   const rows = await getRecommendedVideos(profileId, {
     q: query,
     type: feed.type,
+    minLen: feed.minLen,
     maxLen: feed.maxLen,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
@@ -44,7 +45,7 @@ export async function ForYouView({
         actions={
           <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
-            <KidsLengthFilter maxLen={feed.maxLen} />
+            <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
           </div>
         }
       />
@@ -61,8 +62,8 @@ export async function ForYouView({
                 ? "No shorts picked yet!"
                 : feed.type === "videos"
                   ? "No videos picked yet!"
-                  : feed.maxLen !== null
-                    ? `Nothing under ${maxLenLabel(feed.maxLen)} picked yet!`
+                  : feed.minLen !== null || feed.maxLen !== null
+                    ? `Nothing ${lenRangeLabel(feed.minLen, feed.maxLen)} picked yet!`
                     : "Nothing picked yet!"
           }
           action={
@@ -71,11 +72,14 @@ export async function ForYouView({
                   label: "Clear search",
                   href: kidsPortalUrl(profileId, feed, { q: "" }),
                 }
-              : feed.type !== "all" || feed.maxLen !== null
+              : feed.type !== "all" ||
+                  feed.minLen !== null ||
+                  feed.maxLen !== null
                 ? {
                     label: "Show everything",
                     href: kidsPortalUrl(profileId, feed, {
                       type: "all",
+                      minLen: null,
                       maxLen: null,
                     }),
                   }
@@ -106,6 +110,7 @@ export async function ForYouView({
                     profileId,
                     query,
                     feed.type,
+                    feed.minLen,
                     feed.maxLen
                   )
                 : undefined

@@ -128,8 +128,9 @@ components/
                                 ?sort/?dir)
   kids-type-filter.tsx          Segmented All/Videos/Shorts link
                                 control (rewrites ?type=)
-  kids-length-filter.tsx        Draggable 1m–30m+ max-length slider
-                                (rewrites ?max= on release)
+  kids-length-filter.tsx        Dual-thumb 0m–30m+ min/max length
+                                slider (rewrites ?min=/?max= on
+                                release)
   feed-header.tsx               Feed view title row (h1 + actions)
   back-link.tsx                 "All channels/playlists/…" drill-in
                                 exit
@@ -365,12 +366,14 @@ docs/plans/                     Implementation plans with status
   have matching videos, home shelves filter too ("Picked for you"
   collapses into "Shorts" under type=shorts, the Shorts shelf hides
   under type=videos), and the watch page rebuilds its autoplay queue
-  with the same type. Beside it, `KidsLengthFilter` is a slider
-  rewriting `?max=` (duration_seconds cap, minutes; the rightmost
-  "30m+" position omits the param = no cap, NULL durations drop out
-  under a cap via `lenFilter()`), applied everywhere `type` is —
-  shelves, channels, playlists, history, For-You paging and the
-  watch-page queue included.
+  with the same type. Beside it, `KidsLengthFilter` is a dual-thumb
+  Radix slider (`ui/slider.tsx`) rewriting `?min=`/`?max=` —
+  duration_seconds bounds in whole minutes; the left "0m" and
+  right "30m+" end positions omit their param = unbounded, NULL
+  durations drop out of a bounded band via `lenFilter(minLen,
+  maxLen)`), applied everywhere `type` is — shelves, channels,
+  playlists, history, For-You paging and the watch-page queue
+  included.
 - **The `/songs` catalog is public** — `proxy.ts`'s matcher doesn't
   cover it. Anonymous visitors and kid-locked devices (no session)
   get the read-only catalog plus signup chrome; a parent session

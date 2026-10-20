@@ -42,7 +42,7 @@ export async function ForYouView({
       <FeedHeader
         title={feedTitle(feed)}
         actions={
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter maxLen={feed.maxLen} />
           </div>

@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 // View title row — the page's single h1 with per-view actions (date
 // picker, Play all + playlist menu, sort) on the right. flex-wrap lets a
-// wide action like the sort chips drop to their own row on phones.
+// wide action like the sort chips drop to their own row on phones,
+// where each action group scrolls horizontally instead of clipping.
 export function FeedHeader({
   title,
   actions,

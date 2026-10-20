@@ -6,7 +6,10 @@ import { LinkPendingSpinner } from "./link-pending-spinner";
 // sort:dir pair, with hrefs prebuilt via kidsPortalUrl. Sort changes
 // only rewrite ?sort/?dir, so loading.tsx never fires and each chip
 // carries its own LinkPendingSpinner; scroll={false} keeps the scroll
-// position.
+// position. The nav itself scrolls horizontally on narrow phones:
+// standalone (a FeedHeader's sole action) it wraps to its own row and
+// clips to max-w-full; inside a scrolling actions row shrink-0 keeps
+// it at natural width.
 export function KidsSortChips({
   options,
 }: {
@@ -15,7 +18,7 @@ export function KidsSortChips({
   return (
     <nav
       aria-label="Sort videos"
-      className="flex w-full gap-2 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:ml-auto sm:w-auto"
+      className="flex max-w-full shrink-0 gap-2 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:ml-auto"
     >
       {options.map((o) => (
         <Link

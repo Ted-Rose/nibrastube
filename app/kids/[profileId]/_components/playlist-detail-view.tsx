@@ -65,13 +65,13 @@ export function PlaylistDetailView({
       <FeedHeader
         title={feedTitle(feed, { playlistName: playlist.name })}
         actions={
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter maxLen={feed.maxLen} />
             {rows.length > 0 && (
               <Link
                 href={`/kids/${profileId}/watch/${rows[0].video.id}${kidsFeedQuery(feed)}`}
-                className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
+                className="inline-flex shrink-0 items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
               >
                 <Play size={20} weight="fill" />
                 Play all

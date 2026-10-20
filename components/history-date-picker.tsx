@@ -34,7 +34,7 @@ export function HistoryDatePicker({ date }: { date: string | null }) {
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex shrink-0 items-center gap-3">
       {date && (
         <Link
           href={allDaysHref}

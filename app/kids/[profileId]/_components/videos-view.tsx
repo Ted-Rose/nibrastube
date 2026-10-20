@@ -64,10 +64,14 @@ export async function VideosView({
       <>
         {/* The type/length filters scope the whole page — shelves and
             the All-videos grid alike — so on the home layout they sit
-            on top instead of inside a section header. */}
-        <div className="mb-6 flex flex-wrap justify-end gap-3">
-          <KidsTypeFilter profileId={profileId} feed={feed} />
-          <KidsLengthFilter maxLen={feed.maxLen} />
+            on top instead of inside a section header. The row scrolls
+            horizontally on narrow phones; ml-auto keeps it
+            right-aligned when it fits. */}
+        <div className="mb-6 flex overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="ml-auto flex shrink-0 items-center gap-3">
+            <KidsTypeFilter profileId={profileId} feed={feed} />
+            <KidsLengthFilter maxLen={feed.maxLen} />
+          </div>
         </div>
         <Suspense fallback={<ShelfSkeleton />}>
           <HomeShelves profileId={profileId} feed={feed} />
@@ -165,7 +169,7 @@ export async function VideosView({
       <FeedHeader
         title={feedTitle(feed, { channelTitle })}
         actions={
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter maxLen={feed.maxLen} />
             <KidsSortChips options={sortOptions(profileId, feed)} />

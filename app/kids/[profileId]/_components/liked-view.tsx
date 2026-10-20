@@ -42,12 +42,12 @@ export async function LikedView({
       <FeedHeader
         title={feedTitle(feed)}
         actions={
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter maxLen={feed.maxLen} />
             <Link
               href={`/kids/${profileId}`}
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
+              className="inline-flex shrink-0 items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-lg font-black text-white shadow-md transition-transform hover:scale-105"
             >
               <House size={20} weight="fill" />
               Home

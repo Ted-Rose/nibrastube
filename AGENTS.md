@@ -126,6 +126,8 @@ components/
                                 (kids portal + /songs; per-tab icon)
   kids-sort-chips.tsx           Link-based sort chips (rewrite
                                 ?sort/?dir)
+  kids-type-filter.tsx          Segmented All/Videos/Shorts link
+                                control (rewrites ?type=)
   feed-header.tsx               Feed view title row (h1 + actions)
   back-link.tsx                 "All channels/playlists/…" drill-in
                                 exit
@@ -316,7 +318,7 @@ docs/plans/                     Implementation plans with status
   then `router.replace`s inside `startTransition` (`scroll: false`)
   — a native GET form would be a full navigation with no pending
   state. Only `q` changes; the URL is rebuilt from the live
-  `searchParams`, so view/channel/list/date/sort/dir survive
+  `searchParams`, so view/channel/list/date/sort/dir/type survive
   untouched.
 - **Home shelves:** the plain Videos tab (no `q`, no `channel`)
   renders "Continue watching", "Picked for you", "Shorts", "New for
@@ -343,8 +345,16 @@ docs/plans/                     Implementation plans with status
   with NO tab — each is reached via its home shelf's see-all link
   ("Picked for you", "Shorts"; `?view=foryou`/`?view=shorts` also
   carry the autoplay context); a 6th phone tab was rejected for
-  cramped tap targets. `shorts` runs the same For-You ranking plus
-  `eq(videos.isShort, true)` and pages via `loadMoreShorts`.
+  cramped tap targets. `shorts` runs the same For-You ranking with
+  type "shorts" and pages via `loadMoreShorts`. Every video-listing
+  view also carries an `?type=` segmented filter (All/Videos/Shorts,
+  default all): `KidsTypeFilter` in the FeedHeader rewrites `type`,
+  each feed query applies it via `typeFilter()` on
+  `videos.is_short`, the Channels tab narrows tiles to channels that
+  have matching videos, home shelves filter too ("Picked for you"
+  collapses into "Shorts" under type=shorts, the Shorts shelf hides
+  under type=videos), and the watch page rebuilds its autoplay queue
+  with the same type.
 - **The `/songs` catalog is public** — `proxy.ts`'s matcher doesn't
   cover it. Anonymous visitors and kid-locked devices (no session)
   get the read-only catalog plus signup chrome; a parent session

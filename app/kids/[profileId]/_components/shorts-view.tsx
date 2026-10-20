@@ -12,8 +12,9 @@ import {
 import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
-// Shorts tab — the For You ranking filtered to videos.is_short (see
-// getRecommendedVideos). No sort chips: the ranking IS the sort.
+// Shorts tab — the For You ranking restricted to videos.is_short (see
+// getRecommendedVideos). No sort chips: the ranking IS the sort; no
+// type chips either — the feed is intrinsically shorts-only.
 export async function ShortsView({
   profileId,
   feed,
@@ -25,7 +26,7 @@ export async function ShortsView({
 
   const rows = await getRecommendedVideos(profileId, {
     q: query,
-    shortsOnly: true,
+    type: "shorts",
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu.

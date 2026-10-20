@@ -11,6 +11,7 @@ import {
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { EmptyState } from "@/components/empty-state";
+import { KidsTypeFilter } from "@/components/kids-type-filter";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { KidsSortChips } from "@/components/kids-sort-chips";
 import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
@@ -59,6 +60,12 @@ export async function VideosView({
   if (channel === null && !query) {
     return (
       <>
+        {/* The type filter scopes the whole page — shelves and the
+            All-videos grid alike — so on the home layout it sits on
+            top instead of inside a section header. */}
+        <div className="mb-6 flex justify-end">
+          <KidsTypeFilter profileId={profileId} feed={feed} />
+        </div>
         <Suspense fallback={<ShelfSkeleton />}>
           <HomeShelves profileId={profileId} feed={feed} />
         </Suspense>
@@ -74,6 +81,7 @@ export async function VideosView({
     channelId: channel,
     sort: feed.sort,
     dir: feed.dir,
+    type: feed.type,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu.
@@ -101,25 +109,41 @@ export async function VideosView({
   }
 
   // A channel drill-in renders the videos grid, so its search-empty
-  // icon is the videos icon (Play), not the channels one.
+  // icon is the videos icon (Play), not the channels one — or the
+  // shorts icon when the type filter produced the empty grid.
   const EmptyIcon =
-    query && channel === null ? KIDS_VIEWS[feed.view].icon : Play;
+    feed.type === "shorts"
+      ? KIDS_VIEWS.shorts.icon
+      : query && channel === null
+        ? KIDS_VIEWS[feed.view].icon
+        : Play;
   const emptyMessage = query
-    ? "No videos found!"
-    : channelApproved
-      ? "Videos are on the way!"
-      : "Ask a grown-up to pick some videos!";
+    ? feed.type === "shorts"
+      ? "No shorts found!"
+      : "No videos found!"
+    : feed.type === "shorts"
+      ? "No shorts here yet!"
+      : feed.type === "videos"
+        ? "No videos here yet!"
+        : channelApproved
+          ? "Videos are on the way!"
+          : "Ask a grown-up to pick some videos!";
   const emptyAction = query
     ? {
         label: "Clear search",
         href: kidsPortalUrl(profileId, feed, { q: "" }),
       }
-    : channelApproved
+    : feed.type !== "all"
       ? {
-          label: "All channels",
-          href: kidsPortalUrl(profileId, feed, { channel: null }),
+          label: "Show everything",
+          href: kidsPortalUrl(profileId, feed, { type: "all" }),
         }
-      : undefined;
+      : channelApproved
+        ? {
+            label: "All channels",
+            href: kidsPortalUrl(profileId, feed, { channel: null }),
+          }
+        : undefined;
 
   return (
     <>
@@ -131,7 +155,12 @@ export async function VideosView({
 
       <FeedHeader
         title={feedTitle(feed, { channelTitle })}
-        actions={<KidsSortChips options={sortOptions(profileId, feed)} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            <KidsTypeFilter profileId={profileId} feed={feed} />
+            <KidsSortChips options={sortOptions(profileId, feed)} />
+          </div>
+        }
       />
 
       {rows.length === 0 ? (
@@ -169,6 +198,7 @@ async function AllVideosGrid({
   const rows = await getKidsVideos(profileId, {
     sort: feed.sort,
     dir: feed.dir,
+    type: feed.type,
   });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu. cache() makes this the same query
@@ -178,14 +208,34 @@ async function AllVideosGrid({
   return (
     <>
       <FeedHeader
-        title="All videos"
+        title={feed.type === "shorts" ? "All shorts" : "All videos"}
         actions={<KidsSortChips options={sortOptions(profileId, feed)} />}
       />
 
       {rows.length === 0 ? (
         <EmptyState
-          icon={<Play size={48} weight="fill" />}
-          message="Ask a grown-up to pick some videos!"
+          icon={
+            feed.type === "shorts" ? (
+              <KIDS_VIEWS.shorts.icon size={48} weight="fill" />
+            ) : (
+              <Play size={48} weight="fill" />
+            )
+          }
+          message={
+            feed.type === "shorts"
+              ? "No shorts yet!"
+              : feed.type === "videos"
+                ? "No videos yet!"
+                : "Ask a grown-up to pick some videos!"
+          }
+          action={
+            feed.type !== "all"
+              ? {
+                  label: "Show everything",
+                  href: kidsPortalUrl(profileId, feed, { type: "all" }),
+                }
+              : undefined
+          }
         />
       ) : (
         <SaveToPlaylistProvider

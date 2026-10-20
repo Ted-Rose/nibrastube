@@ -24,7 +24,10 @@ export async function PlaylistsView({
   const inPlaylist = list !== null;
 
   const rows = inPlaylist
-    ? await getPlaylistVideos(profileId, list, { q: query })
+    ? await getPlaylistVideos(profileId, list, {
+        q: query,
+        type: feed.type,
+      })
     : [];
   // Playlists snapshot — feeds both playlists views and the shared
   // "Save to playlist" dialog behind every video card's ⋮ menu.

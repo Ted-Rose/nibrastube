@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/empty-state";
+import { KidsTypeFilter } from "@/components/kids-type-filter";
 import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
 import { loadMoreForYou } from "@/app/actions/kids-feed";
@@ -13,7 +14,8 @@ import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
 // For You tab — whitelisted videos ranked by predicted interest (see
-// getRecommendedVideos). No sort chips: the ranking IS the sort.
+// getRecommendedVideos). No sort chips: the ranking IS the sort; the
+// ?type= filter still applies.
 export async function ForYouView({
   profileId,
   feed,
@@ -23,7 +25,10 @@ export async function ForYouView({
 }) {
   const { q: query } = feed;
 
-  const rows = await getRecommendedVideos(profileId, { q: query });
+  const rows = await getRecommendedVideos(profileId, {
+    q: query,
+    type: feed.type,
+  });
   // Playlists snapshot — feeds the shared "Save to playlist" dialog
   // behind every video card's ⋮ menu.
   const playlistRows = await getPlaylists(profileId);
@@ -31,25 +36,43 @@ export async function ForYouView({
 
   return (
     <>
-      <FeedHeader title={feedTitle(feed)} />
+      <FeedHeader
+        title={feedTitle(feed)}
+        actions={<KidsTypeFilter profileId={profileId} feed={feed} />}
+      />
 
       {rows.length === 0 ? (
         <EmptyState
           icon={<ViewIcon size={48} weight="fill" />}
-          message={query ? "No videos found!" : "Nothing picked yet!"}
+          message={
+            query
+              ? feed.type === "shorts"
+                ? "No shorts found!"
+                : "No videos found!"
+              : feed.type === "shorts"
+                ? "No shorts picked yet!"
+                : feed.type === "videos"
+                  ? "No videos picked yet!"
+                  : "Nothing picked yet!"
+          }
           action={
             query
               ? {
                   label: "Clear search",
                   href: kidsPortalUrl(profileId, feed, { q: "" }),
                 }
-              : {
-                  label: "Find videos",
-                  href: kidsPortalUrl(profileId, feed, {
-                    view: "videos",
-                    channel: null,
-                  }),
-                }
+              : feed.type !== "all"
+                ? {
+                    label: "Show everything",
+                    href: kidsPortalUrl(profileId, feed, { type: "all" }),
+                  }
+                : {
+                    label: "Find videos",
+                    href: kidsPortalUrl(profileId, feed, {
+                      view: "videos",
+                      channel: null,
+                    }),
+                  }
           }
         />
       ) : (
@@ -65,7 +88,7 @@ export async function ForYouView({
             // exhausted — no paging hook needed.
             loadMore={
               rows.length === 60
-                ? loadMoreForYou.bind(null, profileId, query)
+                ? loadMoreForYou.bind(null, profileId, query, feed.type)
                 : undefined
             }
           />

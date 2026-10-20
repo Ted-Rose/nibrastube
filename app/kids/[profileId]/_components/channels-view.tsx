@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/empty-state";
 import { KidsTileCard } from "@/components/kids-tile-card";
+import { KidsTypeFilter } from "@/components/kids-type-filter";
 import {
   getKidsChannels,
   kidsPortalUrl,
@@ -9,7 +10,9 @@ import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
 // Channels tab — one tile per approved channel (including mid-backfill
-// channels with no videos yet).
+// channels with no videos yet). The ?type= filter narrows tiles to
+// channels that actually have shorts/videos and carries into the
+// drill-in's video grid.
 export async function ChannelsView({
   profileId,
   feed,
@@ -18,12 +21,18 @@ export async function ChannelsView({
   feed: KidsFeedParams;
 }) {
   const { q: query } = feed;
-  const channelRows = await getKidsChannels(profileId, { q: query });
+  const channelRows = await getKidsChannels(profileId, {
+    q: query,
+    type: feed.type,
+  });
   const ViewIcon = KIDS_VIEWS.channels.icon;
 
   return (
     <>
-      <FeedHeader title={feedTitle(feed)} />
+      <FeedHeader
+        title={feedTitle(feed)}
+        actions={<KidsTypeFilter profileId={profileId} feed={feed} />}
+      />
 
       {channelRows.length === 0 ? (
         <EmptyState
@@ -31,7 +40,11 @@ export async function ChannelsView({
           message={
             query
               ? "No channels found!"
-              : "Ask a grown-up to approve some channels!"
+              : feed.type === "shorts"
+                ? "No channels with shorts yet!"
+                : feed.type === "videos"
+                  ? "No channels with videos yet!"
+                  : "Ask a grown-up to approve some channels!"
           }
           action={
             query
@@ -39,7 +52,12 @@ export async function ChannelsView({
                   label: "Clear search",
                   href: kidsPortalUrl(profileId, feed, { q: "" }),
                 }
-              : undefined
+              : feed.type !== "all"
+                ? {
+                    label: "Show everything",
+                    href: kidsPortalUrl(profileId, feed, { type: "all" }),
+                  }
+                : undefined
           }
         />
       ) : (
@@ -51,6 +69,7 @@ export async function ChannelsView({
               href={kidsPortalUrl(profileId, feed, { channel: c.id })}
               title={c.title}
               count={c.videoCount}
+              noun={feed.type === "shorts" ? "short" : "video"}
               thumbnail={c.thumbnail}
             />
           ))}

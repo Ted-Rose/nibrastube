@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/empty-state";
 import { HistoryDatePicker } from "@/components/history-date-picker";
+import { KidsTypeFilter } from "@/components/kids-type-filter";
 import { HistoryView } from "@/components/history-view";
 import {
   getWatchHistory,
@@ -26,6 +27,7 @@ export async function HistoryFeedView({
   const rows = await getWatchHistory(profileId, {
     q: query,
     date: feed.date ?? undefined,
+    type: feed.type,
   });
   const ViewIcon = KIDS_VIEWS.history.icon;
 
@@ -46,13 +48,27 @@ export async function HistoryFeedView({
       label: "All days",
       href: kidsPortalUrl(profileId, feed, { date: null }),
     };
+  } else if (feed.type !== "all") {
+    emptyMessage =
+      feed.type === "shorts"
+        ? "No shorts watched yet!"
+        : "No videos watched yet!";
+    emptyAction = {
+      label: "Show everything",
+      href: kidsPortalUrl(profileId, feed, { type: "all" }),
+    };
   }
 
   return (
     <>
       <FeedHeader
         title={feedTitle(feed)}
-        actions={<HistoryDatePicker date={feed.date} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            <KidsTypeFilter profileId={profileId} feed={feed} />
+            <HistoryDatePicker date={feed.date} />
+          </div>
+        }
       />
 
       {rows.length === 0 ? (

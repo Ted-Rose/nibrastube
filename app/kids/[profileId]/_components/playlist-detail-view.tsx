@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Play, Playlist } from "@phosphor-icons/react/dist/ssr";
 import { EmptyState } from "@/components/empty-state";
 import type { FeedRow } from "@/components/kids-video-grid";
+import { KidsTypeFilter } from "@/components/kids-type-filter";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { PlaylistActionsMenu } from "@/components/playlist-actions-menu";
 import { PlaylistSortableList } from "@/components/playlist-sortable-list";
@@ -37,13 +38,18 @@ export function PlaylistDetailView({
         label: "Clear search",
         href: kidsPortalUrl(profileId, feed, { q: "" }),
       }
-    : {
-        label: "Find videos",
-        href: kidsPortalUrl(profileId, feed, {
-          view: "videos",
-          channel: null,
-        }),
-      };
+    : feed.type !== "all"
+      ? {
+          label: "Show everything",
+          href: kidsPortalUrl(profileId, feed, { type: "all" }),
+        }
+      : {
+          label: "Find videos",
+          href: kidsPortalUrl(profileId, feed, {
+            view: "videos",
+            channel: null,
+          }),
+        };
 
   return (
     <>
@@ -54,7 +60,8 @@ export function PlaylistDetailView({
       <FeedHeader
         title={feedTitle(feed, { playlistName: playlist.name })}
         actions={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <KidsTypeFilter profileId={profileId} feed={feed} />
             {rows.length > 0 && (
               <Link
                 href={`/kids/${profileId}/watch/${rows[0].video.id}${kidsFeedQuery(feed)}`}
@@ -79,8 +86,14 @@ export function PlaylistDetailView({
           icon={<Playlist size={48} weight="fill" />}
           message={
             query
-              ? "No videos found!"
-              : "No videos yet! Tap ⋮ on a video to add it."
+              ? feed.type === "shorts"
+                ? "No shorts found!"
+                : "No videos found!"
+              : feed.type === "shorts"
+                ? "No shorts in this playlist!"
+                : feed.type === "videos"
+                  ? "No videos in this playlist!"
+                  : "No videos yet! Tap ⋮ on a video to add it."
           }
           action={emptyAction}
         />

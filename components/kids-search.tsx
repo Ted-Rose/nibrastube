@@ -23,7 +23,7 @@ interface KidsSearchProps {
 // document navigation with no pending state and no loading.tsx
 // fallback, which leaves the Android WebView looking frozen. The URL is
 // rebuilt from the live search params so every other filter (view,
-// channel, list, date, sort, dir) survives untouched.
+// channel, list, date, sort, dir, type) survives untouched.
 export function KidsSearch({ query, placeholder }: KidsSearchProps) {
   const router = useRouter();
   const pathname = usePathname();

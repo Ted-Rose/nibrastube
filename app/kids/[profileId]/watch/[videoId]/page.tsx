@@ -42,8 +42,10 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   if (!profile) notFound();
 
   // Autoplay playlist mirrors the grid the kid came from: same channel
-  // filter, search, sort — or the kid-ordered playlist queue.
+  // filter, search, sort, shorts/videos type — or the kid-ordered
+  // playlist queue. The Shorts feed is intrinsically type "shorts".
   const feed = parseKidsFeedParams(await searchParams);
+  const type = feed.view === "shorts" ? ("shorts" as const) : feed.type;
   const playlistId = feed.view === "playlists" ? feed.list : null;
   const history = feed.view === "history";
   // getWatchHistory returns one row per (video, watched-on day), so a
@@ -62,28 +64,28 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   // order — not unwatched-first.
   let sequential = playlistId !== null || history;
   let rows = playlistId
-    ? await getPlaylistVideos(profileId, playlistId, { q: feed.q })
+    ? await getPlaylistVideos(profileId, playlistId, {
+        q: feed.q,
+        type,
+      })
     : history
       ? uniqueByVideo(
           await getWatchHistory(profileId, {
             q: feed.q,
             date: feed.date ?? undefined,
+            type,
           })
         )
-      : feed.view === "foryou"
-        ? await getRecommendedVideos(profileId, { q: feed.q })
-        : feed.view === "shorts"
-          ? await getRecommendedVideos(profileId, {
-              q: feed.q,
-              shortsOnly: true,
-            })
-          : feed.view === "liked"
-          ? await getLikedVideos(profileId, { q: feed.q })
+      : feed.view === "foryou" || feed.view === "shorts"
+        ? await getRecommendedVideos(profileId, { q: feed.q, type })
+        : feed.view === "liked"
+          ? await getLikedVideos(profileId, { q: feed.q, type })
           : await getKidsVideos(profileId, {
               q: feed.q,
               channelId: feed.channel,
               sort: feed.sort,
               dir: feed.dir,
+              type,
             });
   let currentIndex = rows.findIndex((r) => r.video.id === videoId);
 
@@ -97,7 +99,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
         : feed.view === "foryou"
           ? await getRecommendedVideos(profileId)
           : feed.view === "shorts"
-            ? await getRecommendedVideos(profileId, { shortsOnly: true })
+            ? await getRecommendedVideos(profileId, { type: "shorts" })
             : feed.view === "liked"
               ? await getLikedVideos(profileId)
               : await getKidsVideos(profileId, {

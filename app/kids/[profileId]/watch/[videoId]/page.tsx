@@ -167,6 +167,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
       startSeconds,
       status: watchStatus(progress),
       reaction,
+      isShort: video.isShort,
     };
   });
 

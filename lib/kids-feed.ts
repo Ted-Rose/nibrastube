@@ -219,6 +219,7 @@ const feedVideoCols = {
   thumbnail: videos.thumbnail,
   channelTitle: videos.channelTitle,
   durationSeconds: videos.durationSeconds,
+  isShort: videos.isShort,
 };
 
 export interface FeedVideo {
@@ -227,6 +228,7 @@ export interface FeedVideo {
   thumbnail: string;
   channelTitle: string;
   durationSeconds: number | null;
+  isShort: boolean;
 }
 
 // JS mirror of the statusRank CASE below — same tiers, so autoplay picks

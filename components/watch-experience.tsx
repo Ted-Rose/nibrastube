@@ -36,6 +36,7 @@ interface PlaylistVideo {
   startSeconds?: number;
   status: WatchStatus;
   reaction: VideoReaction | null;
+  isShort?: boolean;
 }
 
 interface WatchExperienceProps {
@@ -697,7 +698,7 @@ export function WatchExperience({
         {/* Same `video-<id>` name as the grid thumbnail and the loading
             thumbnail, so the tapped card morphs into the player. */}
         <ViewTransition name={`video-${current.id}`}>
-          <FullscreenPlayer>
+          <FullscreenPlayer portrait={current.isShort}>
             <div ref={containerRef} className="w-full h-full">
               <div ref={mountRef} className="w-full h-full" />
             </div>

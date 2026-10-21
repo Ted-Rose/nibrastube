@@ -12,6 +12,7 @@ import type { SongQueueEntry } from "@/lib/songs-feed";
 import {
   ensureYouTubeAPI,
   loadedVideoId,
+  YT_MOUNT_CLASS,
   type YTPlayer,
 } from "@/lib/yt-player";
 
@@ -97,7 +98,7 @@ export function SongPlayerOverlay({
       // fresh one (same guard as watch-experience).
       if (!mountRef.current || !mountRef.current.isConnected) {
         const el = document.createElement("div");
-        el.className = "w-full h-full";
+        el.className = YT_MOUNT_CLASS;
         container.appendChild(el);
         mountRef.current = el;
       }
@@ -184,15 +185,11 @@ export function SongPlayerOverlay({
       if (e.key === "Escape") close();
     };
     window.addEventListener("keydown", onKeyDown);
-    // Keep the feed from scrolling behind the player.
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
 
     return () => {
       cancelled = true;
       window.clearInterval(tick);
       window.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
       const p = playerRef.current ?? createdPlayer;
       playerRef.current = null;
       createdPlayer = null;
@@ -217,6 +214,12 @@ export function SongPlayerOverlay({
     "end";
 
   return (
+    // KNOWN ISSUE: this `fixed inset-0` root is the same pattern that
+    // desyncs OOPIF touch hit-regions around the YouTube iframe on real
+    // mobile engines (WebKit bug 261390 — dead embed controls). As a
+    // genuine modal, converting it to document flow is a design
+    // decision; pending that, the body scroll-lock was dropped so no
+    // overflow-locking layer is added around the iframe.
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
       {/* Player header — same chrome as the kids watch page. */}
       <div
@@ -267,11 +270,17 @@ export function SongPlayerOverlay({
       </div>
 
       {/* Video player area — FullscreenPlayer gives the same
-          auto-fullscreen behavior as the watch page. */}
-      <div className="flex flex-1 items-center justify-center p-4 md:p-10">
+          auto-fullscreen behavior as the watch page. min-h-0 lets the
+          area shrink below the iframe's min-content height instead of
+          clipping inside this fixed modal; the md padding is
+          height-gated for landscape phones (same as the watch page). */}
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4 md:[@media(min-height:480px)]:p-10">
         <FullscreenPlayer>
           <div ref={containerRef} className="h-full w-full">
-            <div ref={mountRef} className="h-full w-full" />
+            {/* YT_MOUNT_CLASS transfers to the iframe when the YT API
+                replaces this mount div (same as the watch page) — see
+                lib/yt-player.ts. */}
+            <div ref={mountRef} className={YT_MOUNT_CLASS} />
           </div>
         </FullscreenPlayer>
       </div>

@@ -27,6 +27,7 @@ import type { VideoReaction, WatchStatus } from "@/lib/kids-feed";
 import {
   ensureYouTubeAPI,
   loadedVideoId,
+  YT_MOUNT_CLASS,
   type YTPlayer,
 } from "@/lib/yt-player";
 
@@ -358,7 +359,7 @@ export function WatchExperience({
       // a fresh mount point.
       if (!mountRef.current || !mountRef.current.isConnected) {
         const el = document.createElement("div");
-        el.className = "w-full h-full";
+        el.className = YT_MOUNT_CLASS;
         container.appendChild(el);
         mountRef.current = el;
       }
@@ -735,7 +736,20 @@ export function WatchExperience({
     // header, footer, and edge strips.
     <div
       className={cn(
-        "min-h-screen bg-black flex flex-col",
+        // h-screen, not min-h-screen: percentage heights (the player's
+        // h-full chain) only resolve through a DEFINITE ancestor height —
+        // a min-height-clamped auto height is indefinite, so h-full on
+        // the flex item below resolved to 0 and the player collapsed.
+        // Content taller than the viewport still scrolls (nothing clips).
+        // svh upgrades vh on modern browsers: 100vh is the LARGE
+        // viewport (address bar hidden), so with the bar visible the
+        // player ran ~60-80px taller than the screen on phones. svh
+        // tracks the smallest viewport — everything fits without the
+        // resize-on-scroll jank dvh would add. The fallback rides a
+        // supports-[] variant rather than stacking "h-screen h-svh" —
+        // twMerge would drop h-screen, and browsers without svh would
+        // collapse the h-full chain again.
+        "h-screen supports-[height:100svh]:h-svh bg-black flex flex-col",
         swipeEnabled && "select-none"
       )}
       onTouchStart={onTouchStart}
@@ -778,14 +792,26 @@ export function WatchExperience({
         </Link>
       </div>
 
-      {/* Video Player Area */}
-      <div className="flex-1 flex items-center justify-center p-4 md:p-10">
+      {/* Video Player Area — edge-to-edge in plain flow on phones
+          (items-stretch + p-0), centered card on desktop. NO
+          fixed/absolute/overflow layer may ever wrap the iframe — see
+          the invariant in fullscreen-player.tsx. min-h-0: without it
+          the default min-height:auto clamps this item to the portrait
+          aspect box's min-content height (a 9:16 box's height resolves
+          from its WIDTH when the % chain is still indefinite), so on a
+          short landscape screen the player grew to ~3x the viewport
+          instead of letterboxing to the free space. The md padding is
+          height-gated: a landscape phone is ≥768px wide but only
+          ~390px tall — md:p-10 there ate most of the player area. */}
+      <div className="flex-1 min-h-0 flex items-stretch justify-center p-0 sm:items-center sm:p-4 md:[@media(min-height:480px)]:p-10">
         {/* Same `video-<id>` name as the grid thumbnail and the loading
             thumbnail, so the tapped card morphs into the player. */}
         <ViewTransition name={`video-${current.id}`}>
           <FullscreenPlayer portrait={current.isShort}>
             <div ref={containerRef} className="w-full h-full">
-              <div ref={mountRef} className="w-full h-full" />
+              {/* YT_MOUNT_CLASS transfers to the iframe when the YT API
+                  replaces this mount div — see lib/yt-player.ts. */}
+              <div ref={mountRef} className={YT_MOUNT_CLASS} />
             </div>
             {/* Reaction overlay must live inside FullscreenPlayer — in native
                 fullscreen only descendants of the fullscreen element render. */}

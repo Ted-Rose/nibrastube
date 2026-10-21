@@ -1,22 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { X } from "@phosphor-icons/react";
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 export function FullscreenPlayer({
   children,
-  // Portrait video (a Short): constrain the fullscreen box to ~9:16 so
-  // the embed letterboxes instead of cropping the video to fill a
-  // landscape frame.
+  // Portrait video (a Short): constrain the player box to ~9:16 so the
+  // embed letterboxes instead of cropping the video to fill a landscape
+  // frame — applied inline AND in native fullscreen.
   portrait,
 }: {
   children: React.ReactNode;
   portrait?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   // Once the user deliberately leaves fullscreen, stop auto-requesting it —
   // otherwise every subsequent tap re-enters fullscreen and traps them.
   const userExitedRef = useRef(false);
@@ -27,10 +24,8 @@ export function FullscreenPlayer({
 
     // A fullscreen element joins the top layer ABOVE the
     // ::view-transition-* pseudos — entering while a share morph is
-    // animating hides it (hard cut), and the iOS `fixed inset-0`
-    // fallback would re-layout the morph target after the transition
-    // captured its max-w-6xl geometry. So defer until no transition is
-    // in flight.
+    // animating hides it (hard cut), so defer until no transition is in
+    // flight.
     let disposed = false;
     let morphDeadline = 0;
     let morphTimer: ReturnType<typeof setTimeout> | null = null;
@@ -78,28 +73,35 @@ export function FullscreenPlayer({
           return;
         }
       }
-      // iOS/Safari PWA doesn't support fullscreen on arbitrary elements —
-      // and a platform-vetoed request must not be retried, or every tap
-      // re-runs the enter→exit flap. Both fall back to a CSS overlay
-      // that fills the viewport.
-      if (!el.requestFullscreen || nativeFsDenied) {
-        setPseudoFullscreen(true);
-        return;
-      }
-      Promise.resolve(el.requestFullscreen()).catch(() =>
-        setPseudoFullscreen(true)
-      );
+      // iOS/Safari PWA can't fullscreen arbitrary elements, and a
+      // platform-vetoed request must not be retried or every tap
+      // re-runs the enter→exit flap — both cases just stay inline.
+      // There is deliberately NO fixed-position CSS fallback: a
+      // viewport-covering layer around the cross-origin OOPIF desyncs
+      // touch hit-regions on real mobile engines (WebKit bug 261390),
+      // leaving the embed's controls dead.
+      if (!el.requestFullscreen || nativeFsDenied) return;
+      // A rejection (missing gesture, or a denied request) likewise
+      // stays inline — the pointerdown retry below turns the first
+      // real tap into the user gesture this request needed.
+      Promise.resolve(el.requestFullscreen()).catch(() => {});
     };
 
     requestFs();
 
     // Browsers require a user gesture for fullscreen, so retry on
     // interaction if the automatic request was rejected. Skip taps on
-    // buttons — their click handlers manage fullscreen themselves, and
-    // a pointerdown-time request races them (e.g. the exit button's tap
-    // would re-enter fullscreen as its exit click lands).
+    // interactive chrome — their own handlers should run undisturbed,
+    // and a pointerdown-time fullscreen request races them (e.g. a nav
+    // link entering fs an instant before the route changes, or the
+    // swipe dialog's checkbox yanking the page fullscreen mid-modal).
     const onInteract = (e: Event) => {
-      if (e.target instanceof Element && e.target.closest("button")) return;
+      if (
+        e.target instanceof Element &&
+        e.target.closest("button, a, input, label, select, textarea")
+      ) {
+        return;
+      }
       if (!document.fullscreenElement) requestFs();
     };
 
@@ -129,19 +131,15 @@ export function FullscreenPlayer({
           userExitedRef.current = true;
         } else {
           // Died instantly: a denied request, not a deliberate exit —
-          // fall back to the CSS overlay and stop asking for native
-          // fullscreen (each retry is another visible flap). Leave
-          // userExitedRef unlatched so taps can still re-enter the
-          // overlay.
+          // stay inline and stop asking for native fullscreen (each
+          // retry is another visible flap). Leave userExitedRef
+          // unlatched so a denied request can't wedge the player.
           nativeFsDenied = true;
-          setPseudoFullscreen(true);
         }
       }
       // Keep wasOurs true through a nested iframe fullscreen so
       // exiting that to null still counts as leaving ours.
       if (ours || !fsEl) wasOurs = ours;
-      setIsFullscreen(ours);
-      if (fsEl) setPseudoFullscreen(false);
     };
 
     window.addEventListener("pointerdown", onInteract);
@@ -160,53 +158,41 @@ export function FullscreenPlayer({
   }, []);
 
   return (
+    // INVARIANT: the cross-origin YouTube iframe's ancestor chain must
+    // stay plain document flow — no position:fixed/absolute layer, no
+    // overflow clip/scroll container, no new stacking context wrapping
+    // it. Viewport-anchored layers around an OOPIF desync the
+    // UI-process touch hit-regions on real mobile engines (WebKit bug
+    // 261390 et al.): DOM hit-tests look clean while real touches die.
+    // The only permitted "fullscreen" is this element's own :fullscreen
+    // top layer — and the inline "card" is the only other state.
     <div
       ref={ref}
       className={cn(
-        "w-full bg-slate-900 group",
-        pseudoFullscreen
-          ? // Two iOS/WebKit hit-testing constraints shape this overlay:
-            // no overflow-hidden ancestor (it serves no purpose without
-            // the rounded card anyway) and no scroll-locking html/body
-            // while it's up — overflow-hidden scroll containers wrapping
-            // the cross-origin iframe break touch hit-testing inside the
-            // YouTube embed (dead controls). Viewport-anchored `fixed`
-            // needs no scroll lock: the opaque overlay hides the page
-            // behind it regardless of scroll offset.
-            "fixed inset-0 z-50 h-full"
-          : "relative max-w-6xl aspect-video rounded-[32px] shadow-2xl border-4 border-slate-800 overflow-hidden",
-        "fullscreen:max-w-none fullscreen:aspect-auto fullscreen:h-full fullscreen:rounded-none fullscreen:border-0 fullscreen:overflow-visible fullscreen:shadow-none"
+        // Card look in normal flow. No overflow-hidden: corner rounding
+        // comes from border-radius on this div AND on the iframe/mount
+        // container itself (the mount divs in watch-experience and
+        // song-player-overlay, whose classes the YT API transfers to
+        // the iframe — the [&_iframe] rules here back that up) — radius
+        // on the element clips its own rendering without creating a
+        // scroll container the way overflow does.
+        "relative w-full h-full bg-slate-900 rounded-3xl shadow-2xl border-4 border-slate-800",
+        "[&_iframe]:rounded-3xl fullscreen:[&_iframe]:rounded-none",
+        "fullscreen:fixed fullscreen:inset-0 fullscreen:h-full fullscreen:w-full fullscreen:max-w-none fullscreen:rounded-none fullscreen:border-0 fullscreen:overflow-visible fullscreen:shadow-none fullscreen:aspect-auto"
       )}
     >
       {/* Inner box the overlays anchor to — narrowed to ~9:16 for
-          portrait videos so the embed letterboxes instead of cropping. */}
+          portrait videos (inline and fullscreen alike) so the embed
+          letterboxes instead of cropping. */}
       <div
         className={cn(
-          "relative w-full h-full",
-          (pseudoFullscreen || isFullscreen) &&
-            portrait &&
-            "aspect-[9/16] w-auto max-w-full mx-auto"
+          "relative h-full",
+          portrait
+            ? "aspect-[9/16] w-auto max-w-full mx-auto"
+            : "w-full"
         )}
       >
         {children}
-        {/* Only in the CSS pseudo-overlay (iOS — no element fullscreen):
-            there is no native way out of a fixed-position overlay, and
-            the page header sits beneath it — without this button the
-            kid would be trapped. Native fullscreen exits via the
-            browser's own gesture/Esc, so no overlay is needed there. */}
-        {pseudoFullscreen && (
-          <button
-            onClick={() => {
-              userExitedRef.current = true;
-              setPseudoFullscreen(false);
-              if (document.fullscreenElement) document.exitFullscreen();
-            }}
-            aria-label="Exit fullscreen"
-            className="absolute top-3 left-3 z-50 w-11 h-11 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
-          >
-            <X size={22} weight="bold" />
-          </button>
-        )}
       </div>
     </div>
   );

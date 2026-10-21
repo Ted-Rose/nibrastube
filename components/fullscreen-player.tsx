@@ -7,7 +7,8 @@ export function FullscreenPlayer({
   children,
   // Portrait video (a Short): constrain the player box to ~9:16 so the
   // embed letterboxes instead of cropping the video to fill a landscape
-  // frame — applied inline AND in native fullscreen.
+  // frame — inline only; in iframe fullscreen the box isn't in the top
+  // layer at all, so the letterbox there is the embed's own.
   portrait,
 }: {
   children: React.ReactNode;
@@ -73,6 +74,18 @@ export function FullscreenPlayer({
           return;
         }
       }
+      // The YT API swaps the mount node for its iframe async, so it
+      // may not exist yet — poll briefly on the same shared ~2s
+      // deadline. If it never mounts, stay inline: the pointerdown
+      // retry below covers a late mount.
+      const target = el.querySelector("iframe");
+      if (!target) {
+        if (!morphDeadline) morphDeadline = Date.now() + 2000;
+        if (Date.now() < morphDeadline) {
+          morphTimer = setTimeout(requestFs, 100);
+        }
+        return;
+      }
       // iOS/Safari PWA can't fullscreen arbitrary elements, and a
       // platform-vetoed request must not be retried or every tap
       // re-runs the enter→exit flap — both cases just stay inline.
@@ -80,11 +93,11 @@ export function FullscreenPlayer({
       // viewport-covering layer around the cross-origin OOPIF desyncs
       // touch hit-regions on real mobile engines (WebKit bug 261390),
       // leaving the embed's controls dead.
-      if (!el.requestFullscreen || nativeFsDenied) return;
+      if (!target.requestFullscreen || nativeFsDenied) return;
       // A rejection (missing gesture, or a denied request) likewise
       // stays inline — the pointerdown retry below turns the first
       // real tap into the user gesture this request needed.
-      Promise.resolve(el.requestFullscreen()).catch(() => {});
+      Promise.resolve(target.requestFullscreen()).catch(() => {});
     };
 
     requestFs();
@@ -110,12 +123,12 @@ export function FullscreenPlayer({
     // this the YouTube embed's controls are untappable on iPhone.
     const noopTouch = () => {};
 
-    // Was OUR element the fullscreen root at the last change? The
-    // YouTube iframe itself can take fullscreen (its own ⛶ button —
-    // the embed has allowfullscreen), replacing our div in the top
-    // layer: that's nested fullscreen, NOT a user exit of ours.
-    // Only fullscreen emptying entirely while ours was the root is a
-    // deliberate exit worth latching into userExitedRef.
+    // Was the fullscreen element ours at the last change? "Ours"
+    // covers any fullscreen DESCENDANT — our request targets the
+    // iframe itself, and the embed's own ⛶ button (allowfullscreen)
+    // puts the same iframe in the top layer. Only fullscreen
+    // emptying entirely while we held it is a deliberate exit worth
+    // latching into userExitedRef.
     let wasOurs = false;
     // When our element became fullscreen — Capacitor's WebChromeClient
     // calls onCustomViewHidden() immediately inside onShowCustomView, so
@@ -124,7 +137,11 @@ export function FullscreenPlayer({
     let fsEnteredAt = 0;
     const onFsChange = () => {
       const fsEl = document.fullscreenElement;
-      const ours = fsEl === el;
+      // The fs element can only be one at a time, so a nested enter
+      // (the embed's ⛶ while we already hold iframe-fs) reports the
+      // descendant iframe — contains() keeps `ours` true through the
+      // swap and wasOurs never flaps mid-session.
+      const ours = fsEl === el || (!!fsEl && el.contains(fsEl));
       if (ours) fsEnteredAt = Date.now();
       if (wasOurs && !fsEl) {
         if (Date.now() - fsEnteredAt > 500) {
@@ -164,8 +181,10 @@ export function FullscreenPlayer({
     // it. Viewport-anchored layers around an OOPIF desync the
     // UI-process touch hit-regions on real mobile engines (WebKit bug
     // 261390 et al.): DOM hit-tests look clean while real touches die.
-    // The only permitted "fullscreen" is this element's own :fullscreen
-    // top layer — and the inline "card" is the only other state.
+    // The fullscreen request therefore targets the IFRAME element
+    // itself (the exact path the embed's own ⛶ button uses) so no
+    // foreign embedder element ever enters the top layer around the
+    // OOPIF — and the inline "card" is the only other state.
     <div
       ref={ref}
       className={cn(
@@ -173,17 +192,21 @@ export function FullscreenPlayer({
         // comes from border-radius on this div AND on the iframe/mount
         // container itself (the mount divs in watch-experience and
         // song-player-overlay, whose classes the YT API transfers to
-        // the iframe — the [&_iframe] rules here back that up) — radius
+        // the iframe — the [&_iframe] rule here backs that up) — radius
         // on the element clips its own rendering without creating a
-        // scroll container the way overflow does.
+        // scroll container the way overflow does. No fullscreen:*
+        // classes: this div never enters the top layer (the request
+        // targets the iframe — see requestFs) so they would be dead,
+        // and the iframe's own fullscreen:rounded-none already lives
+        // on YT_MOUNT_CLASS.
         "relative w-full h-full bg-slate-900 rounded-3xl shadow-2xl border-4 border-slate-800",
-        "[&_iframe]:rounded-3xl fullscreen:[&_iframe]:rounded-none",
-        "fullscreen:fixed fullscreen:inset-0 fullscreen:h-full fullscreen:w-full fullscreen:max-w-none fullscreen:rounded-none fullscreen:border-0 fullscreen:overflow-visible fullscreen:shadow-none fullscreen:aspect-auto"
+        "[&_iframe]:rounded-3xl"
       )}
     >
       {/* Inner box the overlays anchor to — narrowed to ~9:16 for
-          portrait videos (inline and fullscreen alike) so the embed
-          letterboxes instead of cropping. */}
+          portrait videos so the embed letterboxes instead of
+          cropping. Irrelevant while the iframe is fullscreen: it's in
+          the top layer, not laid out inside this box. */}
       <div
         className={cn(
           "relative h-full",

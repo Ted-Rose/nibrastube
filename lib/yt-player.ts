@@ -35,6 +35,7 @@ export interface YTNamespace {
       events?: {
         onReady?: (event: { target: YTPlayer }) => void;
         onStateChange?: (event: YTPlayerEvent) => void;
+        onError?: (event: YTPlayerEvent) => void;
       };
     }
   ) => YTPlayer;

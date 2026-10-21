@@ -74,6 +74,13 @@ export function WatchExperience({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayer | null>(null);
   const advancingRef = useRef(false);
+  // Bumped on every goTo() — the post-load watchdog compares its
+  // captured token so a stale timer can't release a NEWER advance.
+  const navTokenRef = useRef(0);
+  // Videos the embed refused this session (deleted, private, or
+  // embed-disabled) — lets onError stop once nothing playable remains
+  // instead of cycling a dead queue forever.
+  const erroredRef = useRef(new Set<string>());
   // Latest position sample, kept fresh by the 500ms tick below.
   const latestRef = useRef({ videoId: "", position: 0, duration: 0 });
   const lastSentRef = useRef(0);
@@ -112,6 +119,11 @@ export function WatchExperience({
     dir: SwipeDirection;
     title?: string;
   } | null>(null);
+  // Ref mirror of pendingSwipe for the effect's timers/Player events —
+  // the load watchdog and onError must not release advancingRef out
+  // from under an open dialog (it doubles as the pause-during-dialog
+  // hold there).
+  const pendingSwipeRef = useRef(false);
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(
     null
   );
@@ -191,6 +203,7 @@ export function WatchExperience({
     // Playlist changed under an open swipe dialog — the pending target
     // preview may be stale, so drop it. The recreated player autoplays,
     // which is the "keep watching" outcome anyway.
+    pendingSwipeRef.current = false;
     setPendingSwipe(null);
 
     // Playlist emptied mid-session — nothing to play; the watch page
@@ -233,6 +246,7 @@ export function WatchExperience({
     // instead of navigating — keeps the element (and fullscreen mode)
     // mounted. Shared by autoplay and swipe gestures.
     const goTo = (next: number) => {
+      const token = ++navTokenRef.current;
       // Flush BEFORE loadVideoById — the player is reused, so the old
       // video's position would otherwise be lost.
       flush();
@@ -264,6 +278,24 @@ export function WatchExperience({
           ? 0
           : (playlist[next].startSeconds ?? 0),
       });
+      // Watchdog: a failed or blocked load may never fire PLAYING (or
+      // even onError), latching advancingRef and killing autoplay —
+      // release the guard if nothing is playing/buffering after ~6s.
+      // The token keeps a stale timer from releasing a newer advance.
+      if (navWatchdog) clearTimeout(navWatchdog);
+      navWatchdog = setTimeout(() => {
+        if (navTokenRef.current !== token) return;
+        // An open swipe dialog holds advancingRef deliberately
+        // (pause-during-dialog) — don't free it beneath the modal.
+        if (pendingSwipeRef.current) return;
+        const state = playerRef.current?.getPlayerState();
+        if (
+          state !== window.YT?.PlayerState.PLAYING &&
+          state !== window.YT?.PlayerState.BUFFERING
+        ) {
+          advancingRef.current = false;
+        }
+      }, 6000);
       window.history.replaceState(
         null,
         "",
@@ -313,6 +345,9 @@ export function WatchExperience({
     // the ref early let the 500ms tick and goTo() call them on a
     // not-yet-ready player ("getVideoData is not a function").
     let createdPlayer: YTPlayer | null = null;
+    // Pending post-load watchdog from goTo() — cleared on cleanup so a
+    // recreated effect can't have a stale timer release its guard.
+    let navWatchdog: ReturnType<typeof setTimeout> | null = null;
 
     const createPlayer = () => {
       const container = containerRef.current;
@@ -385,6 +420,32 @@ export function WatchExperience({
               };
               advance();
             }
+          },
+          onError: () => {
+            // The embed refused the video (deleted, private, or
+            // embed-disabled) — no PLAYING will ever arrive, so the
+            // advancingRef guard would latch forever. Mark the video
+            // unusable (status 2 → never re-picked by pickNextIndex),
+            // release the guard, and move on.
+            const curId = playlist[indexRef.current]?.id;
+            if (curId) {
+              erroredRef.current.add(curId);
+              statusRef.current.set(
+                curId,
+                Math.max(statusRef.current.get(curId) ?? 0, 2) as WatchStatus
+              );
+            }
+            // An open swipe dialog holds advancingRef deliberately —
+            // don't release it or navigate out from under the modal.
+            if (pendingSwipeRef.current) return;
+            advancingRef.current = false;
+            // Every video has refused to play — leave the error frame
+            // up rather than cycling the dead queue forever. The guard
+            // is still released above so manual swipes keep working.
+            if (playlist.every((v) => erroredRef.current.has(v.id))) {
+              return;
+            }
+            advance();
           },
         },
       });
@@ -473,6 +534,7 @@ export function WatchExperience({
     return () => {
       cancelled = true;
       window.clearInterval(tick);
+      if (navWatchdog) clearTimeout(navWatchdog);
       window.removeEventListener("pagehide", flushBeacon);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       // Unmount (Back to Videos / House / route change) — last chance flush.
@@ -494,6 +556,20 @@ export function WatchExperience({
     statusAt,
     prefetchExits,
   ]);
+
+  // Suppress pull-to-refresh while swipe-nav is on. overscroll-behavior
+  // only applies to scroll containers, so a class on the (non-scrolling)
+  // root div is a no-op — it has to go on the document scroller. Done
+  // here, scoped to this page's lifetime, rather than in globals.css.
+  useEffect(() => {
+    if (!swipeEnabled) return;
+    const root = document.documentElement;
+    const prev = root.style.overscrollBehaviorY;
+    root.style.overscrollBehaviorY = "none";
+    return () => {
+      root.style.overscrollBehaviorY = prev;
+    };
+  }, [swipeEnabled]);
 
   // The index goBack would pick, for the confirm dialog's title preview.
   const peekPrevIndex = () => {
@@ -541,11 +617,13 @@ export function WatchExperience({
     preSwipeStateRef.current = playerRef.current?.getPlayerState() ?? null;
     // Pause under the modal so audio doesn't keep playing.
     playerRef.current?.pauseVideo();
+    pendingSwipeRef.current = true;
     setPendingSwipe({ dir, title: playlist[target]?.title });
   };
 
   const confirmSwipe = (dontAskAgain: boolean) => {
     const dir = pendingSwipe?.dir;
+    pendingSwipeRef.current = false;
     setPendingSwipe(null);
     // Release the nav guard BEFORE the nav function re-acquires it.
     advancingRef.current = false;
@@ -562,6 +640,7 @@ export function WatchExperience({
   };
 
   const cancelSwipe = () => {
+    pendingSwipeRef.current = false;
     setPendingSwipe(null);
     advancingRef.current = false;
     // Resume only if the video was actually playing when the swipe
@@ -647,20 +726,26 @@ export function WatchExperience({
     reactions.get(activeVideoId || current.id) ?? null;
 
   return (
-    // touch-none when swipe is on so scroll/pull-to-refresh doesn't steal
-    // the gesture — the watch page is built to fit the viewport.
+    // select-none when swipe is on; pull-to-refresh is suppressed on the
+    // document scroller by the effect above. touch-action:none is kept
+    // OFF this root and the player wrapper — an ancestor touch-action
+    // interferes with gesture arbitration for touches inside the
+    // cross-origin iframe on Android WebView (dead player controls).
+    // touch-none stays only on regions that don't wrap the iframe: the
+    // header, footer, and edge strips.
     <div
       className={cn(
         "min-h-screen bg-black flex flex-col",
-        swipeEnabled && "touch-none select-none"
+        swipeEnabled && "select-none"
       )}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       onTouchCancel={onTouchCancel}
     >
-      {/* Player Header */}
-      <div className="bg-slate-900/80 backdrop-blur px-3 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 flex items-center justify-between gap-2 text-white border-b border-slate-800">
+      {/* Player Header — touch-none: not an iframe ancestor, so it can
+          safely claim its gestures (a swipe here shouldn't scroll/PTR). */}
+      <div className="bg-slate-900/80 backdrop-blur px-3 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 flex items-center justify-between gap-2 text-white border-b border-slate-800 touch-none">
         <Link
           href={portalUrl}
           aria-label="Back to videos"
@@ -738,18 +823,18 @@ export function WatchExperience({
                     YT iframe never reach our document, so these transparent
                     strips catch swipes that begin at the screen edge. They
                     must live INSIDE FullscreenPlayer — in native fullscreen
-                    only descendants of fullscreenElement render. bottom-16
+                    only descendants of fullscreenElement render. bottom-24
                     leaves the YouTube control bar (incl. corner buttons)
                     reachable; the video center stays fully tappable. */}
                 <div
-                  className="absolute top-0 bottom-16 left-0 w-7 z-40 touch-none"
+                  className="absolute top-0 bottom-24 left-0 w-7 z-40 touch-none"
                   onTouchStart={onTouchStart}
                   onTouchMove={onTouchMove}
                   onTouchEnd={onTouchEnd}
                   onTouchCancel={onTouchCancel}
                 />
                 <div
-                  className="absolute top-0 bottom-16 right-0 w-7 z-40 touch-none"
+                  className="absolute top-0 bottom-24 right-0 w-7 z-40 touch-none"
                   onTouchStart={onTouchStart}
                   onTouchMove={onTouchMove}
                   onTouchEnd={onTouchEnd}
@@ -769,8 +854,9 @@ export function WatchExperience({
         </ViewTransition>
       </div>
 
-      {/* Kid-Friendly Controls (Optional/Simplified) */}
-      <div className="bg-slate-900/50 p-4 sm:p-8 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-4">
+      {/* Kid-Friendly Controls (Optional/Simplified) — touch-none like
+          the header: it doesn't wrap the iframe. */}
+      <div className="bg-slate-900/50 p-4 sm:p-8 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-4 touch-none">
         <div className="flex items-center gap-4 sm:gap-10">
           <Link
             href="/kids"

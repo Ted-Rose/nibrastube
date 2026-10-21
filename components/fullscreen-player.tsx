@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CornersOut, X } from "@phosphor-icons/react";
+import { X } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 export function FullscreenPlayer({
@@ -20,13 +20,6 @@ export function FullscreenPlayer({
   // Once the user deliberately leaves fullscreen, stop auto-requesting it —
   // otherwise every subsequent tap re-enters fullscreen and traps them.
   const userExitedRef = useRef(false);
-  // Render-side mirror of userExitedRef — gates the re-enter button so it
-  // can't flash during the mount-time auto-request/view-transition morph.
-  const [hasExited, setHasExited] = useState(false);
-  // The effect-owned requestFs, surfaced to the re-enter button below —
-  // needed because YouTube's Shorts embed skin renders no fullscreen
-  // control of its own, leaving no way back in after exiting.
-  const requestFsRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const el = ref.current;
@@ -41,6 +34,13 @@ export function FullscreenPlayer({
     let disposed = false;
     let morphDeadline = 0;
     let morphTimer: ReturnType<typeof setTimeout> | null = null;
+    // Set when a request entered fullscreen and died instantly — the
+    // platform vetoed it (Capacitor's WebChromeClient hides the custom
+    // view inside onShowCustomView), so retrying would re-flap on every
+    // tap. Declared up here, not beside wasOurs/fsEnteredAt: requestFs
+    // runs synchronously below, ahead of those declarations, so a `let`
+    // there would still be in the TDZ when it's read.
+    let nativeFsDenied = false;
 
     const requestFs = () => {
       if (disposed || userExitedRef.current) return;
@@ -57,8 +57,13 @@ export function FullscreenPlayer({
       ).__reactViewTransition;
       const finished = viewTransition && viewTransition.finished;
       if (finished && typeof finished.then === "function") {
-        finished.then(requestFs, requestFs);
-        return;
+        // Bound the wait on the shared ~2s deadline — a stale settled
+        // promise could otherwise re-schedule requestFs forever.
+        if (!morphDeadline) morphDeadline = Date.now() + 2000;
+        if (Date.now() < morphDeadline) {
+          finished.then(requestFs, requestFs);
+          return;
+        }
       }
       // Fallback: React also applies view-transition-name to this
       // element for the duration of a morph, so a set name likewise
@@ -74,8 +79,10 @@ export function FullscreenPlayer({
         }
       }
       // iOS/Safari PWA doesn't support fullscreen on arbitrary elements —
-      // fall back to a CSS overlay that fills the viewport.
-      if (!el.requestFullscreen) {
+      // and a platform-vetoed request must not be retried, or every tap
+      // re-runs the enter→exit flap. Both fall back to a CSS overlay
+      // that fills the viewport.
+      if (!el.requestFullscreen || nativeFsDenied) {
         setPseudoFullscreen(true);
         return;
       }
@@ -84,7 +91,6 @@ export function FullscreenPlayer({
       );
     };
 
-    requestFsRef.current = requestFs;
     requestFs();
 
     // Browsers require a user gesture for fullscreen, so retry on
@@ -97,19 +103,50 @@ export function FullscreenPlayer({
       if (!document.fullscreenElement) requestFs();
     };
 
+    // iOS Safari drops touches inside cross-origin iframes unless the
+    // top window also listens for them (WebKit bug 128924) — without
+    // this the YouTube embed's controls are untappable on iPhone.
+    const noopTouch = () => {};
+
+    // Was OUR element the fullscreen root at the last change? The
+    // YouTube iframe itself can take fullscreen (its own ⛶ button —
+    // the embed has allowfullscreen), replacing our div in the top
+    // layer: that's nested fullscreen, NOT a user exit of ours.
+    // Only fullscreen emptying entirely while ours was the root is a
+    // deliberate exit worth latching into userExitedRef.
+    let wasOurs = false;
+    // When our element became fullscreen — Capacitor's WebChromeClient
+    // calls onCustomViewHidden() immediately inside onShowCustomView, so
+    // a denied request arrives as an enter→exit fullscreenchange flap
+    // rather than a rejected promise.
+    let fsEnteredAt = 0;
     const onFsChange = () => {
-      if (document.fullscreenElement) {
-        setIsFullscreen(true);
-        setPseudoFullscreen(false);
-      } else {
-        setIsFullscreen(false);
-        setHasExited(true);
-        userExitedRef.current = true;
+      const fsEl = document.fullscreenElement;
+      const ours = fsEl === el;
+      if (ours) fsEnteredAt = Date.now();
+      if (wasOurs && !fsEl) {
+        if (Date.now() - fsEnteredAt > 500) {
+          userExitedRef.current = true;
+        } else {
+          // Died instantly: a denied request, not a deliberate exit —
+          // fall back to the CSS overlay and stop asking for native
+          // fullscreen (each retry is another visible flap). Leave
+          // userExitedRef unlatched so taps can still re-enter the
+          // overlay.
+          nativeFsDenied = true;
+          setPseudoFullscreen(true);
+        }
       }
+      // Keep wasOurs true through a nested iframe fullscreen so
+      // exiting that to null still counts as leaving ours.
+      if (ours || !fsEl) wasOurs = ours;
+      setIsFullscreen(ours);
+      if (fsEl) setPseudoFullscreen(false);
     };
 
     window.addEventListener("pointerdown", onInteract);
     window.addEventListener("keydown", onInteract);
+    window.addEventListener("touchstart", noopTouch, { passive: true });
     document.addEventListener("fullscreenchange", onFsChange);
 
     return () => {
@@ -117,29 +154,28 @@ export function FullscreenPlayer({
       if (morphTimer) clearTimeout(morphTimer);
       window.removeEventListener("pointerdown", onInteract);
       window.removeEventListener("keydown", onInteract);
+      window.removeEventListener("touchstart", noopTouch);
       document.removeEventListener("fullscreenchange", onFsChange);
     };
   }, []);
-
-  // Prevent the page behind the overlay from scrolling
-  useEffect(() => {
-    if (!pseudoFullscreen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [pseudoFullscreen]);
 
   return (
     <div
       ref={ref}
       className={cn(
-        "w-full bg-slate-900 overflow-hidden group",
+        "w-full bg-slate-900 group",
         pseudoFullscreen
-          ? "fixed inset-0 z-50 h-full"
-          : "relative max-w-6xl aspect-video rounded-[32px] shadow-2xl border-4 border-slate-800",
-        "fullscreen:max-w-none fullscreen:aspect-auto fullscreen:h-full fullscreen:rounded-none fullscreen:border-0"
+          ? // Two iOS/WebKit hit-testing constraints shape this overlay:
+            // no overflow-hidden ancestor (it serves no purpose without
+            // the rounded card anyway) and no scroll-locking html/body
+            // while it's up — overflow-hidden scroll containers wrapping
+            // the cross-origin iframe break touch hit-testing inside the
+            // YouTube embed (dead controls). Viewport-anchored `fixed`
+            // needs no scroll lock: the opaque overlay hides the page
+            // behind it regardless of scroll offset.
+            "fixed inset-0 z-50 h-full"
+          : "relative max-w-6xl aspect-video rounded-[32px] shadow-2xl border-4 border-slate-800 overflow-hidden",
+        "fullscreen:max-w-none fullscreen:aspect-auto fullscreen:h-full fullscreen:rounded-none fullscreen:border-0 fullscreen:overflow-visible fullscreen:shadow-none"
       )}
     >
       {/* Inner box the overlays anchor to — narrowed to ~9:16 for
@@ -153,23 +189,15 @@ export function FullscreenPlayer({
         )}
       >
         {children}
-        {hasExited && !pseudoFullscreen && !isFullscreen && (
-          <button
-            onClick={() => {
-              userExitedRef.current = false;
-              requestFsRef.current();
-            }}
-            aria-label="Enter fullscreen"
-            className="absolute top-3 left-3 z-50 w-11 h-11 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
-          >
-            <CornersOut size={22} weight="bold" />
-          </button>
-        )}
-        {(pseudoFullscreen || isFullscreen) && (
+        {/* Only in the CSS pseudo-overlay (iOS — no element fullscreen):
+            there is no native way out of a fixed-position overlay, and
+            the page header sits beneath it — without this button the
+            kid would be trapped. Native fullscreen exits via the
+            browser's own gesture/Esc, so no overlay is needed there. */}
+        {pseudoFullscreen && (
           <button
             onClick={() => {
               userExitedRef.current = true;
-              setHasExited(true);
               setPseudoFullscreen(false);
               if (document.fullscreenElement) document.exitFullscreen();
             }}

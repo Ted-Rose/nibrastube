@@ -110,8 +110,9 @@ components/
   watch-experience.tsx          YouTube IFrame player: auto-advance,
                                 resume, rogue-video snapback,
                                 progress beacons
-  fullscreen-player.tsx         Fullscreen wrapper w/ iOS CSS-overlay
-                                fallback
+  fullscreen-player.tsx         Plain-flow player card; never
+                                requests fullscreen (the embed's ⛶
+                                is the sole fullscreen owner)
   parental-gate*.tsx            4-digit Parent PIN modal (portals to
                                 document.body — header transform/
                                 filter would clip an inline overlay)

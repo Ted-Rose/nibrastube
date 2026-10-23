@@ -35,6 +35,7 @@ export interface YTNamespace {
       events?: {
         onReady?: (event: { target: YTPlayer }) => void;
         onStateChange?: (event: YTPlayerEvent) => void;
+        onError?: (event: YTPlayerEvent) => void;
       };
     }
   ) => YTPlayer;
@@ -52,6 +53,16 @@ declare global {
     onYouTubeIframeAPIReady?: () => void;
   }
 }
+
+// Classes for the div new YT.Player() mounts onto — the API replaces
+// that node with its iframe and transfers the class list to it.
+// Shared by the JSX mount node AND the detached-node recreation paths
+// in both players so they can't drift: rounded-3xl rounds the iframe's
+// own corners (no clipping ancestor allowed — see the invariant in
+// fullscreen-player.tsx), fullscreen: squares them when the iframe
+// itself takes fullscreen via the embed's ⛶ button.
+export const YT_MOUNT_CLASS =
+  "w-full h-full rounded-3xl fullscreen:rounded-none";
 
 // getVideoData() is undocumented — it is absent on some widget builds
 // and before the player is ready, so fall back to the documented

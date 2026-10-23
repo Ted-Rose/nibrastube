@@ -269,11 +269,12 @@ export function SongPlayerOverlay({
         </Link>
       </div>
 
-      {/* Video player area — FullscreenPlayer gives the same
-          auto-fullscreen behavior as the watch page. min-h-0 lets the
-          area shrink below the iframe's min-content height instead of
-          clipping inside this fixed modal; the md padding is
-          height-gated for landscape phones (same as the watch page). */}
+      {/* Video player area — FullscreenPlayer gives the same player
+          chrome as the watch page (fullscreen only via the embed's own
+          ⛶, never auto-requested). min-h-0 lets the area shrink below
+          the iframe's min-content height instead of clipping inside
+          this fixed modal; the md padding is height-gated for
+          landscape phones (same as the watch page). */}
       <div className="flex min-h-0 flex-1 items-center justify-center p-4 md:[@media(min-height:480px)]:p-10">
         <FullscreenPlayer>
           <div ref={containerRef} className="h-full w-full">

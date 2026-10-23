@@ -19,10 +19,10 @@ interface SwipeConfirmDialogProps {
   onCancel: () => void;
 }
 
-// Shown until the kid checks "Don't ask me again". Must render inside
-// <FullscreenPlayer> so it stays visible in native fullscreen (only
-// descendants of document.fullscreenElement paint there). "Keep watching"
-// is the default-focused safe choice for accidental swipes.
+// Shown until the kid checks "Don't ask me again". Renders inside
+// <FullscreenPlayer> so it covers the player box (swipes only start
+// inline — the embed's own fullscreen renders just the iframe). "Keep
+// watching" is the default-focused safe choice for accidental swipes.
 export function SwipeConfirmDialog({
   direction,
   targetTitle,

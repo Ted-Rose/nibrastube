@@ -813,8 +813,9 @@ export function WatchExperience({
                   replaces this mount div — see lib/yt-player.ts. */}
               <div ref={mountRef} className={YT_MOUNT_CLASS} />
             </div>
-            {/* Reaction overlay must live inside FullscreenPlayer — in native
-                fullscreen only descendants of the fullscreen element render. */}
+            {/* Reaction overlay lives inside FullscreenPlayer so it anchors
+                to the player box. It's hidden while the embed's own ⛶
+                fullscreen is up — only the iframe renders there. */}
             <div className="absolute top-3 right-3 z-50 flex gap-3">
               <button
                 onClick={() => react("like")}
@@ -847,9 +848,10 @@ export function WatchExperience({
               <>
                 {/* Edge swipe zones: touches starting inside the cross-origin
                     YT iframe never reach our document, so these transparent
-                    strips catch swipes that begin at the screen edge. They
-                    must live INSIDE FullscreenPlayer — in native fullscreen
-                    only descendants of fullscreenElement render. bottom-24
+                    strips catch swipes that begin at the player edge. They
+                    live INSIDE FullscreenPlayer to anchor to the player
+                    box (inline only — the embed's own ⛶ fullscreen
+                    renders just the iframe, so no swipes there). bottom-24
                     leaves the YouTube control bar (incl. corner buttons)
                     reachable; the video center stays fully tappable. */}
                 <div

@@ -4,7 +4,7 @@
 
 @custom-variant dark (&:is(.dark *));
 /* Tailwind has no built-in fullscreen variant — without this the
-   fullscreen:* utilities (e.g. overflow-visible in FullscreenPlayer)
+   fullscreen:* utilities (e.g. rounded-none in YT_MOUNT_CLASS)
    compile to nothing. */
 @custom-variant fullscreen (&:fullscreen);
 

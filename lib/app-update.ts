@@ -9,8 +9,9 @@ const MANIFEST_URL =
   "https://github.com/Ted-Rose/nibrastube/releases/download/" +
   "continuous/update.json";
 
-// Check at most once per hour per device; stamped ONLY after a
-// successful fetch so a transient failure doesn't suppress retries.
+// Check at most once per hour per device; stamped ONLY once the
+// check's outcome is known good ("update"/"current") — a fetch,
+// validation, or version-read failure must not suppress retries.
 const THROTTLE_KEY = "nibrastube:update-checked-at";
 const THROTTLE_MS = 60 * 60 * 1000;
 
@@ -63,12 +64,6 @@ export async function checkForAppUpdate(): Promise<UpdateCheck> {
     return { kind: "error" };
   }
 
-  try {
-    localStorage.setItem(THROTTLE_KEY, String(Date.now()));
-  } catch {
-    // Non-fatal: next launch just checks again.
-  }
-
   const m = manifest as {
     versionCode?: unknown;
     versionName?: unknown;
@@ -95,6 +90,14 @@ export async function checkForAppUpdate(): Promise<UpdateCheck> {
   }
   if (!Number.isInteger(installed) || installed <= 0) {
     return { kind: "error" };
+  }
+
+  // Every error path above returns before this point, so stamping
+  // here marks only a fully-validated check as consumed.
+  try {
+    localStorage.setItem(THROTTLE_KEY, String(Date.now()));
+  } catch {
+    // Non-fatal: next launch just checks again.
   }
 
   if (m.versionCode > installed) {

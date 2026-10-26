@@ -12,6 +12,10 @@ build
 *.keystore
 *.jks
 
+# cap sync output (baked server URL, copied public/) — regenerated,
+# not source; ignoring keeps `git status` clean after local syncs
+android/app/src/main/assets/
+
 # Devin user-local config (permissions, personal overrides)
 .devin/config.local.json
 .devin/mcp_config.local.json

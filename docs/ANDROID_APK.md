@@ -30,8 +30,10 @@ Until set, the config falls back to `https://nibrastube.example.com`
 
 ## Builds
 
-- Push to `android` branch or manual dispatch → debug APK,
-  uploaded as workflow artifact `nibrastube-debug-apk` (30d)
+- Push to `android`, tag `v*`, or dispatch on a non-`main` ref →
+  debug APK, uploaded as workflow artifact `nibrastube-debug-apk`
+  (30d); skipped on `main` runs (push or dispatch), which publish
+  only the release below
 - Tag `v*` push → signed `nibrastube.apk` attached to that tag's
   GitHub release
 - Push to `main` → signed `nibrastube.apk` + `update.json` on the
@@ -60,22 +62,20 @@ full signed-release path with `versionCode = github.run_number`
    {
      "versionCode": 123,
      "versionName": "0.0.1-r123",
-     "apkUrl": "https://github.com/<repo>/releases/download/" +
-       "continuous/nibrastube.apk",
+     "apkUrl": "https://github.com/<repo>/releases/download/continuous/nibrastube.apk",
      "releaseUrl": "https://github.com/<repo>/releases/tag/continuous",
      "publishedAt": "<iso>"
    }
    ```
-
-   (`apkUrl` shown split for line width — it's a single URL string.)
 
 3. The `continuous` tag is force-moved to the built commit (it does
    not match `v*`, so it can't retrigger the workflow) and
    `action-gh-release` publishes both files as a prerelease.
 
 On-device, `lib/app-update.ts` polls that manifest once per launch
-(hourly `localStorage` throttle, stamped only after a successful
-fetch — a transient failure doesn't suppress retries). The manifest
+(hourly `localStorage` throttle, stamped only once the check
+resolves to "update"/"current" — a fetch, validation, or
+version-read failure doesn't suppress retries). The manifest
 is fetched via `CapacitorHttp` (WebView `fetch` to github.com is
 CORS-blocked) and validated before use: `versionCode` must be a
 positive integer and `apkUrl` must be `https:` on `github.com` or

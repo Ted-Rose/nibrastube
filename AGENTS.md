@@ -159,7 +159,12 @@ components/
   daily-sync-ping.tsx           Once/day/device POST to
                                 /api/sync-channels
   pwa-register.tsx              Registers public/sw.js
+  app-update-banner.tsx         Native-APK update card — mounts in
+                                root layout, polls update.json via
+                                lib/app-update.ts
 lib/
+  app-update.ts                 Hourly-throttled update.json poll →
+                                typed UpdateCheck union; never throws
   auth.ts                       JWT encrypt/decrypt,
                                 login/loginKid/logout, getSession,
                                 isKidSession/parentSession helpers
@@ -439,10 +444,18 @@ db:migrate` to apply.
 Capacitor wrapper — see `docs/ANDROID_APK.md`. Requires the app to be
 deployed at a public HTTPS URL (set `CAPACITOR_SERVER_URL` locally /
 `APP_URL` repo variable in CI). `.github/workflows/android-release.yml`
-builds a debug APK on the `android` branch / dispatch and a signed
-release APK on `v*` tags — do not push `v*` tags or commits to
+builds a debug APK on the `android` branch / dispatch, a signed
+release APK on `v*` tags (attached to that tag's release), and —
+on every push to `main` — a signed APK + `update.json` published on
+the rolling `continuous` prerelease (installed APKs poll the manifest
+and self-update via `AppUpdateBanner`; the `releases/latest` URL
+stays on `v*` milestones). Do not push `v*` tags or commits to
 `android` casually; each push spends CI and signed releases go
-straight to GitHub Releases.
+straight to GitHub Releases. Capacitor plugins: `@capacitor/app`,
+`@capacitor/keyboard` — after adding/removing plugins run
+`npx cap sync android` and commit the `android/` changes
+(`app/src/main/assets/` is gitignored; the workflow fails on other
+cap-sync drift).
 
 ## Conventions / rules
 

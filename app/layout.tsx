@@ -4,9 +4,13 @@ import { Geist_Mono, Instrument_Sans } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { PwaRegister } from "@/components/pwa-register"
+import { AppUpdateBanner } from "@/components/app-update-banner"
 import { cn } from "@/lib/utils";
 
-const instrumentSans = Instrument_Sans({subsets:['latin'],variable:'--font-sans'})
+const instrumentSans = Instrument_Sans({
+  subsets: ["latin"],
+  variable: "--font-sans",
+})
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -44,11 +48,17 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", instrumentSans.variable)}
+      className={cn(
+        "antialiased",
+        fontMono.variable,
+        "font-sans",
+        instrumentSans.variable
+      )}
     >
       <body>
         <ThemeProvider>{children}</ThemeProvider>
         <PwaRegister />
+        <AppUpdateBanner />
       </body>
     </html>
   )

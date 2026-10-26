@@ -12,6 +12,13 @@ const config: CapacitorConfig = {
       process.env.CAPACITOR_SERVER_URL || "https://nibrastube.example.com",
     androidScheme: "https",
   },
+  plugins: {
+    Keyboard: {
+      // With targetSdk 36 edge-to-edge, adjustResize alone doesn't
+      // shrink the WebView — this makes the keyboard resize it.
+      resizeOnFullScreen: true,
+    },
+  },
 };
 
 export default config;

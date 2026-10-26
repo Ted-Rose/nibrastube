@@ -17,13 +17,17 @@ const itemClass =
   "text-sm font-bold text-slate-700 outline-none " +
   "data-[highlighted]:bg-slate-100";
 
+// Shared by both AndroidLogo uses; spreading keeps the className'd
+// one inside the 79-col limit.
+const logoProps = { size: 18, weight: "fill" } as const;
+
 export function AppInstallMenu() {
   return (
     <Menu.Root>
       <Menu.Trigger
         render={
           <Button variant="outline" size="touch" className="gap-2">
-            <AndroidLogo size={18} weight="fill" />
+            <AndroidLogo {...logoProps} />
             Get the app
             <CaretDown size={14} weight="bold" />
           </Button>
@@ -43,7 +47,7 @@ export function AppInstallMenu() {
               label="Install Android app"
               className={itemClass}
             >
-              <AndroidLogo size={18} weight="fill" className="text-green-600" />
+              <AndroidLogo {...logoProps} className="text-green-600" />
               Install Android app
             </Menu.LinkItem>
             <Menu.LinkItem

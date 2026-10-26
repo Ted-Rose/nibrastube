@@ -1,7 +1,8 @@
 name: Android APK
 
-# Debug APK: every push to the `android` working branch and every
-# manual dispatch — the blind-development iteration artifact.
+# Debug APK: `android` branch pushes, v* tags, and manual dispatches
+# on non-main refs — the blind-development iteration artifact
+# (skipped on main runs, which only need the signed release).
 # Signed release APK: on `v*` tags, attached to that tag's GitHub
 # release as `nibrastube.apk` (fixed name keeps the download URL
 # stable: releases/latest/download/nibrastube.apk); and on every
@@ -72,10 +73,12 @@ jobs:
           "$SDKM" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Build debug APK
+        if: github.ref != 'refs/heads/main'
         working-directory: android
         run: ./gradlew assembleDebug -PversionCode=${{ github.run_number }}
 
       - uses: actions/upload-artifact@v5
+        if: github.ref != 'refs/heads/main'
         with:
           name: nibrastube-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk

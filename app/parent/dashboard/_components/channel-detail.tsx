@@ -265,11 +265,7 @@ export async function ChannelDetail({
         <ChannelNotice message={UPLOADS_QUOTA_MESSAGE} />
       ) : (
         <>
-          <div
-            className={cn(
-              "mb-4 flex items-baseline justify-between gap-4"
-            )}
-          >
+          <div className="mb-4 flex items-baseline justify-between gap-4">
             <h2 className="text-lg font-semibold">Uploads</h2>
             <p className="text-xs text-muted-foreground">
               Showing playable videos.

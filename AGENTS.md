@@ -79,8 +79,13 @@ app/
                                 form serves parents (email) and kids
                                 (profiles.username)
   invite/[token]/               Accept shared-access invite
-  parent/dashboard/             Search YouTube, pin videos, approve
+  parent/dashboard/             Search YouTube (paginated), preview
+                                videos (?video=), drill into channels
+                                (?channel=), pin videos, approve
                                 channels, import song compilations
+    _components/                Route-private view code: video-preview
+                                (server wrapper for ?video=),
+                                channel-detail (?channel= drill-in)
   parent/profiles/              Manage kids + send invites
   kids/                         "Who's watching?" profile picker
   kids/[profileId]/             Kids portal — 5 feed tabs, sticky
@@ -100,7 +105,8 @@ app/
                                 pinning, channels, playlists, songs,
                                 invites, safety, refresh, kids-feed —
                                 For-You + Shorts infinite-scroll
-                                paging)
+                                paging, search + channel-videos —
+                                dashboard vetting paging)
   api/sync-channels/            Daily channel sync trigger (GET+POST)
   api/watch-progress/           POST upsert for resume position
   api/video-reactions/          POST like/dislike per profile+video
@@ -134,6 +140,19 @@ components/
   feed-header.tsx               Feed view title row (h1 + actions)
   back-link.tsx                 "All channels/playlists/…" drill-in
                                 exit
+  dashboard-video-card.tsx      Shared vetting card (search results +
+                                channel uploads): duration badge,
+                                ?video= preview link, pin/Approved/
+                                Blocked (18+) footer states
+  search-results-grid.tsx       Dashboard search results: token-keyed
+                                infinite scroll (100 quota units/page)
+                                for both video and channel results
+  channel-uploads-list.tsx      ?channel= drill-in uploads: same
+                                token-keyed paging (1 unit/page)
+  video-preview-overlay.tsx     ?video= full-screen IFrame preview —
+                                watch-page chrome + pin CTA; NO
+                                rogue-video snapback (parent-only
+                                surface, suggestions are harmless)
   video-shelf.tsx               Horizontal snap-scroll card shelf
   empty-state.tsx               Shared kids empty-state card + CTA
   kids-tile-card.tsx            Channel/playlist/compilation tile
@@ -356,6 +375,20 @@ docs/plans/                     Implementation plans with status
   state. Only `q` changes; the URL is rebuilt from the live
   `searchParams`, so view/channel/list/date/sort/dir/type survive
   untouched.
+- **Dashboard vetting params:** `/parent/dashboard` accepts `q`,
+  `profileId`, `type` (videos|channels) plus `video` (in-app IFrame
+  preview overlay — pin without leaving the page) and `channel`
+  (drill-in: header stats + paginated uploads, pin videos or approve
+  the channel). `searchYouTube`/`searchChannels` return
+  `SearchPage` (maxResults 25 + opaque nextPageToken; search.list is
+  100 quota units/call, video search pre-filters with
+  `videoEmbeddable`); `loadMoreSearchVideos`/`loadMoreSearchChannels`
+  and `loadChannelUploads` (playlistItems — 1 unit/page) are read
+  actions gated by parentSession + isParentUnlockedCookie +
+  assertCanManageProfile. Grids accumulate token-keyed like the kids
+  feed — exhaustion = null token, never empty page. Channel uploads
+  deliberately show made-for-kids rows (vetted surface) and badge
+  age-restricted rows "Blocked" with the pin disabled.
 - **Home shelves:** the plain Videos tab (no `q`, no `channel`)
   renders "Continue watching", "Picked for you", "Shorts", "New for
   you", "Your playlists" and "Liked" shelves above the All-videos

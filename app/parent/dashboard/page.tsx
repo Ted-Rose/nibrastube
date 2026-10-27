@@ -1,26 +1,66 @@
 import { Suspense } from "react";
 import { db } from "@/lib/db";
-import { channels, channelSyncExclusions, profiles, songs, users, videos, whitelistedChannels, whitelistedVideos } from "@/lib/db/schema";
+import {
+  channels,
+  channelSyncExclusions,
+  profiles,
+  songs,
+  users,
+  videos,
+  whitelistedChannels,
+  whitelistedVideos,
+} from "@/lib/db/schema";
 import { getSession, parentSession } from "@/lib/auth";
 import { getManageableProfiles } from "@/lib/profiles";
 import { and, asc, count, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { searchChannels, searchYouTube } from "@/lib/youtube";
-import { pinVideo } from "@/app/actions/pinning";
+import {
+  searchChannels,
+  searchYouTube,
+  toDashboardVideo,
+} from "@/lib/youtube";
+import {
+  loadMoreSearchChannels,
+  loadMoreSearchVideos,
+} from "@/app/actions/search";
 import { refreshStaleVideos } from "@/app/actions/refresh";
-import { approveChannel, setChannelSyncExcluded, unapproveChannel } from "@/app/actions/channels";
+import {
+  setChannelSyncExcluded,
+  unapproveChannel,
+} from "@/app/actions/channels";
+import { SearchResultsGrid } from "@/components/search-results-grid";
+import { ChannelDetail } from "./_components/channel-detail";
+import { VideoPreview } from "./_components/video-preview";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { DashboardSearch } from "@/components/dashboard-search";
 import { SongImportForm } from "@/components/song-import-form";
 import { PinnedVideosPanel } from "@/components/pinned-videos-panel";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, MusicNotes, Pause, Play, PushPin, SpinnerGap, Trash, Users, Video } from "@phosphor-icons/react/dist/ssr";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Check,
+  MusicNotes,
+  Pause,
+  Play,
+  PushPin,
+  SpinnerGap,
+  Trash,
+  Users,
+  Video,
+} from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
 import DailySyncPing from "@/components/daily-sync-ping";
 import { formatDuration } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface DashboardProps {
   searchParams: Promise<{
@@ -30,8 +70,16 @@ interface DashboardProps {
     refreshed?: string;
     removed?: string;
     songsVideo?: string;
+    // Non-feed params: ?video= opens the preview overlay (composes with
+    // everything), ?channel= drills into a channel (type=channels).
+    video?: string;
+    channel?: string;
   }>;
 }
+
+// Param validation — bad values render nothing, never a 404.
+const VIDEO_ID_PARAM_RE = /^[A-Za-z0-9_-]{11}$/;
+const CHANNEL_ID_PARAM_RE = /^UC[\w-]{10,40}$/;
 
 function SidebarCardFallback({
   icon,
@@ -56,7 +104,12 @@ function SidebarCardFallback({
 
 function SearchResultsFallback() {
   return (
-    <div className="flex items-center justify-center py-20 text-muted-foreground">
+    <div
+      className={cn(
+        "flex items-center justify-center py-20",
+        "text-muted-foreground"
+      )}
+    >
       <SpinnerGap size={32} className="animate-spin" />
     </div>
   );
@@ -223,35 +276,89 @@ async function ApprovedChannelsCard({
             return (
             <div key={channel.id} className="flex gap-3 group items-center">
               {channel.thumbnail ? (
-                <img src={channel.thumbnail} className="w-10 h-10 object-cover rounded-full shadow-sm" alt="" />
+                <img
+                  src={channel.thumbnail}
+                  className={cn(
+                    "w-10 h-10 object-cover rounded-full shadow-sm"
+                  )}
+                  alt=""
+                />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                <div
+                  className={cn(
+                    "w-10 h-10 rounded-full bg-muted flex",
+                    "items-center justify-center text-muted-foreground"
+                  )}
+                >
                   <Video size={18} />
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate">{channel.title}</p>
+                <p className="text-xs font-medium truncate">
+                  {channel.title}
+                </p>
                 <p className="text-[11px] text-muted-foreground">
                   {pinCountByChannel.get(channel.id) ?? 0} videos
-                  {whitelist.lastSyncAt && ` · synced ${whitelist.lastSyncAt.toLocaleDateString()}`}
+                  {whitelist.lastSyncAt &&
+                    ` · synced ${whitelist.lastSyncAt.toLocaleDateString()}`}
                 </p>
                 {paused ? (
-                  <p className="text-[11px] text-amber-600">Paused · sync paused for all profiles</p>
+                  <p className="text-[11px] text-amber-600">
+                    Paused · sync paused for all profiles
+                  </p>
                 ) : (
                   !whitelist.backfillComplete && (
-                    <p className="text-[11px] text-primary flex items-center gap-1">
-                      <SpinnerGap size={12} className="animate-spin" /> Syncing…
+                    <p
+                      className={cn(
+                        "text-[11px] text-primary flex items-center",
+                        "gap-1"
+                      )}
+                    >
+                      <SpinnerGap size={12} className="animate-spin" />{" "}
+                      Syncing…
                     </p>
                   )
                 )}
               </div>
-              <form action={setChannelSyncExcluded.bind(null, channel.id, !paused)}>
-                <SubmitButton variant="ghost" size="icon-touch" aria-label={paused ? `Resume sync for ${channel.title}` : `Pause sync for ${channel.title}`} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+              <form
+                action={setChannelSyncExcluded.bind(
+                  null,
+                  channel.id,
+                  !paused
+                )}
+              >
+                <SubmitButton
+                  variant="ghost"
+                  size="icon-touch"
+                  aria-label={
+                    paused
+                      ? `Resume sync for ${channel.title}`
+                      : `Pause sync for ${channel.title}`
+                  }
+                  className={cn(
+                    "opacity-100 transition-opacity",
+                    "md:opacity-0 md:group-hover:opacity-100"
+                  )}
+                >
                   {paused ? <Play size={20} /> : <Pause size={20} />}
                 </SubmitButton>
               </form>
-              <form action={unapproveChannel.bind(null, profileId, channel.id)}>
-                <SubmitButton variant="ghost" size="icon-touch" aria-label={`Unapprove ${channel.title}`} className="text-destructive opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+              <form
+                action={unapproveChannel.bind(
+                  null,
+                  profileId,
+                  channel.id
+                )}
+              >
+                <SubmitButton
+                  variant="ghost"
+                  size="icon-touch"
+                  aria-label={`Unapprove ${channel.title}`}
+                  className={cn(
+                    "text-destructive opacity-100 transition-opacity",
+                    "md:opacity-0 md:group-hover:opacity-100"
+                  )}
+                >
                   <Trash size={20} />
                 </SubmitButton>
               </form>
@@ -336,22 +443,32 @@ async function SongImportCard({
 
 // YouTube search + the pinned/approved lookups the result buttons need all
 // run here, inside Suspense — the page shell paints instantly and only this
-// region waits on the YouTube API.
+// region waits on the YouTube API. The client grid owns accumulation from
+// here on: "Show more" hits the paging actions one opaque token at a time
+// (100 quota units per search page).
 async function SearchResults({
   query,
   searchType,
   profileId,
   profileName,
+  previewBaseHref,
+  channelBaseHref,
 }: {
   query: string;
   searchType: "videos" | "channels";
   profileId: string;
   profileName: string;
+  previewBaseHref: string;
+  channelBaseHref: string;
 }) {
-  const [videoResults, channelResults, pinnedRelations, approvedRelations] =
+  const [videoPage, channelPage, pinnedRelations, approvedRelations] =
     await Promise.all([
-      searchType === "videos" ? searchYouTube(query) : Promise.resolve([]),
-      searchType === "channels" ? searchChannels(query) : Promise.resolve([]),
+      searchType === "videos"
+        ? searchYouTube(query)
+        : Promise.resolve(null),
+      searchType === "channels"
+        ? searchChannels(query)
+        : Promise.resolve(null),
       db
         .select({ videoId: whitelistedVideos.videoId })
         .from(whitelistedVideos)
@@ -367,73 +484,47 @@ async function SearchResults({
   );
 
   if (searchType === "channels") {
+    const items = channelPage?.items ?? [];
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {channelResults.map((channel) => {
-          const isApproved = approvedChannelIds.has(channel.id);
-          return (
-            <Card key={channel.id} className="overflow-hidden group hover:ring-2 hover:ring-primary/40 transition-all flex flex-col">
-              <CardHeader className="p-4 flex-1">
-                <div className="flex items-center gap-4">
-                  <img src={channel.thumbnail} className="w-16 h-16 object-cover rounded-full shadow-sm" alt={channel.title} />
-                  <CardTitle className="text-base line-clamp-2 leading-snug">{channel.title}</CardTitle>
-                </div>
-              </CardHeader>
-              <CardFooter className="p-4 pt-0">
-                {isApproved ? (
-                  <Button disabled className="w-full bg-green-100 text-green-700 hover:bg-green-100 border-green-200">
-                    <Check size={18} className="mr-2" /> Approved
-                  </Button>
-                ) : (
-                  <form action={approveChannel.bind(null, profileId, channel.id)} className="w-full">
-                    <SubmitButton variant="outline" size="touch" pendingLabel="Approving…" className="w-full hover:bg-primary hover:text-white transition-colors">
-                      Approve Channel for {profileName}
-                    </SubmitButton>
-                  </form>
-                )}
-              </CardFooter>
-            </Card>
-          );
-        })}
-      </div>
+      <SearchResultsGrid
+        searchType="channels"
+        initialItems={items}
+        initialFlaggedIds={items
+          .filter((c) => approvedChannelIds.has(c.id))
+          .map((c) => c.id)}
+        initialNextPageToken={channelPage?.nextPageToken ?? null}
+        profileId={profileId}
+        profileName={profileName}
+        previewBaseHref={previewBaseHref}
+        channelBaseHref={channelBaseHref}
+        loadMore={
+          channelPage?.nextPageToken
+            ? loadMoreSearchChannels.bind(null, profileId, query)
+            : undefined
+        }
+      />
     );
   }
 
+  const items = (videoPage?.items ?? []).map(toDashboardVideo);
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-      {videoResults.map((video) => {
-        const isPinned = pinnedVideoIds.has(video.id);
-        return (
-          <Card key={video.id} className="overflow-hidden group hover:ring-2 hover:ring-primary/40 transition-all flex flex-col">
-            <div className="relative aspect-video">
-              <img src={video.thumbnail} className="w-full h-full object-cover" alt={video.title} />
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                 <a href={`https://youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer" className="text-white bg-black/60 p-2 rounded-full hover:bg-black/80 transition-colors">
-                    <Video size={32} />
-                 </a>
-              </div>
-            </div>
-            <CardHeader className="p-4 flex-1">
-              <CardTitle className="text-sm line-clamp-2 leading-snug">{video.title}</CardTitle>
-              <CardDescription className="text-xs">{video.channelTitle}</CardDescription>
-            </CardHeader>
-            <CardFooter className="p-4 pt-0">
-              {isPinned ? (
-                <Button disabled className="w-full bg-green-100 text-green-700 hover:bg-green-100 border-green-200">
-                  <PushPin size={18} className="mr-2" /> Approved
-                </Button>
-              ) : (
-                <form action={pinVideo.bind(null, profileId, video.id)} className="w-full">
-                  <SubmitButton variant="outline" size="touch" pendingLabel="Pinning…" className="w-full hover:bg-primary hover:text-white transition-colors">
-                    Pin to {profileName}
-                  </SubmitButton>
-                </form>
-              )}
-            </CardFooter>
-          </Card>
-        );
-      })}
-    </div>
+    <SearchResultsGrid
+      searchType="videos"
+      initialItems={items}
+      initialFlaggedIds={items
+        .filter((v) => pinnedVideoIds.has(v.id))
+        .map((v) => v.id)}
+      initialNextPageToken={videoPage?.nextPageToken ?? null}
+      profileId={profileId}
+      profileName={profileName}
+      previewBaseHref={previewBaseHref}
+      channelBaseHref={channelBaseHref}
+      loadMore={
+        videoPage?.nextPageToken
+          ? loadMoreSearchVideos.bind(null, profileId, query)
+          : undefined
+      }
+    />
   );
 }
 
@@ -442,11 +533,28 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   const user = parentSession(session);
   if (!user) redirect("/login");
 
-  const { q, profileId, type, refreshed, removed, songsVideo } =
-    await searchParams;
+  const {
+    q,
+    profileId,
+    type,
+    refreshed,
+    removed,
+    songsVideo,
+    video,
+    channel,
+  } = await searchParams;
   const query = q || "";
   const searchType = type === "channels" ? "channels" : "videos";
   const selectedProfileId = profileId;
+
+  // Non-feed params, validated — bad values are ignored (render
+  // nothing), never 404. ?channel= only applies in the channels tab.
+  const previewVideoId =
+    video && VIDEO_ID_PARAM_RE.test(video) ? video : null;
+  const drillChannelId =
+    searchType === "channels" && channel && CHANNEL_ID_PARAM_RE.test(channel)
+      ? channel
+      : null;
 
   // Get all profiles this parent owns or has shared access to
   const parentProfiles = await getManageableProfiles(user.id);
@@ -463,16 +571,51 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
       ? parentProfiles.find(p => p.id === selectedProfileId)
       : undefined) ?? parentProfiles[0];
 
-  const dashboardHref = (searchTypeParam: string) =>
-    `/parent/dashboard?profileId=${activeProfile.id}${query ? `&q=${encodeURIComponent(query)}` : ""}&type=${searchTypeParam}`;
+  // Single dashboard URL builder so every link (type tabs, profile
+  // picker, back link, card hrefs, overlay close) drops/keeps params
+  // deliberately: `channel` only survives inside the channels tab —
+  // switching to type=videos, changing q, or switching profile
+  // naturally drops it since callers don't re-pass it. `video`
+  // composes with everything (search results AND the drill-in).
+  const dashboardUrl = ({
+    profileId: profileParam,
+    type: typeParam,
+    channel: channelParam,
+    video: videoParam,
+  }: {
+    profileId?: string;
+    type?: "videos" | "channels";
+    channel?: string | null;
+    video?: string | null;
+  } = {}): string => {
+    const t = typeParam ?? searchType;
+    const sp = new URLSearchParams();
+    sp.set("profileId", profileParam ?? activeProfile.id);
+    if (query) sp.set("q", query);
+    sp.set("type", t);
+    if (t === "channels" && channelParam) {
+      sp.set("channel", channelParam);
+    }
+    if (videoParam) sp.set("video", videoParam);
+    return `/parent/dashboard?${sp.toString()}`;
+  };
 
   return (
     <div className="container mx-auto py-6 sm:py-10 px-4">
       <DailySyncPing />
-      <div className="mb-6 sm:mb-10 flex flex-wrap items-start justify-between gap-4">
+      <div
+        className={cn(
+          "mb-6 sm:mb-10 flex flex-wrap items-start",
+          "justify-between gap-4"
+        )}
+      >
         <div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Parent Portal</h1>
-          <p className="text-muted-foreground mt-1">Search and approve videos for your kids</p>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+            Parent Portal
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Search and approve videos for your kids
+          </p>
         </div>
         {/* The public song catalog — reachable without the parent
             lock, so a plain Link/Button suffices. */}
@@ -495,7 +638,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
               {parentProfiles.map(p => (
                 <Link
                   key={p.id}
-                  href={`/parent/dashboard?profileId=${p.id}${query ? `&q=${encodeURIComponent(query)}` : ""}&type=${searchType}`}
+                  href={dashboardUrl({ profileId: p.id })}
                 >
                   <Button
                     variant={activeProfile.id === p.id ? "default" : "ghost"}
@@ -520,7 +663,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
             <PinnedVideosCard
               profileId={activeProfile.id}
               profileName={activeProfile.name}
-              returnTo={dashboardHref(searchType)}
+              returnTo={dashboardUrl()}
               refreshed={refreshed == null ? null : Number(refreshed) | 0}
               removed={Number(removed) | 0}
             />
@@ -551,7 +694,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
             <SongImportCard
               userId={user.id}
               songsVideo={songsVideo}
-              returnTo={dashboardHref(searchType)}
+              returnTo={dashboardUrl()}
             />
           </Suspense>
         </div>
@@ -561,14 +704,32 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
           <Card className="bg-primary/5 border-primary/20">
             <CardContent className="pt-6 space-y-4">
               <div className="flex gap-2">
-                <Link href={dashboardHref("videos")}>
-                  <Button variant={searchType === "videos" ? "default" : "outline"} size="touch">
-                    <LinkPendingSpinner fallback={<Video className="mr-2" />} className="mr-2" /> Videos
+                <Link href={dashboardUrl({ type: "videos" })}>
+                  <Button
+                    variant={
+                      searchType === "videos" ? "default" : "outline"
+                    }
+                    size="touch"
+                  >
+                    <LinkPendingSpinner
+                      fallback={<Video className="mr-2" />}
+                      className="mr-2"
+                    />{" "}
+                    Videos
                   </Button>
                 </Link>
-                <Link href={dashboardHref("channels")}>
-                  <Button variant={searchType === "channels" ? "default" : "outline"} size="touch">
-                    <LinkPendingSpinner fallback={<Users className="mr-2" />} className="mr-2" /> Channels
+                <Link href={dashboardUrl({ type: "channels" })}>
+                  <Button
+                    variant={
+                      searchType === "channels" ? "default" : "outline"
+                    }
+                    size="touch"
+                  >
+                    <LinkPendingSpinner
+                      fallback={<Users className="mr-2" />}
+                      className="mr-2"
+                    />{" "}
+                    Channels
                   </Button>
                 </Link>
               </div>
@@ -580,9 +741,29 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
             </CardContent>
           </Card>
 
-          {query ? (
+          {drillChannelId ? (
+            // ?channel=<UCid> (type=channels) replaces the results
+            // area — the "All channels" back link keeps q context.
             <Suspense
-              key={`${searchType}:${query}`}
+              key={drillChannelId}
+              fallback={<SearchResultsFallback />}
+            >
+              <ChannelDetail
+                channelId={drillChannelId}
+                profileId={activeProfile.id}
+                profileName={activeProfile.name}
+                allChannelsHref={dashboardUrl()}
+                previewBaseHref={dashboardUrl({
+                  channel: drillChannelId,
+                })}
+              />
+            </Suspense>
+          ) : query ? (
+            // profileId in the key: switching kid with the same
+            // q+type must remount the grid or its pinned/approved
+            // sets go stale.
+            <Suspense
+              key={`${activeProfile.id}:${searchType}:${query}`}
               fallback={<SearchResultsFallback />}
             >
               <SearchResults
@@ -590,21 +771,49 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                 searchType={searchType}
                 profileId={activeProfile.id}
                 profileName={activeProfile.name}
+                previewBaseHref={dashboardUrl()}
+                channelBaseHref={dashboardUrl()}
               />
             </Suspense>
           ) : (
-            <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-              <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center text-muted-foreground">
+            <div
+              className={cn(
+                "flex flex-col items-center justify-center",
+                "py-20 text-center space-y-4"
+              )}
+            >
+              <div
+                className={cn(
+                  "w-20 h-20 bg-muted rounded-full flex",
+                  "items-center justify-center text-muted-foreground"
+                )}
+              >
                 <Video size={40} />
               </div>
               <div>
                 <h3 className="text-xl font-semibold">Start Curating</h3>
-                <p className="text-muted-foreground">Search for safe videos or channels to add to {activeProfile.name}&apos;s whitelist.</p>
+                <p className="text-muted-foreground">
+                  Search for safe videos or channels to add to{" "}
+                  {activeProfile.name}&apos;s whitelist.
+                </p>
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* ?video= in-app preview overlay — composes with search results
+          AND the channel drill-in; closeHref keeps the drill-in. */}
+      {previewVideoId && (
+        <Suspense fallback={null}>
+          <VideoPreview
+            videoId={previewVideoId}
+            profileId={activeProfile.id}
+            profileName={activeProfile.name}
+            closeHref={dashboardUrl({ channel: drillChannelId })}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

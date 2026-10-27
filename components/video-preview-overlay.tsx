@@ -1,0 +1,267 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  PushPin,
+  X,
+} from "@phosphor-icons/react";
+import { pinVideo } from "@/app/actions/pinning";
+import { FullscreenPlayer } from "@/components/fullscreen-player";
+import { SubmitButton } from "@/components/submit-button";
+import { Button } from "@/components/ui/button";
+import { formatDuration } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { ensureYouTubeAPI, type YTPlayer } from "@/lib/yt-player";
+import type { DashboardVideo } from "@/lib/youtube";
+
+// In-app ?video= preview for the parent dashboard — watch-page chrome
+// (back link + title + X, FullscreenPlayer) around a single IFrame
+// embed so a parent can vet a video before pinning. Escape or the
+// header links navigate back to `closeHref`.
+//
+// The kids players' rogue-suggested-video snapback is deliberately NOT
+// here: that guard protects kid-reachable surfaces, and a "More
+// videos" hijack inside a parent-only preview is harmless (even
+// informative — it shows what YouTube would offer alongside). Don't
+// "fix" this by porting the 500ms poll.
+export function VideoPreviewOverlay({
+  video,
+  pinned,
+  profileId,
+  profileName,
+  closeHref,
+}: {
+  video: DashboardVideo;
+  pinned: boolean;
+  profileId: string;
+  profileName: string;
+  // The dashboard URL without &video= — closing is a deterministic
+  // navigation, not history.back(), so a shared link can't strand the
+  // visitor on a site exit.
+  closeHref: string;
+}) {
+  const router = useRouter();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<YTPlayer | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Held until onReady publishes it to playerRef — the API methods
+    // don't exist before then.
+    let createdPlayer: YTPlayer | null = null;
+
+    const close = () => router.push(closeHref, { scroll: false });
+
+    const createPlayer = () => {
+      const container = containerRef.current;
+      if (cancelled || !container || !window.YT?.Player) return;
+      // The YT API replaces the mount node with its iframe — after a
+      // StrictMode remount the old node is detached, so create a fresh
+      // one (same guard as watch-experience).
+      if (!mountRef.current || !mountRef.current.isConnected) {
+        const el = document.createElement("div");
+        el.className = "w-full h-full";
+        container.appendChild(el);
+        mountRef.current = el;
+      }
+      createdPlayer = new window.YT.Player(mountRef.current, {
+        videoId: video.id,
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          autoplay: 1,
+          modestbranding: 1,
+          rel: 0,
+          iv_load_policy: 3,
+          controls: 1,
+          playsinline: 1,
+        },
+        events: {
+          onReady: () => {
+            if (!cancelled) playerRef.current = createdPlayer;
+          },
+        },
+      });
+    };
+
+    ensureYouTubeAPI(createPlayer);
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    // Keep the dashboard from scrolling behind the player.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prevOverflow;
+      const p = playerRef.current ?? createdPlayer;
+      playerRef.current = null;
+      createdPlayer = null;
+      try {
+        p?.destroy();
+      } catch {
+        // The API throws if destroy() races a not-yet-ready player.
+      }
+      mountRef.current = null;
+    };
+  }, [video.id, closeHref, router]);
+
+  const duration = formatDuration(video.durationSeconds);
+  const views =
+    video.viewCount != null
+      ? `${Intl.NumberFormat("en", { notation: "compact" }).format(
+          video.viewCount
+        )} views`
+      : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-black">
+      {/* Player header — same chrome as the kids watch page. */}
+      <div
+        className={cn(
+          "flex items-center justify-between gap-2 border-b",
+          "border-slate-800 bg-slate-900/80 px-3 pb-3 text-white",
+          "backdrop-blur sm:px-6 sm:pb-4",
+          "pt-[max(0.75rem,env(safe-area-inset-top))]",
+          "sm:pt-[max(1rem,env(safe-area-inset-top))]"
+        )}
+      >
+        <Link
+          href={closeHref}
+          scroll={false}
+          aria-label="Back to dashboard"
+        >
+          <Button
+            variant="ghost"
+            className={cn(
+              "h-11 gap-2 px-3 text-white hover:bg-slate-800 sm:h-9"
+            )}
+          >
+            <ArrowLeft size={24} weight="bold" />
+            <span className="hidden text-lg font-bold sm:inline">
+              Back to Dashboard
+            </span>
+          </Button>
+        </Link>
+
+        <div className="min-w-0 flex-1 px-2 text-center">
+          <h1 className="max-w-full truncate text-base font-bold sm:text-xl">
+            {video.title}
+          </h1>
+        </div>
+
+        <Link
+          href={closeHref}
+          scroll={false}
+          aria-label="Close preview"
+          className={cn(
+            "flex h-11 w-11 items-center justify-center rounded-2xl",
+            "bg-white/10 transition-colors hover:bg-white/20",
+            "sm:h-12 sm:w-12"
+          )}
+        >
+          <X size={24} weight="bold" />
+        </Link>
+      </div>
+
+      {/* Video player area — FullscreenPlayer gives the same
+          auto-fullscreen behavior as the watch page; portrait keeps
+          Shorts letterboxed. */}
+      <div className="flex flex-1 items-center justify-center p-4 md:p-10">
+        <FullscreenPlayer portrait={video.isShort}>
+          <div ref={containerRef} className="h-full w-full">
+            <div ref={mountRef} className="h-full w-full" />
+          </div>
+        </FullscreenPlayer>
+      </div>
+
+      {/* Bottom bar — vetting metadata + the pin action. Pinning does
+          NOT close the overlay: revalidation flips the button to
+          Approved and the parent keeps vetting. */}
+      <div
+        className={cn(
+          "flex flex-col items-center gap-4 bg-slate-900/50 p-4",
+          "pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-8",
+          "sm:pb-[max(2rem,env(safe-area-inset-bottom))]"
+        )}
+      >
+        <div
+          className={cn(
+            "flex flex-wrap items-center justify-center",
+            "gap-x-8 gap-y-3 text-white"
+          )}
+        >
+          <div className="min-w-0">
+            <p
+              className={cn(
+                "text-xs font-bold uppercase tracking-widest",
+                "text-slate-400"
+              )}
+            >
+              Previewing
+            </p>
+            <p
+              className={cn(
+                "max-w-[60vw] truncate text-xl font-black",
+                "sm:text-2xl"
+              )}
+            >
+              {video.channelTitle}
+            </p>
+          </div>
+
+          <p className="text-sm font-medium text-slate-400">
+            {[
+              duration,
+              views,
+              video.publishedAt?.toLocaleDateString(),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+
+          {pinned ? (
+            <Button
+              disabled
+              className="bg-green-100 text-green-700 hover:bg-green-100"
+            >
+              <PushPin size={18} className="mr-2" /> Approved
+            </Button>
+          ) : (
+            <form
+              action={pinVideo.bind(null, profileId, video.id)}
+            >
+              <SubmitButton
+                size="touch"
+                pendingLabel="Pinning…"
+                className="hover:bg-primary/90"
+              >
+                Pin to {profileName}
+              </SubmitButton>
+            </form>
+          )}
+
+          <a
+            href={`https://youtube.com/watch?v=${video.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "text-sm font-medium text-slate-400 underline-offset-4",
+              "hover:text-white hover:underline"
+            )}
+          >
+            Open on YouTube
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}

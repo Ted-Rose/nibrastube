@@ -34,6 +34,45 @@ export interface UploadsPage {
   nextPageToken?: string;
 }
 
+// One page of a paginated YouTube listing (search.list). null token =
+// no more pages — NOT the same as an empty page (a page can hydrate to
+// zero usable items while a token remains).
+export interface SearchPage<T> {
+  items: T[];
+  nextPageToken: string | null;
+}
+
+// Trimmed serializable video shape for the parent dashboard's vetting
+// surfaces (search results, channel uploads, preview overlay) — drops
+// FullVideoDetails' `raw` payload and the flags the UI never renders.
+export interface DashboardVideo {
+  id: string;
+  title: string;
+  thumbnail: string;
+  channelTitle: string;
+  channelId?: string;
+  publishedAt: Date | null;
+  durationSeconds: number | null;
+  isShort: boolean;
+  viewCount: number | null;
+  ageRestricted: boolean | null;
+}
+
+export function toDashboardVideo(v: FullVideoDetails): DashboardVideo {
+  return {
+    id: v.id,
+    title: v.title,
+    thumbnail: v.thumbnail,
+    channelTitle: v.channelTitle,
+    channelId: v.channelId,
+    publishedAt: v.publishedAt,
+    durationSeconds: v.durationSeconds,
+    isShort: v.isShort,
+    viewCount: v.viewCount,
+    ageRestricted: v.ageRestricted,
+  };
+}
+
 // Everything we persist into the `videos` table from one videos.list item.
 // Fields are null when the API didn't return them.
 export interface FullVideoDetails extends YouTubeVideo {
@@ -245,15 +284,25 @@ export function channelRowValues(c: ChannelDetails) {
   };
 }
 
-export async function searchYouTube(query: string): Promise<YouTubeVideo[]> {
+// search.list costs 100 quota units per call regardless of page size,
+// so maxResults: 25 doubles the yield per unit (cap is 50).
+// videoEmbeddable pre-filters the biggest hydration-drop source
+// server-side, so fewer raw hits are wasted on unplayable videos.
+// `pageToken` is opaque — pass it through untouched.
+export async function searchYouTube(
+  query: string,
+  pageToken?: string | null
+): Promise<SearchPage<FullVideoDetails>> {
   if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
 
   const response = await axios.get(`${BASE_URL}/search`, {
     params: {
       part: "snippet",
-      maxResults: 12,
+      maxResults: 25,
       q: query,
       type: "video",
+      videoEmbeddable: "true",
+      pageToken: pageToken ?? undefined,
       key: API_KEY,
     },
   });
@@ -269,12 +318,15 @@ export async function searchYouTube(query: string): Promise<YouTubeVideo[]> {
     .map((item) => item.id.videoId)
     .filter((id): id is string => !!id);
   const byId = new Map((await getVideosBatch(ids)).map((v) => [v.id, v]));
-  return ids.flatMap((id) => {
-    const v = byId.get(id);
-    return v && v.madeForKids !== true && v.ageRestricted !== true
-      ? [v]
-      : [];
-  });
+  return {
+    items: ids.flatMap((id) => {
+      const v = byId.get(id);
+      return v && v.madeForKids !== true && v.ageRestricted !== true
+        ? [v]
+        : [];
+    }),
+    nextPageToken: response.data.nextPageToken ?? null,
+  };
 }
 
 export async function getVideoDetails(
@@ -294,27 +346,42 @@ export async function getVideoDetails(
   return mapVideoItem(item);
 }
 
-export async function searchChannels(query: string): Promise<YouTubeChannel[]> {
+export async function searchChannels(
+  query: string,
+  pageToken?: string | null
+): Promise<SearchPage<YouTubeChannel>> {
   if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
 
   const response = await axios.get(`${BASE_URL}/search`, {
     params: {
       part: "snippet",
-      maxResults: 12,
+      maxResults: 25,
       q: query,
       type: "channel",
+      pageToken: pageToken ?? undefined,
       key: API_KEY,
     },
   });
 
-  return response.data.items.map((item: YTSearchItem) => ({
-    id: item.id.channelId,
-    title: item.snippet.title,
-    thumbnail: pickThumbnail(item.snippet.thumbnails),
-  }));
+  return {
+    items: (response.data.items as YTSearchItem[]).flatMap((item) =>
+      item.id.channelId
+        ? [
+            {
+              id: item.id.channelId,
+              title: item.snippet.title,
+              thumbnail: pickThumbnail(item.snippet.thumbnails),
+            },
+          ]
+        : []
+    ),
+    nextPageToken: response.data.nextPageToken ?? null,
+  };
 }
 
-export async function getChannelDetails(channelId: string): Promise<ChannelDetails | null> {
+export async function getChannelDetails(
+  channelId: string
+): Promise<ChannelDetails | null> {
   if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
 
   const response = await axios.get(`${BASE_URL}/channels`, {
@@ -499,7 +566,9 @@ export async function listVideoComments(
   return comments;
 }
 
-export async function getVideosBatch(ids: string[]): Promise<FullVideoDetails[]> {
+export async function getVideosBatch(
+  ids: string[]
+): Promise<FullVideoDetails[]> {
   if (!API_KEY) throw new Error("YOUTUBE_API_KEY is not defined");
   if (ids.length === 0) return [];
 

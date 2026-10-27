@@ -5,6 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { PwaRegister } from "@/components/pwa-register"
 import { AppUpdateBanner } from "@/components/app-update-banner"
+import { DragScroll } from "@/components/drag-scroll"
 import { cn } from "@/lib/utils";
 
 const instrumentSans = Instrument_Sans({
@@ -59,6 +60,7 @@ export default function RootLayout({
         <ThemeProvider>{children}</ThemeProvider>
         <PwaRegister />
         <AppUpdateBanner />
+        <DragScroll />
       </body>
     </html>
   )

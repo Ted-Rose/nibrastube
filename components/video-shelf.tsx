@@ -39,7 +39,10 @@ export function VideoShelf({
           </Link>
         )}
       </div>
-      <div className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 py-2 [scrollbar-width:none] sm:-mx-6 sm:px-6 [&::-webkit-scrollbar]:hidden">
+      <div
+        data-drag-scroll
+        className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 py-2 [scrollbar-width:none] sm:-mx-6 sm:px-6 [&::-webkit-scrollbar]:hidden"
+      >
         {Children.map(children, (child) => (
           <div className="w-[72vw] max-w-72 shrink-0 snap-start sm:w-72">
             {child}

@@ -78,7 +78,10 @@ export async function HistoryFeedView({
       <FeedHeader
         title={feedTitle(feed)}
         actions={
-          <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            data-drag-scroll
+            className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
             <HistoryDatePicker date={feed.date} />

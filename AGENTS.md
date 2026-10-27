@@ -162,6 +162,11 @@ components/
   app-update-banner.tsx         Native-APK update card — mounts in
                                 root layout, polls update.json via
                                 lib/app-update.ts
+  drag-scroll.tsx               Root-layout global: mouse drag-to-scroll
+                                on every `[data-drag-scroll]` strip
+                                (shelf rows, filter chip rows); window
+                                delegation, snap off while dragging,
+                                trailing click swallowed
 lib/
   app-update.ts                 Hourly-throttled update.json poll →
                                 typed UpdateCheck union; never throws

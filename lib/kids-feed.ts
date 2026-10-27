@@ -42,7 +42,7 @@ export type KidsView =
   | "foryou"
   | "shorts";
 export type VideoReaction = "like" | "dislike";
-export type KidsSort = "age" | "status";
+export type KidsSort = "added" | "age" | "status";
 export type KidsDir = "asc" | "desc";
 // "all" = shorts + long-form together (the default — never emitted in
 // the URL); "videos"/"shorts" filter every video list by is_short.
@@ -128,7 +128,9 @@ export function parseKidsFeedParams(
     view === "history" && isCalendarDate(rawDate) && rawDate <= today
       ? rawDate
       : null;
-  const sort: KidsSort = first(raw.sort) === "age" ? "age" : "status";
+  const rawSort = first(raw.sort);
+  const sort: KidsSort =
+    rawSort === "age" || rawSort === "added" ? rawSort : "status";
   const dir: KidsDir = first(raw.dir) === "desc" ? "desc" : "asc";
   const rawType = first(raw.type);
   const type: KidsType =
@@ -275,9 +277,15 @@ export async function getKidsVideos(
       ? dir === "asc"
         ? [asc(statusRank), newestFirst]
         : [desc(statusRank), newestFirst]
-      : dir === "asc"
-        ? [sql`${videos.publishedAt} asc nulls last`]
-        : [newestFirst];
+      : sort === "added"
+        ? // pinned_at = when the parent added it to the platform, not
+          // the YouTube upload date. NOT NULL, so no nulls handling.
+          dir === "asc"
+          ? [asc(whitelistedVideos.pinnedAt)]
+          : [desc(whitelistedVideos.pinnedAt)]
+        : dir === "asc"
+          ? [sql`${videos.publishedAt} asc nulls last`]
+          : [newestFirst];
 
   return db
     .select({

@@ -33,6 +33,7 @@ const SORT_OPTIONS = [
   { sort: "status", dir: "desc", label: "Watched" },
   { sort: "age", dir: "desc", label: "Newest" },
   { sort: "age", dir: "asc", label: "Oldest" },
+  { sort: "added", dir: "desc", label: "Recently added" },
 ] as const;
 
 function sortOptions(profileId: string, feed: KidsFeedParams) {

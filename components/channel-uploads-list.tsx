@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { DashboardVideoCard } from "@/components/dashboard-video-card";
 import { cn } from "@/lib/utils";
 import type { DashboardVideo } from "@/lib/youtube";
@@ -10,6 +16,14 @@ export interface ChannelUploadsFetch {
   pinnedIds: string[];
   nextPageToken: string | null;
 }
+
+// Layout effect on the client, plain effect during SSR (layout
+// effects don't run there). The stale-fetch generation bump must land
+// in the same commit as the fresh first page — a passive effect would
+// leave a microtask window where an in-flight loadMore could still
+// append a stale page over the reset.
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 // Infinite-scroll uploads list for the dashboard channel drill-in —
 // same token-keyed accumulation as SearchResultsGrid. Each page is a
@@ -44,6 +58,15 @@ export function ChannelUploadsList({
   const [fetching, setFetching] = useState(false);
   const [failed, setFailed] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // Generation counter the reset invalidates: fetchNext captures it
+  // before loadMore and .then bails if it changed mid-flight, so a
+  // stale page can't append over the fresh first page. Bumped in the
+  // commit (not during render — refs are render-pure) so it also
+  // can't trip on a discarded concurrent render.
+  const generationRef = useRef(0);
+  useIsomorphicLayoutEffect(() => {
+    generationRef.current += 1;
+  }, [initialItems]);
   const hasMore = !!loadMore && nextToken != null;
 
   // A server refresh (pin revalidation) swaps in a fresh first page —
@@ -62,8 +85,12 @@ export function ChannelUploadsList({
   const fetchNext = useCallback(() => {
     if (!loadMore || fetching || nextToken == null) return;
     setFetching(true);
+    const generation = generationRef.current;
     loadMore(nextToken)
       .then((page) => {
+        // A reset landed mid-flight — this page belongs to the old
+        // first page's token chain.
+        if (generation !== generationRef.current) return;
         setItems((prev) => {
           const seen = new Set(prev.map((v) => v.id));
           return [

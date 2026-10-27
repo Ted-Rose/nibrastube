@@ -383,7 +383,9 @@ docs/plans/                     Implementation plans with status
   `SearchPage` (maxResults 25 + opaque nextPageToken; search.list is
   100 quota units/call, video search pre-filters with
   `videoEmbeddable`); `loadMoreSearchVideos`/`loadMoreSearchChannels`
-  and `loadChannelUploads` (playlistItems — 1 unit/page) are read
+  and `loadChannelUploads` (~3 units/page for unapproved
+  channels — channels.list fallback + playlistItems + videos.list;
+  2/page once the channel row is cached) are read
   actions gated by parentSession + isParentUnlockedCookie +
   assertCanManageProfile. Grids accumulate token-keyed like the kids
   feed — exhaustion = null token, never empty page. Channel uploads

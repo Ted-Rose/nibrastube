@@ -58,9 +58,12 @@ export function DashboardVideoCard({
         />
         <div
           className={cn(
+            // Always visible on touch (no hover to reveal it); on
+            // md+ it fades in on card hover like the sibling
+            // submit-button affordances.
             "absolute inset-0 bg-black/40 flex items-center",
-            "justify-center opacity-0 transition-opacity",
-            "group-hover:opacity-100"
+            "justify-center opacity-100 transition-opacity",
+            "md:opacity-0 md:group-hover:opacity-100"
           )}
         >
           <Link
@@ -88,7 +91,17 @@ export function DashboardVideoCard({
       </div>
       <CardHeader className="p-4 flex-1">
         <CardTitle className="text-sm line-clamp-2 leading-snug">
-          {video.title}
+          <Link
+            href={previewHref}
+            scroll={false}
+            className={cn(
+              "rounded-sm hover:underline",
+              "focus-visible:outline-none",
+              "focus-visible:ring-2 focus-visible:ring-primary/40"
+            )}
+          >
+            {video.title}
+          </Link>
         </CardTitle>
         <CardDescription className="text-xs">
           {video.channelTitle}

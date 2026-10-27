@@ -50,12 +50,15 @@ function ChannelNotice({
   href,
   message,
 }: {
-  href: string;
+  // The early-return notices render this "All channels" exit; the
+  // uploads-error path doesn't — the header BackLink is already on
+  // screen above it.
+  href?: string;
   message: string;
 }) {
   return (
     <>
-      <BackLink href={href}>All channels</BackLink>
+      {href && <BackLink href={href}>All channels</BackLink>}
       <Card>
         <CardContent
           className={cn(
@@ -255,41 +258,53 @@ export async function ChannelDetail({
         </CardHeader>
       </Card>
 
-      <div className="mb-4 flex items-baseline justify-between gap-4">
-        <h2 className="text-lg font-semibold">Uploads</h2>
-        <p className="text-xs text-muted-foreground">
-          Showing playable videos.
-        </p>
-      </div>
       {uploadsError ? (
-        <ChannelNotice
-          href={allChannelsHref}
-          message={UPLOADS_QUOTA_MESSAGE}
-        />
-      ) : uploads.length === 0 && nextPageToken == null ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground italic">
-              No playable uploads on this channel yet.
-            </p>
-          </CardContent>
-        </Card>
+        // The header BackLink above is the exit — rendering the
+        // notice's own BackLink (or the Uploads heading) would stack
+        // duplicates around the error card.
+        <ChannelNotice message={UPLOADS_QUOTA_MESSAGE} />
       ) : (
-        <ChannelUploadsList
-          initialItems={uploads}
-          initialFlaggedIds={uploads
-            .map((v) => v.id)
-            .filter((id) => pinnedIds.has(id))}
-          initialNextPageToken={nextPageToken}
-          profileId={profileId}
-          profileName={profileName}
-          previewBaseHref={previewBaseHref}
-          loadMore={
-            nextPageToken
-              ? loadChannelUploads.bind(null, profileId, channelId)
-              : undefined
-          }
-        />
+        <>
+          <div
+            className={cn(
+              "mb-4 flex items-baseline justify-between gap-4"
+            )}
+          >
+            <h2 className="text-lg font-semibold">Uploads</h2>
+            <p className="text-xs text-muted-foreground">
+              Showing playable videos.
+            </p>
+          </div>
+          {uploads.length === 0 && nextPageToken == null ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-muted-foreground italic">
+                  No playable uploads on this channel yet.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <ChannelUploadsList
+              initialItems={uploads}
+              initialFlaggedIds={uploads
+                .map((v) => v.id)
+                .filter((id) => pinnedIds.has(id))}
+              initialNextPageToken={nextPageToken}
+              profileId={profileId}
+              profileName={profileName}
+              previewBaseHref={previewBaseHref}
+              loadMore={
+                nextPageToken
+                  ? loadChannelUploads.bind(
+                      null,
+                      profileId,
+                      channelId
+                    )
+                  : undefined
+              }
+            />
+          )}
+        </>
       )}
     </>
   );

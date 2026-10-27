@@ -461,13 +461,16 @@ async function SearchResults({
   previewBaseHref: string;
   channelBaseHref: string;
 }) {
+  // The paging actions clamp to 200 chars — page 1 must use the same
+  // string or a longer query would silently change between pages.
+  const clampedQuery = query.slice(0, 200);
   const [videoPage, channelPage, pinnedRelations, approvedRelations] =
     await Promise.all([
       searchType === "videos"
-        ? searchYouTube(query)
+        ? searchYouTube(clampedQuery)
         : Promise.resolve(null),
       searchType === "channels"
-        ? searchChannels(query)
+        ? searchChannels(clampedQuery)
         : Promise.resolve(null),
       db
         .select({ videoId: whitelistedVideos.videoId })
@@ -499,7 +502,7 @@ async function SearchResults({
         channelBaseHref={channelBaseHref}
         loadMore={
           channelPage?.nextPageToken
-            ? loadMoreSearchChannels.bind(null, profileId, query)
+            ? loadMoreSearchChannels.bind(null, profileId, clampedQuery)
             : undefined
         }
       />
@@ -521,7 +524,7 @@ async function SearchResults({
       channelBaseHref={channelBaseHref}
       loadMore={
         videoPage?.nextPageToken
-          ? loadMoreSearchVideos.bind(null, profileId, query)
+          ? loadMoreSearchVideos.bind(null, profileId, clampedQuery)
           : undefined
       }
     />

@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { Check } from "@phosphor-icons/react";
 import { approveChannel } from "@/app/actions/channels";
@@ -26,6 +32,14 @@ export type SearchLoadMore = (pageToken: string | null) => Promise<{
   pinnedIds?: string[];
   approvedIds?: string[];
 }>;
+
+// Layout effect on the client, plain effect during SSR (layout
+// effects don't run there). The stale-fetch generation bump must land
+// in the same commit as the fresh first page — a passive effect would
+// leave a microtask window where an in-flight loadMore could still
+// append a stale page over the reset.
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 // Infinite-scroll wrapper around the dashboard's YouTube search
 // results — same accumulation model as kids-video-grid.tsx but keyed
@@ -69,6 +83,15 @@ export function SearchResultsGrid({
   // the sentinel's button as a manual retry.
   const [failed, setFailed] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // Generation counter the reset invalidates: fetchNext captures it
+  // before loadMore and .then bails if it changed mid-flight, so a
+  // stale page can't append over the fresh first page. Bumped in the
+  // commit (not during render — refs are render-pure) so it also
+  // can't trip on a discarded concurrent render.
+  const generationRef = useRef(0);
+  useIsomorphicLayoutEffect(() => {
+    generationRef.current += 1;
+  }, [initialItems]);
   const hasMore = !!loadMore && nextToken != null;
 
   // A server refresh (new search, pin revalidation, tab switch) swaps
@@ -87,8 +110,12 @@ export function SearchResultsGrid({
   const fetchNext = useCallback(() => {
     if (!loadMore || fetching || nextToken == null) return;
     setFetching(true);
+    const generation = generationRef.current;
     loadMore(nextToken)
       .then((page) => {
+        // A reset landed mid-flight — this page belongs to the old
+        // first page's token chain.
+        if (generation !== generationRef.current) return;
         // YouTube ranking drifts between pages — dedup by id so a
         // shifted result never mounts twice.
         setItems((prev) => {

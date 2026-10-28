@@ -21,7 +21,7 @@ import { upsertVideoRows } from "@/lib/video-cache";
 import { approveChannel } from "@/app/actions/channels";
 import { loadChannelUploads } from "@/app/actions/channel-videos";
 import { BackLink } from "@/components/back-link";
-import { ChannelUploadsList } from "@/components/channel-uploads-list";
+import { ChannelUploadsList } from "./channel-uploads-list";
 import { SubmitButton } from "@/components/submit-button";
 import { Button } from "@/components/ui/button";
 import {

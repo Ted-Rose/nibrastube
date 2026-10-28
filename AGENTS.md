@@ -83,9 +83,20 @@ app/
                                 videos (?video=), drill into channels
                                 (?channel=), pin videos, approve
                                 channels, import song compilations
-    _components/                Route-private view code: video-preview
-                                (server wrapper for ?video=),
-                                channel-detail (?channel= drill-in)
+    _components/                Route-private view code: page
+                                split-outs (approved-channels-card,
+                                pinned-videos-card, song-import-card,
+                                search-results, fallbacks, dashboard-
+                                url), video-preview (?video= server
+                                wrapper) + video-preview-overlay,
+                                channel-detail (?channel= drill-in) +
+                                channel-uploads-list, dashboard-search,
+                                dashboard-video-card (vetting card:
+                                duration badge, preview link,
+                                pin/Approved/Blocked states),
+                                pinned-videos-panel, search-results-
+                                grid (token-keyed infinite scroll),
+                                song-import-form
   parent/profiles/              Manage kids + send invites
   kids/                         "Who's watching?" profile picker
   kids/[profileId]/             Kids portal — 5 feed tabs, sticky
@@ -140,19 +151,6 @@ components/
   feed-header.tsx               Feed view title row (h1 + actions)
   back-link.tsx                 "All channels/playlists/…" drill-in
                                 exit
-  dashboard-video-card.tsx      Shared vetting card (search results +
-                                channel uploads): duration badge,
-                                ?video= preview link, pin/Approved/
-                                Blocked (18+) footer states
-  search-results-grid.tsx       Dashboard search results: token-keyed
-                                infinite scroll (100 quota units/page)
-                                for both video and channel results
-  channel-uploads-list.tsx      ?channel= drill-in uploads: same
-                                token-keyed paging (1 unit/page)
-  video-preview-overlay.tsx     ?video= full-screen IFrame preview —
-                                watch-page chrome + pin CTA; NO
-                                rogue-video snapback (parent-only
-                                surface, suggestions are harmless)
   video-shelf.tsx               Horizontal snap-scroll card shelf
   empty-state.tsx               Shared kids empty-state card + CTA
   kids-tile-card.tsx            Channel/playlist/compilation tile
@@ -171,8 +169,6 @@ components/
                                 to the segment
   video-grid-skeleton.tsx       Grid + shelf skeletons (Suspense
                                 fallbacks)
-  song-import-form.tsx          Parent form: paste a compilation URL,
-                                preview parsed songs, import
   pusher-listener.tsx           Subscribes `profile-<id>`,
                                 router.refresh() on events
   daily-sync-ping.tsx           Once/day/device POST to

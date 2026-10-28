@@ -1,6 +1,6 @@
 "use client";
 
-import { DashboardVideoCard } from "@/components/dashboard-video-card";
+import { DashboardVideoCard } from "./dashboard-video-card";
 import { TokenPagerSentinel } from "@/components/token-pager-sentinel";
 import { useTokenPager } from "@/components/use-token-pager";
 import type { DashboardVideo } from "@/lib/youtube";

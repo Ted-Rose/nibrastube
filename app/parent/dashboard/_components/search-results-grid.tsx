@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Check } from "@phosphor-icons/react";
 import { approveChannel } from "@/app/actions/channels";
-import { DashboardVideoCard } from "@/components/dashboard-video-card";
+import { DashboardVideoCard } from "./dashboard-video-card";
 import { SubmitButton } from "@/components/submit-button";
 import { TokenPagerSentinel } from "@/components/token-pager-sentinel";
 import { Button } from "@/components/ui/button";

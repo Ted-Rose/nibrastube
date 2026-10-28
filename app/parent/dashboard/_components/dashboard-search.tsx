@@ -3,11 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { MagnifyingGlass, SpinnerGap } from "@phosphor-icons/react";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   dashboardUrl,
-} from "@/app/parent/dashboard/_components/dashboard-url";
+} from "./dashboard-url";
 
 interface DashboardSearchProps {
   profileId: string;

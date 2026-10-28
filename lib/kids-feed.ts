@@ -567,10 +567,13 @@ export async function getWatchHistory(
 }
 
 // "For You" — the profile's whitelisted videos ranked by predicted
-// interest. Scoring (see docs/kids-recommendations-plan.md):
+// interest. Only videos the kid hasn't finished rank at all —
+// completed watch_progress rows are filtered out in WHERE, so every
+// recommendation is not-entirely-watched (in-progress counts).
+// Scoring (see docs/kids-recommendations-plan.md):
 //   channel_affinity = Σ per watch_history row on that channel:
 //     3 if watched_on ≥ today−7, 2 if ≥ today−30, else 1
-//   affinity_score = affinity × (0.25 if completed else 1)
+//   affinity_score = affinity (0 when the channel was never watched)
 //   flat_score =
 //     + 8 if in-progress-not-completed   ("continue watching")
 //     + 5 if the channel has any 'like'
@@ -578,19 +581,22 @@ export async function getWatchHistory(
 //     − 20 if the channel has a 'dislike'
 //   disliked videos are excluded entirely.
 // Depth blend — rn is the row's position under the plain
-// affinity+flat ranking; popularity = 0.5^((rn−1)/120) halves every
-// ~120 rows, so the deeper a kid scrolls the less their most-watched
-// channels dominate. Raw affinity is unbounded (a hyper-watched
-// channel would outscore discovery forever), so it first squashes
-// into a bounded 0–40 scale: weight = 40·a/(a+15). The slack is
-// filled by a discovery score that favors low-affinity channels (+10
-// at affinity 0, fading to 0 by affinity 10) and fresh uploads, minus
-// a per-channel round-robin penalty (−2·ln(1 + position within own
-// channel)) so the biggest catalog can't flood the tail — deep pages
-// interleave every channel's videos evenly. The crossfade is per-row
-// and exponential, so less-favored channels mix in gradually, and the
-// more a channel is watched the deeper its videos persist before
-// discovery takes over:
+// affinity+flat ranking; popularity = 0.5^((rn−1)/60) halves every
+// ~60 rows, so personalization cedes to discovery within the first
+// couple of pages and deeper pages are mostly other channels'
+// videos. Raw affinity is unbounded (a hyper-watched channel would
+// outscore discovery forever), so it first squashes into a bounded
+// 0–40 scale: weight = 40·a/(a+15). The slack is filled by a
+// discovery score that favors low-affinity channels (+10 at
+// affinity 0, fading to 0 by affinity 10), fresh uploads, and
+// small catalogs (+10/√channel_size — a channel with only a few
+// whitelisted videos outranks a backfilled giant at depth), minus
+// a per-channel round-robin penalty (−3·ln(1 + position within own
+// channel)) so the biggest catalog can't flood the tail — deep
+// pages interleave every channel's videos evenly. The crossfade is
+// per-row and exponential, so less-favored channels mix in
+// gradually, and the more a channel is watched the deeper its
+// videos persist before discovery takes over:
 //   order = weight(affinity_score)·popularity + flat_score
 //           + discovery·(1 − popularity)
 // Postgres allows window functions in ORDER BY, so rn and the
@@ -680,9 +686,10 @@ export async function getRecommendedVideos(
          or ${watchProgress.positionSeconds} < ${videos.durationSeconds})`;
 
   // Popularity signal — the part that fades with scroll depth.
+  // (Completed rows are filtered out below, so no 0.25 rewatch
+  // discount is needed here.)
   const affinityScore = sql<number>`
-    coalesce(${channelAffinity.affinity}, 0)
-      * case when ${watchProgress.completed} then 0.25 else 1 end`;
+    coalesce(${channelAffinity.affinity}, 0)`;
   // Explicit kid signals — apply at every depth.
   const flatScore = sql<number>`
     case when ${inProgress} then 8 else 0 end
@@ -695,7 +702,7 @@ export async function getRecommendedVideos(
     order by ${affinityScore} + ${flatScore} desc,
              ${videos.publishedAt} desc nulls last,
              md5(${videos.id} || current_date))`;
-  const popularity = sql`power(0.5, (${rank} - 1) / 120.0)`;
+  const popularity = sql`power(0.5, (${rank} - 1) / 60.0)`;
   // Squash affinity into a bounded 0–40 scale so one hyper-watched
   // channel can't outscore discovery at any depth.
   const affinityWeight = sql`
@@ -707,13 +714,18 @@ export async function getRecommendedVideos(
     partition by ${videos.channelId}
     order by ${videos.publishedAt} desc nulls last,
              md5(${videos.id} || current_date))`;
+  // Channel's catalog size inside this feed — small catalogs get a
+  // discovery bonus so a handful of pins on a channel surfaces before
+  // the deep tail of a backfilled giant.
+  const channelSize = sql`count(*) over (partition by ${videos.channelId})`;
   const discovery = sql`
     10 - least(10, coalesce(${channelAffinity.affinity}, 0))
     + case
         when ${videos.publishedAt} >= current_date - 30 then 4
         when ${videos.publishedAt} >= current_date - 90 then 2
         else 0 end
-    - 2.0 * ln(1 + ${withinChannel})`;
+    + 10.0 / sqrt(${channelSize})
+    - 3.0 * ln(1 + ${withinChannel})`;
 
   return db
     .with(channelAffinity, channelFlags)
@@ -747,6 +759,9 @@ export async function getRecommendedVideos(
       and(
         eq(whitelistedVideos.profileId, profileId),
         suitableVideo,
+        // Finished videos never surface — recommendations are only
+        // what the kid hasn't entirely watched yet (in-progress ok).
+        sql`not coalesce(${watchProgress.completed}, false)`,
         // Disliked videos drop out of the tab entirely.
         sql`${videoReactions.reaction} is distinct from 'dislike'`,
         typeFilter(type),

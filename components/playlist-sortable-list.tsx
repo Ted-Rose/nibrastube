@@ -32,12 +32,14 @@ function SortableRow({
   profileId,
   playlistId,
   feedQuery,
+  sortable,
 }: {
   row: FeedRow;
   index: number;
   profileId: string;
   playlistId: string;
   feedQuery: string;
+  sortable: boolean;
 }) {
   const {
     attributes,
@@ -47,7 +49,7 @@ function SortableRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: row.video.id });
+  } = useSortable({ id: row.video.id, disabled: !sortable });
 
   const pct = row.progress?.completed
     ? 100
@@ -78,14 +80,28 @@ function SortableRow({
         )}
       >
         {/* Drag handle — the only drag activator, so vertical scrolling and
-            taps elsewhere on the row don't fight drag initiation. */}
+            taps elsewhere on the row don't fight drag initiation. Disabled
+            in filtered views: reordering a subset would corrupt the real
+            order (the hint above the list explains how to restore it). */}
         <button
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
           type="button"
+          disabled={!sortable}
           aria-label={`Move ${row.video.title}`}
-          className="flex h-11 w-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-xl text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          className={cn(
+            "flex h-11 w-8 shrink-0 items-center justify-center",
+            "rounded-xl text-slate-300 transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2",
+            "focus-visible:ring-primary/40",
+            sortable
+              ? cn(
+                  "cursor-grab touch-none active:cursor-grabbing",
+                  "hover:bg-slate-100 hover:text-slate-500"
+                )
+              : "cursor-not-allowed opacity-40"
+          )}
         >
           <DotsSixVertical size={28} weight="bold" />
         </button>
@@ -138,16 +154,25 @@ function SortableRow({
 
 // Kid-ordered playlist detail: drag the handle to reorder (optimistic,
 // reverts if the exact-set server check rejects it), tap a row to play it.
+// A filtered view is not sortable — the handles disable and a hint links
+// back to the unfiltered list where reordering is safe.
 export function PlaylistSortableList({
   profileId,
   playlistId,
   rows,
   feedQuery,
+  sortable = true,
+  clearFiltersHref,
 }: {
   profileId: string;
   playlistId: string;
   rows: FeedRow[];
   feedQuery: string;
+  sortable?: boolean;
+  // Server-built URL dropping q/type/min/max — the hint's "clear
+  // filters" target (kidsPortalUrl is server-only, so it arrives as a
+  // prop).
+  clearFiltersHref?: string;
 }) {
   const [items, setItems] = useState(rows);
   // Server rows are the source of truth — resync when a revalidation lands
@@ -194,6 +219,26 @@ export function PlaylistSortableList({
         items={items.map((r) => r.video.id)}
         strategy={verticalListSortingStrategy}
       >
+        {!sortable && (
+          <p className="mb-4 text-center text-sm font-bold text-slate-400">
+            Reordering is off while the list is filtered.
+            {clearFiltersHref && (
+              <>
+                {" "}
+                <Link
+                  href={clearFiltersHref}
+                  className={cn(
+                    "text-primary underline underline-offset-2",
+                    "hover:text-primary/80"
+                  )}
+                >
+                  Clear filters to reorder
+                </Link>
+                .
+              </>
+            )}
+          </p>
+        )}
         <ul className="flex flex-col gap-4">
           {items.map((row, i) => (
             <SortableRow
@@ -203,6 +248,7 @@ export function PlaylistSortableList({
               profileId={profileId}
               playlistId={playlistId}
               feedQuery={feedQuery}
+              sortable={sortable}
             />
           ))}
         </ul>

@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   ViewTransition,
@@ -18,6 +19,13 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
+import {
+  useNavStack,
+  useProgressFlush,
+  useYouTubePlayer,
+  type PlayerEvents,
+  type PlayerLoad,
+} from "@/components/player-hooks";
 import { SwipeConfirmDialog } from "@/components/swipe-confirm-dialog";
 import { pickNextIndex } from "@/lib/autoplay";
 import { classifySwipe } from "@/lib/gestures";
@@ -25,11 +33,7 @@ import type { SwipeDirection } from "@/lib/gestures";
 import { cn } from "@/lib/utils";
 import { takeWatchFrom } from "@/lib/feed-memory";
 import type { VideoReaction, WatchStatus } from "@/lib/kids-feed";
-import {
-  ensureYouTubeAPI,
-  loadedVideoId,
-  type YTPlayer,
-} from "@/lib/yt-player";
+import { loadedVideoId } from "@/lib/yt-player";
 
 interface PlaylistVideo {
   id: string;
@@ -73,7 +77,6 @@ export function WatchExperience({
   const indexRef = useRef(startIndex);
   const containerRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const playerRef = useRef<YTPlayer | null>(null);
   const advancingRef = useRef(false);
   // Timestamp of the last goTo() load request — the watchdog below
   // treats a load that produces neither PLAYING nor an error event
@@ -81,8 +84,11 @@ export function WatchExperience({
   const loadStartedRef = useRef(0);
   // Latest position sample, kept fresh by the 500ms tick below.
   const latestRef = useRef({ videoId: "", position: 0, duration: 0 });
-  const lastSentRef = useRef(0);
-  const lastSentPositionRef = useRef(0);
+  // That sample's leave-time position per video id, recorded in goTo —
+  // revisiting a video this session resumes from it rather than the
+  // page-load startSeconds snapshot, which predates everything the kid
+  // watched since.
+  const livePositionsRef = useRef(new Map<string, number>());
   // Per-video watch status keyed by id, updated in-session by advance() —
   // the playlist prop is a page-load snapshot, but kids watch many videos
   // without re-navigating.
@@ -107,16 +113,14 @@ export function WatchExperience({
   // stall) — folded into statusAt so autoplay and back-nav never land
   // on a dead video again.
   const skippedRef = useRef(new Set<string>());
-  // Swipe-"back" history: every navigation pushes the outgoing video id
-  // (an index would retarget on a mid-session reorder), so prev = the
-  // video the kid just came from (not blindly index−1) and
-  // autoplay-advanced videos are back-reachable too.
-  const navStackRef = useRef<string[]>([]);
-  // The nav functions live inside the effect (they need its flush/playlist
-  // closures); this ref surfaces them to the JSX touch handlers.
-  const swipeNavRef = useRef<{ next: () => void; prev: () => void } | null>(
-    null
-  );
+  // The nav functions live inside the effect (they need its playlist
+  // closures); this ref surfaces them to the JSX touch handlers AND to
+  // the player events below (ENDED → next, onError → skip).
+  const swipeNavRef = useRef<{
+    next: () => void;
+    prev: () => void;
+    skip: () => void;
+  } | null>(null);
   // Whether this watch page was entered from a feed link — consumed on
   // mount (see the effect below), read by the Back button.
   const watchFromRef = useRef(false);
@@ -148,23 +152,98 @@ export function WatchExperience({
     router.prefetch(portalUrl);
   }, [router, portalUrl]);
 
+  const { flush, lastSentRef, lastSentPositionRef } = useProgressFlush(
+    profileId,
+    latestRef
+  );
+
+  // A router.refresh() lands with a content-identical playlist prop —
+  // hand the player effect a list stabilized on content
+  // (id:status:reaction sequence), not prop identity, so a refresh
+  // can't tear the iframe down and rebuild it. The signature can't
+  // see startSeconds/title-only changes — a stale snapshot wins
+  // there; accepted per the review (watch-playback-apis #11).
+  const signature = playlist
+    .map((v) => `${v.id}:${v.status}:${v.reaction}`)
+    .join("|");
+  const [stable, setStable] = useState({ signature, list: playlist });
+  if (stable.signature !== signature) {
+    setStable({ signature, list: playlist });
+  }
+  const stablePlaylist = stable.list;
+
+  // Resolve a nav-stack id to a landable index — a mid-session unpin
+  // leaves dangling entries (-1), entries pointing at the current
+  // video are useless, and skipped (unplayable) ids must not be
+  // landed on again.
+  const findIndexById = useCallback(
+    (id: string): number => {
+      const idx = stablePlaylist.findIndex((v) => v.id === id);
+      return idx !== -1 &&
+        idx !== indexRef.current &&
+        !skippedRef.current.has(id)
+        ? idx
+        : -1;
+    },
+    [stablePlaylist]
+  );
+  const { pushNavId, popPrevIndex, peekPrevIndex } =
+    useNavStack(findIndexById);
+
   // Disliked videos rank as tier 2 (with watched) — so do skipped
   // (unplayable) ones, which must never be re-picked. Shared by
   // autoplay and the swipe-next target, so the dialog previews what
   // advance() would actually pick and both skip dislikes while any
-  // unwatched/started video remains. Memoized on playlist so the
-  // effect below can depend on it without re-running every render.
+  // unwatched/started video remains. Memoized on stablePlaylist so
+  // the effect below can depend on it without re-running every render.
   const statusAt = useCallback(
     (i: number): WatchStatus => {
-      const status = statusRef.current.get(playlist[i].id) ?? 0;
+      const status = statusRef.current.get(stablePlaylist[i].id) ?? 0;
       return (
-        reactionsRef.current.get(playlist[i].id) === "dislike" ||
-        skippedRef.current.has(playlist[i].id)
+        reactionsRef.current.get(stablePlaylist[i].id) === "dislike" ||
+        skippedRef.current.has(stablePlaylist[i].id)
           ? Math.max(status, 2)
           : status
       ) as WatchStatus;
     },
-    [playlist]
+    [stablePlaylist]
+  );
+
+  // The player events delegate to the effect's nav closures through
+  // swipeNavRef — they are created before the effect assigns it, but
+  // events only arrive via postMessage once the iframe is up.
+  const events = useMemo<PlayerEvents>(
+    () => ({
+      onStateChange: (event) => {
+        if (event.data === window.YT?.PlayerState.PLAYING) {
+          advancingRef.current = false;
+          loadStartedRef.current = 0;
+        }
+        // Pausing often precedes exiting — warm the exit routes.
+        if (event.data === window.YT?.PlayerState.PAUSED) {
+          flush();
+          prefetchExits();
+        }
+        if (event.data === window.YT?.PlayerState.ENDED) {
+          prefetchExits();
+          // Position = duration so advance()'s flush marks it
+          // completed.
+          latestRef.current = {
+            ...latestRef.current,
+            position: latestRef.current.duration,
+          };
+          swipeNavRef.current?.next();
+        }
+      },
+      onError: () => {
+        // Embedding disabled / region-locked / deleted — skip to
+        // the next pick instead of stalling on YouTube's error
+        // screen. advancingRef stays latched across the skip
+        // chain until a playable video's PLAYING releases it.
+        swipeNavRef.current?.skip();
+      },
+    }),
+    [flush, prefetchExits]
   );
 
   // Read-and-clear nt:watchFrom on mount — not when Back is tapped:
@@ -177,13 +256,60 @@ export function WatchExperience({
     if (takeWatchFrom()) watchFromRef.current = true;
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  // Resume point for a video being (re)loaded in-session: a finished
+  // video restarts at 0, the currently loaded one takes the tick's
+  // live sample, a revisited one takes its recorded leave position —
+  // only a never-visited video falls back to the page-load
+  // startSeconds snapshot.
+  const resumeAt = useCallback(
+    (video: PlaylistVideo): number => {
+      if (completedRef.current.has(video.id)) return 0;
+      if (latestRef.current.videoId === video.id) {
+        return latestRef.current.position;
+      }
+      return (
+        livePositionsRef.current.get(video.id) ?? video.startSeconds ?? 0
+      );
+    },
+    []
+  );
 
+  const getInitialLoad = useCallback((): PlayerLoad | null => {
+    const currentVideo = stablePlaylist[indexRef.current];
+    if (!currentVideo) return null;
+    return {
+      key: currentVideo.id,
+      videoId: currentVideo.id,
+      // When the player is recreated by a mid-session playlist
+      // refresh, resume the live position — not the stale page-load
+      // startSeconds snapshot.
+      startSeconds: resumeAt(currentVideo),
+    };
+  }, [stablePlaylist, resumeAt]);
+
+  // A goTo() during init skipped its loadVideoById (the ref was still
+  // null) — catch up if the index moved meanwhile.
+  const getCatchUpLoad = useCallback(
+    (initial: PlayerLoad): PlayerLoad | null => {
+      const want = stablePlaylist[indexRef.current];
+      if (!want || want.id === initial.key) return null;
+      return {
+        key: want.id,
+        videoId: want.id,
+        startSeconds: resumeAt(want),
+      };
+    },
+    [stablePlaylist, resumeAt]
+  );
+
+  // The merge must run BEFORE the player effect recreates the player
+  // on a playlist change — effects run in declaration order, so this
+  // one is declared ahead of useYouTubePlayer.
+  useEffect(() => {
     // Status can only rise in-session (watched stays watched), so merge
     // rather than replace — a refresh landing between a video finishing
     // and its flush POST must not downgrade it back to "started".
-    for (const v of playlist) {
+    for (const v of stablePlaylist) {
       statusRef.current.set(
         v.id,
         Math.max(v.status, statusRef.current.get(v.id) ?? 0) as WatchStatus
@@ -193,7 +319,7 @@ export function WatchExperience({
     // Reactions, unlike status, can go down (like → cleared), so overwrite
     // per key — the refreshed playlist is a fresh snapshot that already
     // contains any tap we saved, and keeps a second device in sync.
-    for (const v of playlist) {
+    for (const v of stablePlaylist) {
       reactionsRef.current.set(v.id, v.reaction);
     }
     setReactions(new Map(reactionsRef.current));
@@ -202,13 +328,13 @@ export function WatchExperience({
     // follow the still-playing video by id, else clamp the index in
     // bounds. Without this the recreated player would load whichever
     // video now happens to sit at the stale index.
-    const playingIdx = playlist.findIndex(
+    const playingIdx = stablePlaylist.findIndex(
       (v) => v.id === latestRef.current.videoId
     );
     if (playingIdx !== -1) {
       indexRef.current = playingIdx;
-    } else if (indexRef.current >= playlist.length) {
-      indexRef.current = Math.max(0, playlist.length - 1);
+    } else if (indexRef.current >= stablePlaylist.length) {
+      indexRef.current = Math.max(0, stablePlaylist.length - 1);
     }
     setIndex(indexRef.current);
 
@@ -216,42 +342,23 @@ export function WatchExperience({
     // preview may be stale, so drop it. The recreated player autoplays,
     // which is the "keep watching" outcome anyway.
     setPendingSwipe(null);
+  }, [stablePlaylist]);
+
+  const { playerRef, loadFailed } = useYouTubePlayer({
+    containerRef,
+    mountRef,
+    events,
+    getInitialLoad,
+    getCatchUpLoad,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
 
     // Playlist emptied mid-session — nothing to play; the watch page
     // redirects when the current video is unpinned, so this is a brief
     // transitional state at most.
-    if (playlist.length === 0) return;
-
-    // POST the current position to /api/watch-progress. Beacon for unload
-    // paths (pagehide/unmount), throttled keepalive fetch otherwise.
-    const flush = (useBeacon = false) => {
-      const { videoId, position, duration } = latestRef.current;
-      if (!videoId || duration <= 0) return;
-      lastSentRef.current = Date.now();
-      lastSentPositionRef.current = position;
-      const payload = JSON.stringify({
-        profileId,
-        videoId,
-        positionSeconds: Math.floor(position),
-        durationSeconds: Math.floor(duration),
-        completed: position >= duration * 0.95,
-        sentAt: Date.now(),
-        day: new Date().toLocaleDateString("en-CA"), // en-CA → YYYY-MM-DD
-      });
-      if (useBeacon && navigator.sendBeacon) {
-        navigator.sendBeacon(
-          "/api/watch-progress",
-          new Blob([payload], { type: "application/json" })
-        );
-      } else {
-        fetch("/api/watch-progress", {
-          method: "POST",
-          body: payload,
-          keepalive: true,
-          headers: { "Content-Type": "application/json" },
-        }).catch(() => {});
-      }
-    };
+    if (stablePlaylist.length === 0) return;
 
     // Switch to another playlist index by loading it into the SAME player
     // instead of navigating — keeps the element (and fullscreen mode)
@@ -265,7 +372,7 @@ export function WatchExperience({
       // ahead of unwatched/started videos.
       const { videoId, position, duration } = latestRef.current;
       const cur = indexRef.current;
-      const curId = playlist[cur]?.id;
+      const curId = stablePlaylist[cur]?.id;
       if (curId && videoId === curId) {
         const status: WatchStatus =
           duration > 0 && position >= duration * 0.95
@@ -279,14 +386,15 @@ export function WatchExperience({
         );
         if (status === 2) completedRef.current.add(curId);
       }
-      if (next !== cur && curId) navStackRef.current.push(curId);
+      // Stash the latest sample under its own id — revisiting that
+      // video later this session resumes where it actually left off.
+      if (videoId) livePositionsRef.current.set(videoId, position);
+      if (next !== cur && curId) pushNavId(curId);
       indexRef.current = next;
       setIndex(next);
       playerRef.current?.loadVideoById({
-        videoId: playlist[next].id,
-        startSeconds: completedRef.current.has(playlist[next].id)
-          ? 0
-          : (playlist[next].startSeconds ?? 0),
+        videoId: stablePlaylist[next].id,
+        startSeconds: resumeAt(stablePlaylist[next]),
       });
       // Watchdog: a load that produces neither PLAYING nor an error
       // event within ~15s is a silent stall — treat it as a skip so
@@ -306,7 +414,7 @@ export function WatchExperience({
       window.history.replaceState(
         null,
         "",
-        `/kids/${profileId}/watch/${playlist[next].id}${returnQuery}`
+        `/kids/${profileId}/watch/${stablePlaylist[next].id}${returnQuery}`
       );
     };
 
@@ -315,8 +423,8 @@ export function WatchExperience({
       advancingRef.current = true;
       goTo(
         sequential
-          ? (indexRef.current + 1) % playlist.length
-          : pickNextIndex(playlist.length, indexRef.current, statusAt)
+          ? (indexRef.current + 1) % stablePlaylist.length
+          : pickNextIndex(stablePlaylist.length, indexRef.current, statusAt)
       );
     };
 
@@ -325,27 +433,14 @@ export function WatchExperience({
     const goBack = () => {
       if (advancingRef.current) return;
       advancingRef.current = true;
-      // Pop until a stacked id still resolves in the playlist — a
-      // mid-session unpin leaves dangling entries, entries pointing
-      // at the current video are useless, and skipped (unplayable)
-      // ids must not be landed on again.
-      let prev = -1;
-      let id = navStackRef.current.pop();
-      while (id !== undefined) {
-        const idx = playlist.findIndex((v) => v.id === id);
-        if (
-          idx !== -1 &&
-          idx !== indexRef.current &&
-          !skippedRef.current.has(id)
-        ) {
-          prev = idx;
-          break;
-        }
-        id = navStackRef.current.pop();
-      }
+      // Pop until a stacked id still resolves in the playlist —
+      // findIndexById already drops dangling unpin entries, entries
+      // pointing at the current video, and skipped (unplayable) ids.
+      const prev = popPrevIndex();
       goTo(
         prev === -1
-          ? (indexRef.current - 1 + playlist.length) % playlist.length
+          ? (indexRef.current - 1 + stablePlaylist.length) %
+              stablePlaylist.length
           : prev
       );
     };
@@ -356,107 +451,19 @@ export function WatchExperience({
     // watched), free the guard and move on — but stop instead of
     // spinning once every queue entry has failed.
     const skipAndAdvance = () => {
-      const cur = playlist[indexRef.current];
+      const cur = stablePlaylist[indexRef.current];
       if (!cur) return;
       skippedRef.current.add(cur.id);
       advancingRef.current = false;
-      if (skippedRef.current.size >= playlist.length) return;
+      if (skippedRef.current.size >= stablePlaylist.length) return;
       advance();
     };
 
-    swipeNavRef.current = { next: advance, prev: goBack };
-
-    // The constructed player is kept here (not in playerRef) until its
-    // onReady fires — the API methods only exist then, and publishing
-    // the ref early let the 500ms tick and goTo() call them on a
-    // not-yet-ready player ("getVideoData is not a function").
-    let createdPlayer: YTPlayer | null = null;
-
-    const createPlayer = () => {
-      const container = containerRef.current;
-      if (cancelled || !container || !window.YT?.Player) return;
-
-      // The YT API replaces the mount node with its iframe, so if a
-      // previous player consumed it (e.g. StrictMode remount), create
-      // a fresh mount point.
-      if (!mountRef.current || !mountRef.current.isConnected) {
-        const el = document.createElement("div");
-        el.className = "w-full h-full";
-        container.appendChild(el);
-        mountRef.current = el;
-      }
-
-      const currentVideo = playlist[indexRef.current];
-      createdPlayer = new window.YT.Player(mountRef.current, {
-        videoId: currentVideo.id,
-        width: "100%",
-        height: "100%",
-        playerVars: {
-          autoplay: 1,
-          modestbranding: 1,
-          rel: 0,
-          iv_load_policy: 3,
-          controls: 1,
-          playsinline: 1,
-          // When the player is recreated by a mid-session playlist
-          // refresh, resume the live position — not the stale page-load
-          // startSeconds snapshot.
-          start: Math.floor(
-            latestRef.current.videoId === currentVideo.id
-              ? latestRef.current.position
-              : (currentVideo.startSeconds ?? 0)
-          ),
-        },
-        events: {
-          onReady: () => {
-            // Cleanup ran before the player finished initializing —
-            // it was already destroyed, so don't publish the ref.
-            if (cancelled || !createdPlayer) return;
-            playerRef.current = createdPlayer;
-            // A goTo() during init skipped its loadVideoById (the ref
-            // was still null) — catch up if the index moved meanwhile.
-            const want = playlist[indexRef.current];
-            if (want.id !== currentVideo.id) {
-              createdPlayer.loadVideoById({
-                videoId: want.id,
-                startSeconds: completedRef.current.has(want.id)
-                  ? 0
-                  : (want.startSeconds ?? 0),
-              });
-            }
-          },
-          onStateChange: (event) => {
-            if (event.data === window.YT?.PlayerState.PLAYING) {
-              advancingRef.current = false;
-              loadStartedRef.current = 0;
-            }
-            // Pausing often precedes exiting — warm the exit routes.
-            if (event.data === window.YT?.PlayerState.PAUSED) {
-              flush();
-              prefetchExits();
-            }
-            if (event.data === window.YT?.PlayerState.ENDED) {
-              prefetchExits();
-              // Position = duration so advance()'s flush marks it completed.
-              latestRef.current = {
-                ...latestRef.current,
-                position: latestRef.current.duration,
-              };
-              advance();
-            }
-          },
-          onError: () => {
-            // Embedding disabled / region-locked / deleted — skip to
-            // the next pick instead of stalling on YouTube's error
-            // screen. advancingRef stays latched across the skip
-            // chain until a playable video's PLAYING releases it.
-            skipAndAdvance();
-          },
-        },
-      });
+    swipeNavRef.current = {
+      next: advance,
+      prev: goBack,
+      skip: skipAndAdvance,
     };
-
-    ensureYouTubeAPI(createPlayer);
 
     // Embedded Shorts loop internally and never emit ENDED, so also
     // poll playback position: advance when the video is nearly over or
@@ -465,7 +472,7 @@ export function WatchExperience({
     // Tapping a "More videos" suggestion loads a different video inside
     // the same embed — never navigates away — so Screen Time can't help.
     // Enforce the whitelist ourselves: snap back to approved content.
-    const approvedIds = new Set(playlist.map((v) => v.id));
+    const approvedIds = new Set(stablePlaylist.map((v) => v.id));
 
     let lastTime = 0;
     let lastLoadedId: string | undefined;
@@ -473,7 +480,7 @@ export function WatchExperience({
       const p = playerRef.current;
       if (!p) return;
       const loadedId = loadedVideoId(p);
-      const currentId = playlist[indexRef.current].id;
+      const currentId = stablePlaylist[indexRef.current].id;
       if (loadedId !== lastLoadedId) {
         // A different video is cueing — playhead history from the
         // previous video must not feed the wrap check below.
@@ -526,56 +533,35 @@ export function WatchExperience({
       }
     }, 500);
 
-    // pagehide is the reliable unload event on mobile; beforeunload is not.
-    const flushBeacon = () => flush(true);
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") flush(true);
-    };
-    window.addEventListener("pagehide", flushBeacon);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
     prefetchExits();
 
     return () => {
       cancelled = true;
       window.clearInterval(tick);
-      window.removeEventListener("pagehide", flushBeacon);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      // Unmount (Back to Videos / House / route change) — last chance flush.
-      flush(true);
-      // createdPlayer also covers a player that never reached onReady
-      // (playerRef stays null in that case) — and its destroy() may not
-      // exist yet either.
-      createdPlayer?.destroy?.();
-      createdPlayer = null;
-      playerRef.current = null;
     };
   }, [
-    profileId,
-    playlist,
-    router,
-    portalUrl,
-    returnQuery,
-    sequential,
+    stablePlaylist,
     statusAt,
+    flush,
+    lastSentRef,
+    lastSentPositionRef,
+    pushNavId,
+    popPrevIndex,
     prefetchExits,
+    profileId,
+    returnQuery,
+    resumeAt,
+    sequential,
+    playerRef,
   ]);
 
   // The index goBack would pick, for the confirm dialog's title preview.
-  const peekPrevIndex = () => {
-    for (let i = navStackRef.current.length - 1; i >= 0; i--) {
-      const idx = playlist.findIndex(
-        (v) => v.id === navStackRef.current[i]
-      );
-      if (
-        idx !== -1 &&
-        idx !== indexRef.current &&
-        !skippedRef.current.has(navStackRef.current[i])
-      ) {
-        return idx;
-      }
-    }
-    return (indexRef.current - 1 + playlist.length) % playlist.length;
+  const peekPrevTarget = () => {
+    const prev = peekPrevIndex();
+    return prev === -1
+      ? (indexRef.current - 1 + stablePlaylist.length) %
+          stablePlaylist.length
+      : prev;
   };
 
   // Per-device opt-out from the confirm dialog (kid's own preference,
@@ -583,7 +569,7 @@ export function WatchExperience({
   const noConfirmKey = `nibrastube:swipe-no-confirm:${profileId}`;
 
   const handleSwipe = (dir: SwipeDirection) => {
-    if (!swipeEnabled || pendingSwipe || playlist.length <= 1) return;
+    if (!swipeEnabled || pendingSwipe || stablePlaylist.length <= 1) return;
     if (advancingRef.current) return;
     // localStorage can throw where storage is disabled — a failed read
     // means "not opted out", so the dialog still shows.
@@ -603,9 +589,9 @@ export function WatchExperience({
     const target =
       dir === "next"
         ? sequential
-          ? (indexRef.current + 1) % playlist.length
-          : pickNextIndex(playlist.length, indexRef.current, statusAt)
-        : peekPrevIndex();
+          ? (indexRef.current + 1) % stablePlaylist.length
+          : pickNextIndex(stablePlaylist.length, indexRef.current, statusAt)
+        : peekPrevTarget();
     // pauseVideo() is an async postMessage, so hold the in-flight nav
     // guard until confirm/cancel releases it — otherwise the 500ms tick
     // or an ENDED event can advance() under the open dialog.
@@ -613,7 +599,7 @@ export function WatchExperience({
     preSwipeStateRef.current = playerRef.current?.getPlayerState() ?? null;
     // Pause under the modal so audio doesn't keep playing.
     playerRef.current?.pauseVideo();
-    setPendingSwipe({ dir, title: playlist[target]?.title });
+    setPendingSwipe({ dir, title: stablePlaylist[target]?.title });
   };
 
   const confirmSwipe = (dontAskAgain: boolean) => {
@@ -680,14 +666,16 @@ export function WatchExperience({
 
   // Clamp at render too: a Pusher refresh can shrink the playlist while
   // `index` still points past the new end (the effect clamp runs only
-  // after this render).
+  // after this render). Render reads the live `playlist` prop so titles
+  // stay fresh — ids/order can only differ in fields the signature
+  // doesn't cover.
   const current = playlist[Math.min(index, playlist.length - 1)];
 
   // Toggle a reaction on the video the player actually loaded
   // (latestRef), not playlist[index] — they can briefly diverge.
   const react = (dir: VideoReaction) => {
     const videoId =
-      latestRef.current.videoId || playlist[indexRef.current]?.id;
+      latestRef.current.videoId || stablePlaylist[indexRef.current]?.id;
     if (!videoId) return;
     const prev = reactionsRef.current.get(videoId) ?? null;
     const next = prev === dir ? null : dir;
@@ -780,7 +768,9 @@ export function WatchExperience({
         </Link>
       </div>
 
-      {/* Video Player Area */}
+      {/* Video Player Area — an iframe_api load timeout overlays a
+          notice on the still-mounted player (a late API arrival can
+          then self-clear via onReady); the header/footer links exit. */}
       <div className="flex-1 flex items-center justify-center p-4 md:p-10">
         {/* Same `video-<id>` name as the grid thumbnail and the loading
             thumbnail, so the tapped card morphs into the player. */}
@@ -789,8 +779,9 @@ export function WatchExperience({
             <div ref={containerRef} className="w-full h-full">
               <div ref={mountRef} className="w-full h-full" />
             </div>
-            {/* Reaction overlay must live inside FullscreenPlayer — in native
-                fullscreen only descendants of the fullscreen element render. */}
+            {/* Reaction overlay must live inside FullscreenPlayer —
+                in native fullscreen only descendants of the
+                fullscreen element render. */}
             <div className="absolute top-3 right-3 z-50 flex gap-3">
               <button
                 onClick={() => react("like")}
@@ -801,7 +792,9 @@ export function WatchExperience({
                   size={24}
                   weight={currentReaction === "like" ? "fill" : "regular"}
                   className={
-                    currentReaction === "like" ? "text-primary" : "text-white"
+                    currentReaction === "like"
+                      ? "text-primary"
+                      : "text-white"
                   }
                 />
               </button>
@@ -812,9 +805,13 @@ export function WatchExperience({
               >
                 <ThumbsDown
                   size={24}
-                  weight={currentReaction === "dislike" ? "fill" : "regular"}
+                  weight={
+                    currentReaction === "dislike" ? "fill" : "regular"
+                  }
                   className={
-                    currentReaction === "dislike" ? "text-red-500" : "text-white"
+                    currentReaction === "dislike"
+                      ? "text-red-500"
+                      : "text-white"
                   }
                 />
               </button>
@@ -843,6 +840,31 @@ export function WatchExperience({
                   onTouchCancel={onTouchCancel}
                 />
               </>
+            )}
+            {/* Opaque notice OVER the player, not a swap — unmounting
+                containerRef would null the ref and make the timeout's
+                onReady self-clear unreachable. Rendered below the
+                swipe dialog so it can't trap a pending confirm. */}
+            {loadFailed && (
+              <div
+                className={cn(
+                  "absolute inset-0 z-50 flex flex-col",
+                  "items-center justify-center gap-3",
+                  "bg-slate-900 px-6 text-center"
+                )}
+              >
+                <p className="text-xl font-black text-white sm:text-2xl">
+                  Can&apos;t reach YouTube
+                </p>
+                <p
+                  className={cn(
+                    "max-w-md text-sm font-medium text-slate-400",
+                    "sm:text-base"
+                  )}
+                >
+                  Check the connection, then reload to try again.
+                </p>
+              </div>
             )}
             {pendingSwipe && (
               <SwipeConfirmDialog

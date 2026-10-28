@@ -3,7 +3,7 @@ import { MusicNotes } from "@phosphor-icons/react/dist/ssr";
 import { db } from "@/lib/db";
 import { songs, users } from "@/lib/db/schema";
 import { formatDuration } from "@/lib/format";
-import { SongImportForm } from "@/components/song-import-form";
+import { SongImportForm } from "./song-import-form";
 import {
   Card,
   CardContent,

@@ -13,7 +13,7 @@ import {
   loadMoreSearchChannels,
   loadMoreSearchVideos,
 } from "@/app/actions/search";
-import { SearchResultsGrid } from "@/components/search-results-grid";
+import { SearchResultsGrid } from "./search-results-grid";
 
 // YouTube search + the pinned/approved lookups the result buttons need all
 // run here, inside Suspense — the page shell paints instantly and only this

@@ -3,7 +3,7 @@ import { PushPin } from "@phosphor-icons/react/dist/ssr";
 import { db } from "@/lib/db";
 import { videos, whitelistedVideos } from "@/lib/db/schema";
 import { refreshStaleVideos } from "@/app/actions/refresh";
-import { PinnedVideosPanel } from "@/components/pinned-videos-panel";
+import { PinnedVideosPanel } from "./pinned-videos-panel";
 import { SubmitButton } from "@/components/submit-button";
 import {
   Card,

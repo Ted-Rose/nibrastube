@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -10,11 +16,15 @@ import {
 } from "@phosphor-icons/react";
 import { pinVideo } from "@/app/actions/pinning";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
+import {
+  useYouTubePlayer,
+  type PlayerEvents,
+  type PlayerLoad,
+} from "@/components/player-hooks";
 import { SubmitButton } from "@/components/submit-button";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ensureYouTubeAPI, type YTPlayer } from "@/lib/yt-player";
 import type { DashboardVideo } from "@/lib/youtube";
 
 // In-app ?video= preview for the parent dashboard — watch-page chrome
@@ -46,56 +56,32 @@ export function VideoPreviewOverlay({
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const playerRef = useRef<YTPlayer | null>(null);
-  // An embed failure swaps the player area for a notice — a
-  // parent-only surface has no queue to advance.
+  // An embed failure overlays a notice on the player — a parent-only
+  // surface has no queue to advance.
   const [errored, setErrored] = useState(false);
 
+  const events = useMemo<PlayerEvents>(
+    () => ({
+      onError: () => setErrored(true),
+    }),
+    []
+  );
+  const getInitialLoad = useCallback(
+    (): PlayerLoad => ({ key: video.id, videoId: video.id }),
+    [video.id]
+  );
+  // Single-video surface — nothing to catch up to.
+  const getCatchUpLoad = useCallback(() => null, []);
+  const { loadFailed } = useYouTubePlayer({
+    containerRef,
+    mountRef,
+    events,
+    getInitialLoad,
+    getCatchUpLoad,
+  });
+
   useEffect(() => {
-    let cancelled = false;
-    // Held until onReady publishes it to playerRef — the API methods
-    // don't exist before then.
-    let createdPlayer: YTPlayer | null = null;
-
     const close = () => router.push(closeHref, { scroll: false });
-
-    const createPlayer = () => {
-      const container = containerRef.current;
-      if (cancelled || !container || !window.YT?.Player) return;
-      // The YT API replaces the mount node with its iframe — after a
-      // StrictMode remount the old node is detached, so create a fresh
-      // one (same guard as watch-experience).
-      if (!mountRef.current || !mountRef.current.isConnected) {
-        const el = document.createElement("div");
-        el.className = "w-full h-full";
-        container.appendChild(el);
-        mountRef.current = el;
-      }
-      createdPlayer = new window.YT.Player(mountRef.current, {
-        videoId: video.id,
-        width: "100%",
-        height: "100%",
-        playerVars: {
-          autoplay: 1,
-          modestbranding: 1,
-          rel: 0,
-          iv_load_policy: 3,
-          controls: 1,
-          playsinline: 1,
-        },
-        events: {
-          onReady: () => {
-            if (!cancelled) playerRef.current = createdPlayer;
-          },
-          onError: () => {
-            if (!cancelled) setErrored(true);
-          },
-        },
-      });
-    };
-
-    ensureYouTubeAPI(createPlayer);
-
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
     };
@@ -105,20 +91,10 @@ export function VideoPreviewOverlay({
     document.body.style.overflow = "hidden";
 
     return () => {
-      cancelled = true;
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = prevOverflow;
-      const p = playerRef.current ?? createdPlayer;
-      playerRef.current = null;
-      createdPlayer = null;
-      try {
-        p?.destroy();
-      } catch {
-        // The API throws if destroy() races a not-yet-ready player.
-      }
-      mountRef.current = null;
     };
-  }, [video.id, closeHref, router]);
+  }, [closeHref, router]);
 
   const duration = formatDuration(video.durationSeconds);
   const views =
@@ -180,38 +156,44 @@ export function VideoPreviewOverlay({
 
       {/* Video player area — FullscreenPlayer gives the same
           auto-fullscreen behavior as the watch page; portrait keeps
-          Shorts letterboxed. An embed failure swaps the player for a
-          notice — there is no queue to advance. */}
+          Shorts letterboxed. An embed failure (or an iframe_api load
+          timeout) overlays a notice on the still-mounted player —
+          there is no queue to advance. */}
       <div className="flex flex-1 items-center justify-center p-4 md:p-10">
-        {errored ? (
-          <div
-            className={cn(
-              "flex aspect-video w-full max-w-6xl flex-col",
-              "items-center justify-center gap-3 rounded-[32px]",
-              "border-4 border-slate-800 bg-slate-900 px-6",
-              "text-center shadow-2xl"
-            )}
-          >
-            <p className="text-xl font-black text-white sm:text-2xl">
-              This video can&apos;t be played in the embed
-            </p>
-            <p
+        <FullscreenPlayer portrait={video.isShort}>
+          <div ref={containerRef} className="h-full w-full">
+            <div ref={mountRef} className="h-full w-full" />
+          </div>
+          {/* Opaque notice OVER the player, not a swap — unmounting
+              containerRef would null the ref and make the timeout's
+              onReady self-clear unreachable. */}
+          {(errored || loadFailed) && (
+            <div
               className={cn(
-                "max-w-md text-sm font-medium text-slate-400",
-                "sm:text-base"
+                "absolute inset-0 z-50 flex flex-col",
+                "items-center justify-center gap-3",
+                "bg-slate-900 px-6 text-center"
               )}
             >
-              The owner may have disabled embedding — open it on
-              YouTube instead.
-            </p>
-          </div>
-        ) : (
-          <FullscreenPlayer portrait={video.isShort}>
-            <div ref={containerRef} className="h-full w-full">
-              <div ref={mountRef} className="h-full w-full" />
+              <p className="text-xl font-black text-white sm:text-2xl">
+                {loadFailed && !errored
+                  ? "Can\u2019t reach YouTube"
+                  : "This video can\u2019t be played in the embed"}
+              </p>
+              <p
+                className={cn(
+                  "max-w-md text-sm font-medium text-slate-400",
+                  "sm:text-base"
+                )}
+              >
+                {loadFailed && !errored
+                  ? "Check the connection, then close and reopen."
+                  : "The owner may have disabled embedding — " +
+                    "open it on YouTube instead."}
+              </p>
             </div>
-          </FullscreenPlayer>
-        )}
+          )}
+        </FullscreenPlayer>
       </div>
 
       {/* Bottom bar — vetting metadata + the pin action. Pinning does

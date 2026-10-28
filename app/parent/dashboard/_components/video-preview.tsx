@@ -10,7 +10,7 @@ import {
 } from "@/lib/youtube";
 import { upsertVideoRows } from "@/lib/video-cache";
 import { cn } from "@/lib/utils";
-import { VideoPreviewOverlay } from "@/components/video-preview-overlay";
+import { VideoPreviewOverlay } from "./video-preview-overlay";
 import { Button } from "@/components/ui/button";
 import {
   Card,

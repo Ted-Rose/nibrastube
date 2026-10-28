@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { Trash } from "@phosphor-icons/react";
-import { Input } from "./ui/input";
-import { SubmitButton } from "./submit-button";
-import { Button } from "./ui/button";
+import { Input } from "@/components/ui/input";
+import { SubmitButton } from "@/components/submit-button";
+import { Button } from "@/components/ui/button";
 import { unpinVideo } from "@/app/actions/pinning";
 
 export interface PinnedVideoItem {

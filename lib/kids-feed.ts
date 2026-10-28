@@ -566,6 +566,11 @@ export async function getWatchHistory(
     .orderBy(desc(watchHistory.watchedOn), desc(watchHistory.lastSeenAt));
 }
 
+// First-page size for the For You and Shorts feeds — also the "is the
+// feed exhausted?" threshold in the views (a short first page disables
+// infinite scroll).
+export const FOR_YOU_PAGE_SIZE = 60;
+
 // "For You" — the profile's whitelisted videos ranked by predicted
 // interest. Scoring (see docs/kids-recommendations-plan.md):
 //   channel_affinity = Σ per watch_history row on that channel:
@@ -612,7 +617,7 @@ export async function getRecommendedVideos(
   profileId: string,
   {
     q,
-    limit = 60,
+    limit = FOR_YOU_PAGE_SIZE,
     offset = 0,
     type = "all",
     minLen,

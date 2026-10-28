@@ -19,7 +19,7 @@ import {
 } from "./_components/dashboard-url";
 import { Button } from "@/components/ui/button";
 import { LinkPendingSpinner } from "@/components/link-pending-spinner";
-import { DashboardSearch } from "@/components/dashboard-search";
+import { DashboardSearch } from "./_components/dashboard-search";
 import {
   Card,
   CardContent,

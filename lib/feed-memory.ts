@@ -67,11 +67,19 @@ function isFresh(savedAt: number) {
 function isSnapshot(value: unknown): value is FeedSnapshot {
   if (!value || typeof value !== "object") return false;
   const snap = value as FeedSnapshot;
+  // Number.isFinite (not typeof) so a corrupt entry like
+  // `visible: "x"` fails closed instead of NaN-ing the window math.
   return (
-    typeof snap.savedAt === "number" &&
-    typeof snap.scrollY === "number" &&
+    Number.isFinite(snap.savedAt) &&
+    Number.isFinite(snap.scrollY) &&
+    Number.isFinite(snap.visible) &&
+    Number.isFinite(snap.offset) &&
+    (snap.anchorVideoId === null ||
+      typeof snap.anchorVideoId === "string") &&
     Array.isArray(snap.orderIds) &&
-    (snap.rows === null || Array.isArray(snap.rows))
+    (snap.rows === null || Array.isArray(snap.rows)) &&
+    (snap.expandedDays === undefined ||
+      Array.isArray(snap.expandedDays))
   );
 }
 
@@ -204,11 +212,32 @@ export function takeWatchFrom(): boolean {
   }
 }
 
+// Timestamp of the most recent scroll-gesture input, tracked from
+// module load: restoreFeedScroll's own cancel listeners attach too
+// late to see a gesture that began before them (e.g. the kid already
+// scrolling while the grid was still behind a Suspense fallback).
+// Taps don't register — wheel/touchmove/keydown only, same set the
+// restore cancels on.
+let lastInputAt = 0;
+if (typeof window !== "undefined") {
+  const seenInput = () => {
+    lastInputAt = Date.now();
+  };
+  window.addEventListener("wheel", seenInput, { passive: true });
+  window.addEventListener("touchmove", seenInput, { passive: true });
+  window.addEventListener("keydown", seenInput);
+}
+
 // Scroll the tapped card back to center (fallback: the raw saved
 // scrollY), then re-assert once ~400ms later — late-streaming
 // Suspense shelves above the grid and Next's own popstate scroll
-// restoration can still shift the offset. Any real user input in
-// between cancels the re-assert. Returns a disposer for unmount.
+// restoration can still shift the offset. The cancel listeners
+// attach BEFORE the first scroll, and the initial scroll is skipped
+// when input was seen in the last 300ms — a gesture started while
+// the grid still sat behind a Suspense fallback must not get yanked
+// mid-scroll (the re-assert still lands the restore once input
+// stops). Any later input cancels the re-assert. Returns a disposer
+// for unmount.
 export function restoreFeedScroll(snap: FeedSnapshot): () => void {
   const scroll = () => {
     if (snap.anchorVideoId) {
@@ -222,11 +251,6 @@ export function restoreFeedScroll(snap: FeedSnapshot): () => void {
     }
     window.scrollTo(0, snap.scrollY);
   };
-  scroll();
-  const timer = setTimeout(() => {
-    detach();
-    scroll();
-  }, 400);
   const cancel = () => detach();
   function detach() {
     clearTimeout(timer);
@@ -237,6 +261,11 @@ export function restoreFeedScroll(snap: FeedSnapshot): () => void {
   window.addEventListener("wheel", cancel, { passive: true });
   window.addEventListener("touchmove", cancel, { passive: true });
   window.addEventListener("keydown", cancel);
+  if (Date.now() - lastInputAt > 300) scroll();
+  const timer = setTimeout(() => {
+    detach();
+    scroll();
+  }, 400);
   return detach;
 }
 

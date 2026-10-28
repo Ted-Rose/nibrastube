@@ -56,8 +56,8 @@ export function VideoPreviewOverlay({
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
-  // An embed failure swaps the player area for a notice — a
-  // parent-only surface has no queue to advance.
+  // An embed failure overlays a notice on the player — a parent-only
+  // surface has no queue to advance.
   const [errored, setErrored] = useState(false);
 
   const events = useMemo<PlayerEvents>(

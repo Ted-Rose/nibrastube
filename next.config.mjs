@@ -1,4 +1,4 @@
-// withSentryConfig lives in the /config subpath since SDK v10 —
+// withSentryConfig lives in the /config subpath since SDK v11 —
 // the package root only exports the runtime API.
 import { withSentryConfig } from "@sentry/nextjs/config";
 

@@ -74,7 +74,6 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
     environment: process.env.NEXT_PUBLIC_VERCEL_ENV ?? "development",
     release: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || undefined,
     integrations: [
-      Sentry.browserTracingIntegration(),
       // Free tier ~= 50 replays/mo: record only sessions that hit an
       // error (0 ambient sampling, 1.0 on-error). Text and media are
       // masked — kids' viewing data is private.
@@ -89,3 +88,7 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
     beforeSend: sentryBeforeSend,
   });
 }
+
+// Hooks App Router navigations into the active trace — without it
+// only initial page loads produce transactions.
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

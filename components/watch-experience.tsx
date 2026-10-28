@@ -83,6 +83,11 @@ export function WatchExperience({
   const loadStartedRef = useRef(0);
   // Latest position sample, kept fresh by the 500ms tick below.
   const latestRef = useRef({ videoId: "", position: 0, duration: 0 });
+  // That sample's leave-time position per video id, recorded in goTo —
+  // revisiting a video this session resumes from it rather than the
+  // page-load startSeconds snapshot, which predates everything the kid
+  // watched since.
+  const livePositionsRef = useRef(new Map<string, number>());
   // Per-video watch status keyed by id, updated in-session by advance() —
   // the playlist prop is a page-load snapshot, but kids watch many videos
   // without re-navigating.
@@ -237,6 +242,24 @@ export function WatchExperience({
     [flush, prefetchExits]
   );
 
+  // Resume point for a video being (re)loaded in-session: a finished
+  // video restarts at 0, the currently loaded one takes the tick's
+  // live sample, a revisited one takes its recorded leave position —
+  // only a never-visited video falls back to the page-load
+  // startSeconds snapshot.
+  const resumeAt = useCallback(
+    (video: PlaylistVideo): number => {
+      if (completedRef.current.has(video.id)) return 0;
+      if (latestRef.current.videoId === video.id) {
+        return latestRef.current.position;
+      }
+      return (
+        livePositionsRef.current.get(video.id) ?? video.startSeconds ?? 0
+      );
+    },
+    []
+  );
+
   const getInitialLoad = useCallback((): PlayerLoad | null => {
     const currentVideo = stablePlaylist[indexRef.current];
     if (!currentVideo) return null;
@@ -246,12 +269,9 @@ export function WatchExperience({
       // When the player is recreated by a mid-session playlist
       // refresh, resume the live position — not the stale page-load
       // startSeconds snapshot.
-      startSeconds:
-        latestRef.current.videoId === currentVideo.id
-          ? latestRef.current.position
-          : (currentVideo.startSeconds ?? 0),
+      startSeconds: resumeAt(currentVideo),
     };
-  }, [stablePlaylist]);
+  }, [stablePlaylist, resumeAt]);
 
   // A goTo() during init skipped its loadVideoById (the ref was still
   // null) — catch up if the index moved meanwhile.
@@ -262,12 +282,10 @@ export function WatchExperience({
       return {
         key: want.id,
         videoId: want.id,
-        startSeconds: completedRef.current.has(want.id)
-          ? 0
-          : (want.startSeconds ?? 0),
+        startSeconds: resumeAt(want),
       };
     },
-    [stablePlaylist]
+    [stablePlaylist, resumeAt]
   );
 
   // The merge must run BEFORE the player effect recreates the player
@@ -354,14 +372,15 @@ export function WatchExperience({
         );
         if (status === 2) completedRef.current.add(curId);
       }
+      // Stash the latest sample under its own id — revisiting that
+      // video later this session resumes where it actually left off.
+      if (videoId) livePositionsRef.current.set(videoId, position);
       if (next !== cur && curId) pushNavId(curId);
       indexRef.current = next;
       setIndex(next);
       playerRef.current?.loadVideoById({
         videoId: stablePlaylist[next].id,
-        startSeconds: completedRef.current.has(stablePlaylist[next].id)
-          ? 0
-          : (stablePlaylist[next].startSeconds ?? 0),
+        startSeconds: resumeAt(stablePlaylist[next]),
       });
       // Watchdog: a load that produces neither PLAYING nor an error
       // event within ~15s is a silent stall — treat it as a skip so
@@ -517,6 +536,7 @@ export function WatchExperience({
     prefetchExits,
     profileId,
     returnQuery,
+    resumeAt,
     sequential,
     playerRef,
   ]);

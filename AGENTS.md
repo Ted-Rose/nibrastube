@@ -110,6 +110,8 @@ app/
   api/sync-channels/            Daily channel sync trigger (GET+POST)
   api/watch-progress/           POST upsert for resume position
   api/video-reactions/          POST like/dislike per profile+video
+  global-error.tsx              Root-layout crash boundary — reports
+                                the error to Sentry, own <html>/<body>
 components/
   ui/                           shadcn primitives (button, card,
                                 input, label)
@@ -221,6 +223,9 @@ lib/
                                 factories
   notify.ts                     notifyAdmin() — Telegram sendMessage;
                                 no-ops without TELEGRAM_* env vars
+  report.ts                     Sentry chokepoint for CAUGHT failures
+                                (captureInternalException /
+                                captureProviderException)
   db/schema.ts                  All tables (single file)
   db/index.ts                   pg Pool → drizzle client
   utils.ts                      cn() (clsx + tailwind-merge)
@@ -236,6 +241,10 @@ android/                        Capacitor 8 Android project
                                 server.url
 capacitor.config.ts             appId + server.url (from
                                 CAPACITOR_SERVER_URL)
+instrumentation.ts              Sentry server init — register() on
+                                NEXT_RUNTIME=nodejs + onRequestError
+instrumentation-client.ts       Sentry browser init (DSN-gated,
+                                replay + tracing + beforeSend)
 capacitor-www/                  Placeholder webDir for `cap sync`
                                 (SSR app has no static export; APK
                                 loads remote URL)
@@ -514,6 +523,35 @@ straight to GitHub Releases. Capacitor plugins: `@capacitor/app`,
 (`app/src/main/assets/` is gitignored; the workflow fails on other
 cap-sync drift).
 
+## Sentry event streams
+
+Project `nibrastube-app` in org `nibrastube-a2` (EU, de.sentry.io)
+covers BOTH the browser and the Node.js server runtime in a single
+project. Init is DSN-gated: `instrumentation-client.ts` (browser)
+and `instrumentation.ts` (`register()` on `NEXT_RUNTIME ===
+'nodejs'`) only call `Sentry.init` when `NEXT_PUBLIC_SENTRY_DSN` is
+set — no DSN, no traffic. `app/global-error.tsx` reports
+root-layout render crashes; `lib/report.ts` is the chokepoint for
+caught failures.
+
+`is:unresolved level:error environment:production` = agent-fixable
+bugs only:
+
+| Stream | Transport | Level | Tag |
+|---|---|---|---|
+| Client exceptions | captureException / global-error | error | — |
+| Server/RSC crashes | onRequestError + runtime init | error | — |
+| Caught server bugs | captureInternalException | error |
+  `error_code:internal_error` |
+| YouTube quota/outages | captureProviderException | warning |
+  `error_code:{rate_limited,provider_error}` |
+
+Events carry `environment` from `NEXT_PUBLIC_VERCEL_ENV` /
+`VERCEL_ENV` (`production`/`preview`/`development`) and `release`
+from the Vercel git SHA, so previews and dev stay out of the prod
+queue and `resolvedInNextRelease` resolves at the next deploy.
+Logs stay console/Vercel logs — no logging integration events.
+
 ## Conventions / rules
 
 Repo-local style:
@@ -541,7 +579,13 @@ Repo-local style:
   `DATABASE_URL_UNPOOLED` (direct endpoint — used by drizzle-kit
   migrate), `JWT_SECRET`, `YOUTUBE_API_KEY`, `PUSHER_APP_ID`,
   `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER` (see `.env`,
-  never commit it).
+  never commit it). Sentry: `NEXT_PUBLIC_SENTRY_DSN` enables
+  monitoring (reaches the browser bundle AND the Node runtime —
+  unset = SDK never initializes); optional build-time
+  `SENTRY_AUTH_TOKEN` + `SENTRY_ORG=nibrastube-a2` +
+  `SENTRY_PROJECT=nibrastube-app` enable sourcemap upload and
+  release creation (skipped silently when unset), and EU-region
+  uploads also need `SENTRY_URL=https://de.sentry.io` or they 401.
 - Long-lived work is usually done in **git worktrees** under the
   sibling dir `nibrastube-wt/<name>` (`git worktree add
   ../nibrastube-wt/<name> -b <branch> origin/main`) — the main

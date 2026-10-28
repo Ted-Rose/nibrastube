@@ -33,6 +33,7 @@ export function KidsTypeFilter({
   return (
     <nav
       aria-label="Filter by type"
+      data-drag-scroll
       className="inline-flex h-11 shrink-0 items-center gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {OPTIONS.map((o) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import type { SwipeDirection } from "@/lib/gestures";
 
 interface SwipeConfirmDialogProps {
@@ -31,8 +32,27 @@ export function SwipeConfirmDialog({
 }: SwipeConfirmDialogProps) {
   const [dontAskAgain, setDontAskAgain] = useState(false);
 
+  // Escape and a click on the dimmed backdrop both take the safe
+  // "Keep watching" path — same as the focused default button (the
+  // caller's cancel releases the nav guard it latched on swipe).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCancel]);
+
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div
+      className={cn(
+        "absolute inset-0 z-50 flex items-center justify-center",
+        "bg-black/70 p-4"
+      )}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
       <Card className="w-full max-w-md rounded-[32px] border-4 border-primary/20 bg-background shadow-2xl">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-black">

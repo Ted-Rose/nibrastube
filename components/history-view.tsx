@@ -1,8 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { LinkPendingSpinner } from "./link-pending-spinner";
+import {
+  feedSnapshotKey,
+  readFeedSnapshot,
+  restoreFeedScroll,
+  useFeedSaver,
+  writeFeedSnapshot,
+  type FeedSnapshot,
+} from "@/lib/feed-memory";
 import type { FeedRow } from "./kids-video-grid";
 
 export interface HistoryRow extends FeedRow {
@@ -11,6 +24,11 @@ export interface HistoryRow extends FeedRow {
 }
 
 const PREVIEW_COUNT = 4;
+
+// Layout effect on the client, plain effect during SSR — the scroll
+// restore must land before paint or the list visibly jumps.
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 // Rows arrive pre-sorted (day desc, then lastSeenAt desc) — the client only
 // buckets by watchedOn and collapses each day to the last 4 videos until
@@ -26,6 +44,64 @@ export function HistoryView({
 }) {
   // watchedOn keys of day sections expanded past the first PREVIEW_COUNT.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Feed memory for this tab is scroll + open sections only — NO order
+  // freeze: the chronological re-sort is the point of history.
+  const saveSnapshot = (scrollY: number) => {
+    writeFeedSnapshot(feedSnapshotKey(profileId, feedQuery), {
+      savedAt: Date.now(),
+      scrollY,
+      anchorVideoId: null,
+      visible: 0,
+      offset: 0,
+      orderIds: [],
+      rows: null,
+      expandedDays: [...expanded],
+    });
+  };
+  useFeedSaver(saveSnapshot, feedQuery);
+
+  // Restore once on mount — applied from an effect so the first client
+  // render still matches the server HTML (no hydration mismatch).
+  const initRef = useRef(false);
+  const snapRef = useRef<FeedSnapshot | null>(null);
+  const scrollPendingRef = useRef(false);
+  const disposeScrollRef = useRef<(() => void) | null>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!initRef.current) {
+      initRef.current = true;
+      const snap = readFeedSnapshot(
+        feedSnapshotKey(profileId, feedQuery)
+      );
+      if (snap) {
+        if (snap.expandedDays?.length) {
+          // Reopen day sections first — the scroll lands on the NEXT
+          // commit, after the expanded rows have mounted.
+          snapRef.current = snap;
+          scrollPendingRef.current = true;
+          setExpanded(new Set(snap.expandedDays));
+        } else {
+          // Nothing to reopen — the DOM is already final; scroll now.
+          disposeScrollRef.current = restoreFeedScroll(snap);
+        }
+      }
+      return;
+    }
+    if (scrollPendingRef.current) {
+      scrollPendingRef.current = false;
+      if (snapRef.current) {
+        disposeScrollRef.current = restoreFeedScroll(snapRef.current);
+      }
+    }
+  });
+
+  useEffect(
+    () => () => {
+      disposeScrollRef.current?.();
+    },
+    []
+  );
 
   const days = new Map<string, HistoryRow[]>();
   for (const row of rows) {
@@ -63,7 +139,15 @@ export function HistoryView({
     });
 
   return (
-    <div className="flex flex-col gap-10">
+    <div
+      className="flex flex-col gap-10"
+      onClickCapture={(e) => {
+        // Final-position snapshot before the watch page pushes on top.
+        if ((e.target as HTMLElement).closest?.('a[href*="/watch/"]')) {
+          saveSnapshot(window.scrollY);
+        }
+      }}
+    >
       {[...days.entries()].map(([watchedOn, dayRows]) => {
         const isOpen = expanded.has(watchedOn);
         const shown = isOpen ? dayRows : dayRows.slice(0, PREVIEW_COUNT);

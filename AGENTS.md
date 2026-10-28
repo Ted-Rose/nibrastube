@@ -79,8 +79,24 @@ app/
                                 form serves parents (email) and kids
                                 (profiles.username)
   invite/[token]/               Accept shared-access invite
-  parent/dashboard/             Search YouTube, pin videos, approve
+  parent/dashboard/             Search YouTube (paginated), preview
+                                videos (?video=), drill into channels
+                                (?channel=), pin videos, approve
                                 channels, import song compilations
+    _components/                Route-private view code: page
+                                split-outs (approved-channels-card,
+                                pinned-videos-card, song-import-card,
+                                search-results, fallbacks, dashboard-
+                                url), video-preview (?video= server
+                                wrapper) + video-preview-overlay,
+                                channel-detail (?channel= drill-in) +
+                                channel-uploads-list, dashboard-search,
+                                dashboard-video-card (vetting card:
+                                duration badge, preview link,
+                                pin/Approved/Blocked states),
+                                pinned-videos-panel, search-results-
+                                grid (token-keyed infinite scroll),
+                                song-import-form
   parent/profiles/              Manage kids + send invites
   kids/                         "Who's watching?" profile picker
   kids/[profileId]/             Kids portal — 5 feed tabs, sticky
@@ -100,16 +116,23 @@ app/
                                 pinning, channels, playlists, songs,
                                 invites, safety, refresh, kids-feed —
                                 For-You + Shorts infinite-scroll
-                                paging)
+                                paging, search + channel-videos —
+                                dashboard vetting paging)
   api/sync-channels/            Daily channel sync trigger (GET+POST)
   api/watch-progress/           POST upsert for resume position
   api/video-reactions/          POST like/dislike per profile+video
+  global-error.tsx              Root-layout crash boundary — reports
+                                the error to Sentry, own <html>/<body>
 components/
   ui/                           shadcn primitives (button, card,
                                 input, label)
   watch-experience.tsx          YouTube IFrame player: auto-advance,
                                 resume, rogue-video snapback,
-                                progress beacons
+                                progress beacons; Back pops history
+                                when the nt:watchFrom marker is set
+  watch-from-tracker.tsx        Capture-phase document listener that
+                                sets nt:watchFrom on any /watch/ link
+                                tap — feed→watch entry marker
   fullscreen-player.tsx         Plain-flow player card; never
                                 requests fullscreen (the embed's ⛶
                                 is the sole fullscreen owner)
@@ -153,17 +176,29 @@ components/
                                 to the segment
   video-grid-skeleton.tsx       Grid + shelf skeletons (Suspense
                                 fallbacks)
-  song-import-form.tsx          Parent form: paste a compilation URL,
-                                preview parsed songs, import
   pusher-listener.tsx           Subscribes `profile-<id>`,
                                 router.refresh() on events
   daily-sync-ping.tsx           Once/day/device POST to
                                 /api/sync-channels
   pwa-register.tsx              Registers public/sw.js
+  app-update-banner.tsx         Native-APK update card — mounts in
+                                root layout, polls update.json via
+                                lib/app-update.ts
+  drag-scroll.tsx               Root-layout global: mouse drag-to-scroll
+                                on every `[data-drag-scroll]` strip
+                                (shelf rows, filter chip rows); window
+                                delegation, snap off while dragging,
+                                trailing click swallowed
 lib/
+  app-update.ts                 Hourly-throttled update.json poll →
+                                typed UpdateCheck union; never throws
   auth.ts                       JWT encrypt/decrypt,
                                 login/loginKid/logout, getSession,
                                 isKidSession/parentSession helpers
+  feed-memory.ts                sessionStorage feed snapshots (key
+                                `nt:feed:<profile>:<query>`): order +
+                                depth + scroll restore, row merge
+                                helpers, nt:watchFrom marker
   profiles.ts                   assertCanManageProfile,
                                 getManageableProfiles
   kids-feed.ts                  Kids feed params/URL builder + row
@@ -185,6 +220,9 @@ lib/
                                 factories
   notify.ts                     notifyAdmin() — Telegram sendMessage;
                                 no-ops without TELEGRAM_* env vars
+  report.ts                     Sentry chokepoint for CAUGHT failures
+                                (captureInternalException /
+                                captureProviderException)
   db/schema.ts                  All tables (single file)
   db/index.ts                   pg Pool → drizzle client
   utils.ts                      cn() (clsx + tailwind-merge)
@@ -200,6 +238,10 @@ android/                        Capacitor 8 Android project
                                 server.url
 capacitor.config.ts             appId + server.url (from
                                 CAPACITOR_SERVER_URL)
+instrumentation.ts              Sentry server init — register() on
+                                NEXT_RUNTIME=nodejs + onRequestError
+instrumentation-client.ts       Sentry browser init (DSN-gated,
+                                replay + tracing + beforeSend)
 capacitor-www/                  Placeholder webDir for `cap sync`
                                 (SSR app has no static export; APK
                                 loads remote URL)
@@ -326,6 +368,19 @@ docs/plans/                     Implementation plans with status
   timestamped tracklist (`lib/song-timestamps.ts`) into `songs` rows.
   Re-import identity = `sourceCommentId`; (videoId, startSeconds) is
   unique.
+- **Kids feed memory:** leaving a feed for the watch page and
+  returning restores the feed's order, mounted window depth and
+  scroll position from a sessionStorage snapshot (`lib/feed-memory.ts`,
+  key `nt:feed:<profile>:<feedQuery>` — a sort/filter change is a
+  different key → fresh server order). Same-feed `router.refresh()`s
+  merge rows in place rather than reordering; the History tab
+  restores scroll + expanded day sections only. Snapshot writes are
+  bound to the `feedQuery` they were taken under (`useFeedSaver`'s
+  `key`) — a param change cancels pending writes and flushes under
+  the outgoing key, so one feed's state can never leak into the next
+  feed's snapshot. The watch page's Back button is `router.back()`
+  when `nt:watchFrom` says the kid arrived via a feed card, else
+  `router.push(portalUrl)`.
 - **Real-time:** after any whitelist change, trigger Pusher on
   channel `profile-<profileId>` with `video-pinned`/`video-unpinned`;
   `PusherListener` calls `router.refresh()`. Import `pusherServer`
@@ -347,6 +402,22 @@ docs/plans/                     Implementation plans with status
   state. Only `q` changes; the URL is rebuilt from the live
   `searchParams`, so view/channel/list/date/sort/dir/type survive
   untouched.
+- **Dashboard vetting params:** `/parent/dashboard` accepts `q`,
+  `profileId`, `type` (videos|channels) plus `video` (in-app IFrame
+  preview overlay — pin without leaving the page) and `channel`
+  (drill-in: header stats + paginated uploads, pin videos or approve
+  the channel). `searchYouTube`/`searchChannels` return
+  `SearchPage` (maxResults 25 + opaque nextPageToken; search.list is
+  100 quota units/call, video search pre-filters with
+  `videoEmbeddable`); `loadMoreSearchVideos`/`loadMoreSearchChannels`
+  and `loadChannelUploads` (~3 units/page for unapproved
+  channels — channels.list fallback + playlistItems + videos.list;
+  2/page once the channel row is cached) are read
+  actions gated by parentSession + isParentUnlockedCookie +
+  assertCanManageProfile. Grids accumulate token-keyed like the kids
+  feed — exhaustion = null token, never empty page. Channel uploads
+  deliberately show made-for-kids rows (vetted surface) and badge
+  age-restricted rows "Blocked" with the pin disabled.
 - **Home shelves:** the plain Videos tab (no `q`, no `channel`)
   renders "Continue watching", "Picked for you", "Shorts", "New for
   you", "Your playlists" and "Liked" shelves above the All-videos
@@ -440,10 +511,78 @@ db:migrate` to apply.
 Capacitor wrapper — see `docs/ANDROID_APK.md`. Requires the app to be
 deployed at a public HTTPS URL (set `CAPACITOR_SERVER_URL` locally /
 `APP_URL` repo variable in CI). `.github/workflows/android-release.yml`
-builds a debug APK on the `android` branch / dispatch and a signed
-release APK on `v*` tags — do not push `v*` tags or commits to
+builds a debug APK on the `android` branch / dispatch, a signed
+release APK on `v*` tags (attached to that tag's release), and —
+on every push to `main` — a signed APK + `update.json` published on
+the rolling `continuous` prerelease (installed APKs poll the manifest
+and self-update via `AppUpdateBanner`; the `releases/latest` URL
+stays on `v*` milestones). Do not push `v*` tags or commits to
 `android` casually; each push spends CI and signed releases go
-straight to GitHub Releases.
+straight to GitHub Releases. Capacitor plugins: `@capacitor/app`,
+`@capacitor/keyboard` — after adding/removing plugins run
+`npx cap sync android` and commit the `android/` changes
+(`app/src/main/assets/` is gitignored; the workflow fails on other
+cap-sync drift).
+
+## Sentry event streams
+
+Project `nibrastube-app` in org `nibrastube-a2` (EU, de.sentry.io)
+covers BOTH the browser and the Node.js server runtime in a single
+project. Init is DSN-gated: `instrumentation-client.ts` (browser)
+and `instrumentation.ts` (`register()` on `NEXT_RUNTIME ===
+'nodejs'`) only call `Sentry.init` when `NEXT_PUBLIC_SENTRY_DSN` is
+set — no DSN, no traffic. `app/global-error.tsx` reports
+root-layout render crashes; `lib/report.ts` is the chokepoint for
+caught failures.
+
+**INERT until activated**: `NEXT_PUBLIC_SENTRY_DSN` is not yet set
+on the `redzi` Vercel project (Production scope, then redeploy —
+env vars bake in at build time; pending user action), so prod
+sends nothing today. The server-side transport was verified E2E
+locally with a real DSN. Org config worth knowing: project
+inbound filters (browser-extensions, web-crawlers,
+legacy-browsers, localhost), org-level dataScrubber +
+sensitiveFields, and a "New issues and regressions (production)"
+email workflow matching `environment:production` +
+`level:error`. REST `rateLimit` PUTs silently no-op — the
+rate-limits feature is not enabled on these orgs.
+
+`is:unresolved level:error environment:production` = agent-fixable
+bugs only:
+
+- Client exceptions — `captureException` / `global-error`, level
+  error.
+- Server/RSC crashes — `onRequestError` + runtime init, level
+  error.
+- Caught server bugs — `captureInternalException`, level error,
+  tag `error_code:internal_error`.
+- YouTube quota/outages — `captureProviderException`, level
+  warning, tag `error_code:rate_limited` / `provider_error`.
+
+Events carry `environment` from `NEXT_PUBLIC_VERCEL_ENV` /
+`VERCEL_ENV` (`production`/`preview`/`development`) and `release`
+from the Vercel git SHA, so previews and dev stay out of the prod
+queue and `resolvedInNextRelease` resolves at the next deploy.
+Logs stay console/Vercel logs — no logging integration events.
+
+REST ops (the agent fix queue) — `source
+~/.config/devin/sentry.env` (exports `SENTRY_API_TOKEN`), then:
+
+```bash
+curl -sS -H "Authorization: Bearer $SENTRY_API_TOKEN" \
+  "https://de.sentry.io/api/0/projects/<org>/<proj>/issues/"\
+"?query=is:unresolved+level:error+environment:production"
+```
+
+That issue list IS the fix queue; `GET
+/issues/<id>/events/latest/` for event detail; `PUT
+/issues/<id>/` with `{"status":"resolvedInNextRelease"}` — only
+after the fix merges.
+
+Scripting quirk: `import * as Sentry from "@sentry/nextjs"` under
+plain `tsx`/ESM loses the named exports (CJS interop) — write
+one-off Sentry test scripts as `.cts` + `require()` or import
+`@sentry/node` instead.
 
 ## Conventions / rules
 
@@ -472,7 +611,13 @@ Repo-local style:
   `DATABASE_URL_UNPOOLED` (direct endpoint — used by drizzle-kit
   migrate), `JWT_SECRET`, `YOUTUBE_API_KEY`, `PUSHER_APP_ID`,
   `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER` (see `.env`,
-  never commit it).
+  never commit it). Sentry: `NEXT_PUBLIC_SENTRY_DSN` enables
+  monitoring (reaches the browser bundle AND the Node runtime —
+  unset = SDK never initializes); optional build-time
+  `SENTRY_AUTH_TOKEN` + `SENTRY_ORG=nibrastube-a2` +
+  `SENTRY_PROJECT=nibrastube-app` enable sourcemap upload and
+  release creation (skipped silently when unset), and EU-region
+  uploads also need `SENTRY_URL=https://de.sentry.io` or they 401.
 - Long-lived work is usually done in **git worktrees** under the
   sibling dir `nibrastube-wt/<name>` (`git worktree add
   ../nibrastube-wt/<name> -b <branch> origin/main`) — the main

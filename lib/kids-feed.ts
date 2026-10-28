@@ -42,7 +42,7 @@ export type KidsView =
   | "foryou"
   | "shorts";
 export type VideoReaction = "like" | "dislike";
-export type KidsSort = "age" | "status";
+export type KidsSort = "added" | "age" | "status";
 export type KidsDir = "asc" | "desc";
 // "all" = shorts + long-form together (the default — never emitted in
 // the URL); "videos"/"shorts" filter every video list by is_short.
@@ -128,7 +128,9 @@ export function parseKidsFeedParams(
     view === "history" && isCalendarDate(rawDate) && rawDate <= today
       ? rawDate
       : null;
-  const sort: KidsSort = first(raw.sort) === "age" ? "age" : "status";
+  const rawSort = first(raw.sort);
+  const sort: KidsSort =
+    rawSort === "age" || rawSort === "added" ? rawSort : "status";
   const dir: KidsDir = first(raw.dir) === "desc" ? "desc" : "asc";
   const rawType = first(raw.type);
   const type: KidsType =
@@ -275,9 +277,15 @@ export async function getKidsVideos(
       ? dir === "asc"
         ? [asc(statusRank), newestFirst]
         : [desc(statusRank), newestFirst]
-      : dir === "asc"
-        ? [sql`${videos.publishedAt} asc nulls last`]
-        : [newestFirst];
+      : sort === "added"
+        ? // pinned_at = when the parent added it to the platform, not
+          // the YouTube upload date. NOT NULL, so no nulls handling.
+          dir === "asc"
+          ? [asc(whitelistedVideos.pinnedAt)]
+          : [desc(whitelistedVideos.pinnedAt)]
+        : dir === "asc"
+          ? [sql`${videos.publishedAt} asc nulls last`]
+          : [newestFirst];
 
   return db
     .select({
@@ -558,6 +566,11 @@ export async function getWatchHistory(
     .orderBy(desc(watchHistory.watchedOn), desc(watchHistory.lastSeenAt));
 }
 
+// First-page size for the For You and Shorts feeds — also the "is the
+// feed exhausted?" threshold in the views (a short first page disables
+// infinite scroll).
+export const FOR_YOU_PAGE_SIZE = 60;
+
 // "For You" — the profile's whitelisted videos ranked by predicted
 // interest. Scoring (see docs/kids-recommendations-plan.md):
 //   channel_affinity = Σ per watch_history row on that channel:
@@ -604,7 +617,7 @@ export async function getRecommendedVideos(
   profileId: string,
   {
     q,
-    limit = 60,
+    limit = FOR_YOU_PAGE_SIZE,
     offset = 0,
     type = "all",
     minLen,

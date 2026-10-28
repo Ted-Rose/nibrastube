@@ -3,12 +3,13 @@ import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
 import { loadMoreShorts } from "@/app/actions/kids-feed";
 import {
+  FOR_YOU_PAGE_SIZE,
   getPlaylists,
   getRecommendedVideos,
   kidsFeedQuery,
-  kidsPortalUrl,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
+import { emptyStateFor } from "@/lib/empty-state";
 import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
@@ -26,6 +27,7 @@ export async function ShortsView({
 
   const rows = await getRecommendedVideos(profileId, {
     q: query,
+    limit: FOR_YOU_PAGE_SIZE,
     type: "shorts",
     minLen: feed.minLen,
     maxLen: feed.maxLen,
@@ -35,29 +37,27 @@ export async function ShortsView({
   const playlistRows = await getPlaylists(profileId);
   const ViewIcon = KIDS_VIEWS.shorts.icon;
 
+  const empty = emptyStateFor({
+    feed,
+    profileId,
+    icon: ViewIcon,
+    noun: "shorts",
+    filtered: "No shorts yet!",
+    empty: {
+      message: "No shorts yet!",
+      action: {
+        label: "Find videos",
+        overrides: { view: "videos", channel: null },
+      },
+    },
+  });
+
   return (
     <>
       <FeedHeader title={feedTitle(feed)} />
 
       {rows.length === 0 ? (
-        <EmptyState
-          icon={<ViewIcon size={48} weight="fill" />}
-          message={query ? "No shorts found!" : "No shorts yet!"}
-          action={
-            query
-              ? {
-                  label: "Clear search",
-                  href: kidsPortalUrl(profileId, feed, { q: "" }),
-                }
-              : {
-                  label: "Find videos",
-                  href: kidsPortalUrl(profileId, feed, {
-                    view: "videos",
-                    channel: null,
-                  }),
-                }
-          }
-        />
+        <EmptyState {...empty} />
       ) : (
         <SaveToPlaylistProvider
           profileId={profileId}
@@ -70,7 +70,7 @@ export async function ShortsView({
             // A short first page means the whitelist is already
             // exhausted — no paging hook needed.
             loadMore={
-              rows.length === 60
+              rows.length === FOR_YOU_PAGE_SIZE
                 ? loadMoreShorts.bind(
                     null,
                     profileId,

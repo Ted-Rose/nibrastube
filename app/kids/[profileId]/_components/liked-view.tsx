@@ -10,10 +10,9 @@ import {
   getLikedVideos,
   getPlaylists,
   kidsFeedQuery,
-  kidsPortalUrl,
-  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
+import { emptyStateFor } from "@/lib/empty-state";
 import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
@@ -38,12 +37,37 @@ export async function LikedView({
   const playlistRows = await getPlaylists(profileId);
   const ViewIcon = KIDS_VIEWS.liked.icon;
 
+  const empty = emptyStateFor({
+    feed,
+    profileId,
+    icon: ViewIcon,
+    noun: feed.type === "shorts" ? "shorts" : "videos",
+    filtered: [
+      { type: "shorts", message: "No liked shorts yet!" },
+      { type: "videos", message: "No liked videos yet!" },
+      {
+        type: "band",
+        message: (l) => `No liked videos ${l} yet!`,
+      },
+    ],
+    empty: {
+      message: "No liked videos yet! Tap the 👍 while watching.",
+      action: {
+        label: "Find videos",
+        overrides: { view: "videos", channel: null },
+      },
+    },
+  });
+
   return (
     <>
       <FeedHeader
         title={feedTitle(feed)}
         actions={
-          <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            data-drag-scroll
+            className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
             <Link
@@ -59,47 +83,7 @@ export async function LikedView({
       />
 
       {rows.length === 0 ? (
-        <EmptyState
-          icon={<ViewIcon size={48} weight="fill" />}
-          message={
-            query
-              ? feed.type === "shorts"
-                ? "No shorts found!"
-                : "No videos found!"
-              : feed.type === "shorts"
-                ? "No liked shorts yet!"
-                : feed.type === "videos"
-                  ? "No liked videos yet!"
-                  : feed.minLen !== null || feed.maxLen !== null
-                    ? `No liked videos ${lenRangeLabel(feed.minLen, feed.maxLen)} yet!`
-                    : "No liked videos yet! Tap the 👍 while watching."
-          }
-          action={
-            query
-              ? {
-                  label: "Clear search",
-                  href: kidsPortalUrl(profileId, feed, { q: "" }),
-                }
-              : feed.type !== "all" ||
-                  feed.minLen !== null ||
-                  feed.maxLen !== null
-                ? {
-                    label: "Show everything",
-                    href: kidsPortalUrl(profileId, feed, {
-                      type: "all",
-                      minLen: null,
-                      maxLen: null,
-                    }),
-                  }
-                : {
-                    label: "Find videos",
-                    href: kidsPortalUrl(profileId, feed, {
-                      view: "videos",
-                      channel: null,
-                    }),
-                  }
-          }
-        />
+        <EmptyState {...empty} />
       ) : (
         <SaveToPlaylistProvider
           profileId={profileId}

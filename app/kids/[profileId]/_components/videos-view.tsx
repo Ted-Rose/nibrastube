@@ -8,9 +8,9 @@ import {
   getPlaylists,
   kidsFeedQuery,
   kidsPortalUrl,
-  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
+import { emptyStateFor } from "@/lib/empty-state";
 import { EmptyState } from "@/components/empty-state";
 import { KidsLengthFilter } from "@/components/kids-length-filter";
 import { KidsTypeFilter } from "@/components/kids-type-filter";
@@ -33,6 +33,7 @@ const SORT_OPTIONS = [
   { sort: "status", dir: "desc", label: "Watched" },
   { sort: "age", dir: "desc", label: "Newest" },
   { sort: "age", dir: "asc", label: "Oldest" },
+  { sort: "added", dir: "desc", label: "Recently added" },
 ] as const;
 
 function sortOptions(profileId: string, feed: KidsFeedParams) {
@@ -67,7 +68,10 @@ export async function VideosView({
             on top instead of inside a section header. The row scrolls
             horizontally on narrow phones; ml-auto keeps it
             right-aligned when it fits. */}
-        <div className="mb-6 flex overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          data-drag-scroll
+          className="mb-6 flex overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           <div className="ml-auto flex shrink-0 items-center gap-3">
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
@@ -126,39 +130,31 @@ export async function VideosView({
       : query && channel === null
         ? KIDS_VIEWS[feed.view].icon
         : Play;
-  const emptyMessage = query
-    ? feed.type === "shorts"
-      ? "No shorts found!"
-      : "No videos found!"
-    : feed.type === "shorts"
-      ? "No shorts here yet!"
-      : feed.type === "videos"
-        ? "No videos here yet!"
-        : feed.minLen !== null || feed.maxLen !== null
-          ? `No videos ${lenRangeLabel(feed.minLen, feed.maxLen)} yet!`
-          : channelApproved
-            ? "Videos are on the way!"
-            : "Ask a grown-up to pick some videos!";
-  const emptyAction = query
-    ? {
-        label: "Clear search",
-        href: kidsPortalUrl(profileId, feed, { q: "" }),
-      }
-    : feed.type !== "all" || feed.minLen !== null || feed.maxLen !== null
-      ? {
-          label: "Show everything",
-          href: kidsPortalUrl(profileId, feed, {
-            type: "all",
-            minLen: null,
-            maxLen: null,
-          }),
-        }
-      : channelApproved
-        ? {
-            label: "All channels",
-            href: kidsPortalUrl(profileId, feed, { channel: null }),
-          }
-        : undefined;
+  const empty = emptyStateFor({
+    feed,
+    profileId,
+    icon: EmptyIcon,
+    noun: feed.type === "shorts" ? "shorts" : "videos",
+    filtered: [
+      { type: "shorts", message: "No shorts here yet!" },
+      { type: "videos", message: "No videos here yet!" },
+      {
+        type: "band",
+        message: (l) => `No videos ${l} yet!`,
+      },
+    ],
+    extra: {
+      afterFilters: {
+        when: channelApproved,
+        message: "Videos are on the way!",
+        action: {
+          label: "All channels",
+          overrides: { channel: null },
+        },
+      },
+    },
+    empty: { message: "Ask a grown-up to pick some videos!" },
+  });
 
   return (
     <>
@@ -171,7 +167,10 @@ export async function VideosView({
       <FeedHeader
         title={feedTitle(feed, { channelTitle })}
         actions={
-          <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            data-drag-scroll
+            className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
             <KidsSortChips options={sortOptions(profileId, feed)} />
@@ -180,11 +179,7 @@ export async function VideosView({
       />
 
       {rows.length === 0 ? (
-        <EmptyState
-          icon={<EmptyIcon size={48} weight="fill" />}
-          message={emptyMessage}
-          action={emptyAction}
-        />
+        <EmptyState {...empty} />
       ) : (
         <SaveToPlaylistProvider
           profileId={profileId}
@@ -223,6 +218,22 @@ async function AllVideosGrid({
   // the shelves already ran this request.
   const playlistRows = await getPlaylists(profileId);
 
+  const empty = emptyStateFor({
+    feed,
+    profileId,
+    icon: feed.type === "shorts" ? KIDS_VIEWS.shorts.icon : Play,
+    noun: "videos",
+    filtered: [
+      { type: "shorts", message: "No shorts yet!" },
+      { type: "videos", message: "No videos yet!" },
+      {
+        type: "band",
+        message: (l) => `No videos ${l} yet!`,
+      },
+    ],
+    empty: { message: "Ask a grown-up to pick some videos!" },
+  });
+
   return (
     <>
       <FeedHeader
@@ -231,38 +242,7 @@ async function AllVideosGrid({
       />
 
       {rows.length === 0 ? (
-        <EmptyState
-          icon={
-            feed.type === "shorts" ? (
-              <KIDS_VIEWS.shorts.icon size={48} weight="fill" />
-            ) : (
-              <Play size={48} weight="fill" />
-            )
-          }
-          message={
-            feed.type === "shorts"
-              ? "No shorts yet!"
-              : feed.type === "videos"
-                ? "No videos yet!"
-                : feed.minLen !== null || feed.maxLen !== null
-                  ? `No videos ${lenRangeLabel(feed.minLen, feed.maxLen)} yet!`
-                  : "Ask a grown-up to pick some videos!"
-          }
-          action={
-            feed.type !== "all" ||
-            feed.minLen !== null ||
-            feed.maxLen !== null
-              ? {
-                  label: "Show everything",
-                  href: kidsPortalUrl(profileId, feed, {
-                    type: "all",
-                    minLen: null,
-                    maxLen: null,
-                  }),
-                }
-              : undefined
-          }
-        />
+        <EmptyState {...empty} />
       ) : (
         <SaveToPlaylistProvider
           profileId={profileId}

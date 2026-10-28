@@ -135,6 +135,13 @@
      touch hit-regions inside the cross-origin YouTube iframe on mobile
      browsers. Sideways scroll is prevented by fixing overflowing
      content, not by masking it here. */
+  /* Forced grabbing cursor while a data-drag-scroll strip is being
+     dragged — !important beats the UA cursor:pointer on card links.
+     Toggled by components/drag-scroll.tsx. */
+  html.drag-scroll-active,
+  html.drag-scroll-active * {
+    cursor: grabbing !important;
+    }
 }
 
 /* The thumbnail→player morph relies on view transitions; honor

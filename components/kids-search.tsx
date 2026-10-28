@@ -5,7 +5,13 @@ import {
   useRouter,
   useSearchParams,
 } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   MagnifyingGlass,
   SpinnerGap,
@@ -13,9 +19,16 @@ import {
 } from "@phosphor-icons/react";
 import { Input } from "./ui/input";
 
+// SSR-safe — layout effects don't run on the server.
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 interface KidsSearchProps {
   query: string;
   placeholder: string;
+  // Params the navigation drops before setting q (e.g. "song" on
+  // /songs — an overlay id that must close when the feed changes).
+  stripParams?: string[];
 }
 
 // Type-ahead search. Uses router.replace inside startTransition instead
@@ -23,8 +36,13 @@ interface KidsSearchProps {
 // document navigation with no pending state and no loading.tsx
 // fallback, which leaves the Android WebView looking frozen. The URL is
 // rebuilt from the live search params so every other filter (view,
-// channel, list, date, sort, dir, type) survives untouched.
-export function KidsSearch({ query, placeholder }: KidsSearchProps) {
+// channel, list, date, sort, dir, type) survives untouched, except the
+// keys listed in stripParams.
+export function KidsSearch({
+  query,
+  placeholder,
+  stripParams,
+}: KidsSearchProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -45,10 +63,12 @@ export function KidsSearch({ query, placeholder }: KidsSearchProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Fresh pathname + params for the debounced callback, which fires
-  // after the render that scheduled it.
+  // after the render that scheduled it. Synced in a layout effect —
+  // commits run layout effects in the same task, so a timer scheduled
+  // before this commit can't fire navigate() with the pre-commit URL
+  // (a passive effect would leave that gap).
   const urlRef = useRef({ pathname, searchParams });
-
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     urlRef.current = { pathname, searchParams };
   }, [pathname, searchParams]);
 
@@ -77,6 +97,7 @@ export function KidsSearch({ query, placeholder }: KidsSearchProps) {
     const sp = new URLSearchParams(
       urlRef.current.searchParams.toString(),
     );
+    for (const key of stripParams ?? []) sp.delete(key);
     if (q) sp.set("q", q);
     else sp.delete("q");
     const qs = sp.toString();

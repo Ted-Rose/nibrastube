@@ -5,9 +5,9 @@ import { KidsTypeFilter } from "@/components/kids-type-filter";
 import {
   getKidsChannels,
   kidsPortalUrl,
-  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
+import { emptyStateFor } from "@/lib/empty-state";
 import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
@@ -31,12 +31,31 @@ export async function ChannelsView({
   });
   const ViewIcon = KIDS_VIEWS.channels.icon;
 
+  const empty = emptyStateFor({
+    feed,
+    profileId,
+    icon: ViewIcon,
+    noun: "channels",
+    filtered: [
+      { type: "shorts", message: "No channels with shorts yet!" },
+      { type: "videos", message: "No channels with videos yet!" },
+      {
+        type: "band",
+        message: (l) => `No channels with videos ${l} yet!`,
+      },
+    ],
+    empty: { message: "Ask a grown-up to approve some channels!" },
+  });
+
   return (
     <>
       <FeedHeader
         title={feedTitle(feed)}
         actions={
-          <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            data-drag-scroll
+            className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
           </div>
@@ -44,39 +63,7 @@ export async function ChannelsView({
       />
 
       {channelRows.length === 0 ? (
-        <EmptyState
-          icon={<ViewIcon size={48} weight="fill" />}
-          message={
-            query
-              ? "No channels found!"
-              : feed.type === "shorts"
-                ? "No channels with shorts yet!"
-                : feed.type === "videos"
-                  ? "No channels with videos yet!"
-                  : feed.minLen !== null || feed.maxLen !== null
-                    ? `No channels with videos ${lenRangeLabel(feed.minLen, feed.maxLen)} yet!`
-                    : "Ask a grown-up to approve some channels!"
-          }
-          action={
-            query
-              ? {
-                  label: "Clear search",
-                  href: kidsPortalUrl(profileId, feed, { q: "" }),
-                }
-              : feed.type !== "all" ||
-                  feed.minLen !== null ||
-                  feed.maxLen !== null
-                ? {
-                    label: "Show everything",
-                    href: kidsPortalUrl(profileId, feed, {
-                      type: "all",
-                      minLen: null,
-                      maxLen: null,
-                    }),
-                  }
-                : undefined
-          }
-        />
+        <EmptyState {...empty} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
           {channelRows.map((c) => (

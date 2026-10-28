@@ -18,6 +18,7 @@ export function KidsSortChips({
   return (
     <nav
       aria-label="Sort videos"
+      data-drag-scroll
       className="flex max-w-full shrink-0 gap-2 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:ml-auto"
     >
       {options.map((o) => (

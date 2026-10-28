@@ -5,13 +5,13 @@ import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
 import { loadMoreForYou } from "@/app/actions/kids-feed";
 import {
+  FOR_YOU_PAGE_SIZE,
   getPlaylists,
   getRecommendedVideos,
   kidsFeedQuery,
-  kidsPortalUrl,
-  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
+import { emptyStateFor } from "@/lib/empty-state";
 import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
@@ -29,6 +29,7 @@ export async function ForYouView({
 
   const rows = await getRecommendedVideos(profileId, {
     q: query,
+    limit: FOR_YOU_PAGE_SIZE,
     type: feed.type,
     minLen: feed.minLen,
     maxLen: feed.maxLen,
@@ -38,12 +39,37 @@ export async function ForYouView({
   const playlistRows = await getPlaylists(profileId);
   const ViewIcon = KIDS_VIEWS.foryou.icon;
 
+  const empty = emptyStateFor({
+    feed,
+    profileId,
+    icon: ViewIcon,
+    noun: feed.type === "shorts" ? "shorts" : "videos",
+    filtered: [
+      { type: "shorts", message: "No shorts picked yet!" },
+      { type: "videos", message: "No videos picked yet!" },
+      {
+        type: "band",
+        message: (l) => `Nothing ${l} picked yet!`,
+      },
+    ],
+    empty: {
+      message: "Nothing picked yet!",
+      action: {
+        label: "Find videos",
+        overrides: { view: "videos", channel: null },
+      },
+    },
+  });
+
   return (
     <>
       <FeedHeader
         title={feedTitle(feed)}
         actions={
-          <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            data-drag-scroll
+            className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             <KidsTypeFilter profileId={profileId} feed={feed} />
             <KidsLengthFilter minLen={feed.minLen} maxLen={feed.maxLen} />
           </div>
@@ -51,47 +77,7 @@ export async function ForYouView({
       />
 
       {rows.length === 0 ? (
-        <EmptyState
-          icon={<ViewIcon size={48} weight="fill" />}
-          message={
-            query
-              ? feed.type === "shorts"
-                ? "No shorts found!"
-                : "No videos found!"
-              : feed.type === "shorts"
-                ? "No shorts picked yet!"
-                : feed.type === "videos"
-                  ? "No videos picked yet!"
-                  : feed.minLen !== null || feed.maxLen !== null
-                    ? `Nothing ${lenRangeLabel(feed.minLen, feed.maxLen)} picked yet!`
-                    : "Nothing picked yet!"
-          }
-          action={
-            query
-              ? {
-                  label: "Clear search",
-                  href: kidsPortalUrl(profileId, feed, { q: "" }),
-                }
-              : feed.type !== "all" ||
-                  feed.minLen !== null ||
-                  feed.maxLen !== null
-                ? {
-                    label: "Show everything",
-                    href: kidsPortalUrl(profileId, feed, {
-                      type: "all",
-                      minLen: null,
-                      maxLen: null,
-                    }),
-                  }
-                : {
-                    label: "Find videos",
-                    href: kidsPortalUrl(profileId, feed, {
-                      view: "videos",
-                      channel: null,
-                    }),
-                  }
-          }
-        />
+        <EmptyState {...empty} />
       ) : (
         <SaveToPlaylistProvider
           profileId={profileId}
@@ -104,7 +90,7 @@ export async function ForYouView({
             // A short first page means the whitelist is already
             // exhausted — no paging hook needed.
             loadMore={
-              rows.length === 60
+              rows.length === FOR_YOU_PAGE_SIZE
                 ? loadMoreForYou.bind(
                     null,
                     profileId,

@@ -35,6 +35,8 @@ function Slider({
         "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50",
         className
       )}
+      defaultValue={defaultValue}
+      value={value}
       min={min}
       max={max}
       {...props}

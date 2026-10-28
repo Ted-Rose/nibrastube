@@ -10,7 +10,8 @@ export function FeedContent({
   userId,
 }: {
   feed: SongsFeedParams;
-  // session.user.id, or null for anonymous and kid-locked devices.
+  // session.user.id, or null for anonymous visitors, kid-locked
+  // devices, and kid sessions.
   userId: string | null;
 }) {
   if (feed.view === "compilations") {

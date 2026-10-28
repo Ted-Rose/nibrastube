@@ -60,6 +60,7 @@ export function KidsLengthFilter({
   const shown = draft ?? committed;
 
   const commit = ([minPos, maxPos]: [number, number]) => {
+    if (!Number.isFinite(minPos) || !Number.isFinite(maxPos)) return;
     if (minPos === committed[0] && maxPos === committed[1]) return;
     const sp = new URLSearchParams(searchParams.toString());
     if (minPos <= 0) sp.delete("min");

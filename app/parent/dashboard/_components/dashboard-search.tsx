@@ -3,8 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { MagnifyingGlass, SpinnerGap } from "@phosphor-icons/react";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  dashboardUrl,
+} from "./dashboard-url";
 
 interface DashboardSearchProps {
   profileId: string;
@@ -28,10 +31,7 @@ export function DashboardSearch({
     e.preventDefault();
     const q = String(new FormData(e.currentTarget).get("q") ?? "");
     startTransition(() => {
-      // Same param order as dashboardHref: profileId, q, type.
-      router.push(
-        `/parent/dashboard?profileId=${profileId}${q ? `&q=${encodeURIComponent(q)}` : ""}&type=${searchType}`
-      );
+      router.push(dashboardUrl({ profileId, q, type: searchType }));
     });
   };
 

@@ -30,14 +30,84 @@ Until set, the config falls back to `https://nibrastube.example.com`
 
 ## Builds
 
-| Trigger | Output |
-|---|---|
-| Push to `android` branch or manual dispatch | Debug APK → workflow artifact `nibrastube-debug-apk` (30d) |
-| Tag `v*` push | Signed `nibrastube.apk` attached to the GitHub release |
+- Push to `android`, tag `v*`, or dispatch on a non-`main` ref →
+  debug APK, uploaded as workflow artifact `nibrastube-debug-apk`
+  (30d); skipped on `main` runs (push or dispatch), which publish
+  only the release below
+- Tag `v*` push → signed `nibrastube.apk` attached to that tag's
+  GitHub release
+- Push to `main` → signed `nibrastube.apk` + `update.json` on the
+  rolling `continuous` prerelease
 
 The stable sideload URL (used by the landing-page link shown on
-Android browsers):
-`https://github.com/Ted-Rose/nibrastube/releases/latest/download/nibrastube.apk`
+Android browsers) tracks the newest `main` build — host+repo
+`https://github.com/Ted-Rose/nibrastube`, path
+`/releases/download/continuous/nibrastube.apk`.
+
+`releases/latest/download/nibrastube.apk` also works but tracks only
+tagged `v*` milestones — the `continuous` release is a prerelease
+with `make_latest: "false"`, so it never steals "latest".
+
+## Rolling release + in-app updates
+
+Every push to `main` (and a manual dispatch while on `main`) runs the
+full signed-release path with `versionCode = github.run_number`
+(monotonic) and `versionName = <pkg version>-r<run_number>`, then:
+
+1. `aapt dump badging` verifies the APK's real `versionCode` equals
+   the run number — the update check keys off it.
+2. `scripts/write-update-json.mjs` writes `update.json`:
+
+   ```json
+   {
+     "versionCode": 123,
+     "versionName": "0.0.1-r123",
+     "apkUrl": "https://github.com/<repo>/releases/download/continuous/nibrastube.apk",
+     "releaseUrl": "https://github.com/<repo>/releases/tag/continuous",
+     "publishedAt": "<iso>"
+   }
+   ```
+
+3. The `continuous` tag is force-moved to the built commit (it does
+   not match `v*`, so it can't retrigger the workflow) and
+   `action-gh-release` publishes both files as a prerelease.
+
+On-device, `lib/app-update.ts` polls that manifest once per launch
+(hourly `localStorage` throttle, stamped only once the check
+resolves to "update"/"current" — a fetch, validation, or
+version-read failure doesn't suppress retries). The manifest
+is fetched via `CapacitorHttp` (WebView `fetch` to github.com is
+CORS-blocked) and validated before use: `versionCode` must be a
+positive integer and `apkUrl` must be `https:` on `github.com` or
+`*.githubusercontent.com`. When `versionCode` exceeds the installed
+build (`App.getInfo().build`), `components/app-update-banner.tsx`
+shows a one-tap card; Update opens the APK URL in the system browser
+(`window.open(url, "_system")`) and Android installs over the top.
+
+Over-the-top installs REQUIRE the same signing key — both release
+paths sign with the same keystore. Never uninstall the old APK first:
+that wipes cookies/localStorage (the session).
+
+**Known limitation:** APKs built before `@capacitor/app` shipped
+(v0.1.0 era) can't read their own versionCode — the check fails
+silently and no banner ever shows. They need one manual sideload of
+any newer APK; after that, updates are automatic.
+
+## Plugins and cap-sync drift
+
+`@capacitor/app` (build info for the updater) and
+`@capacitor/keyboard` (`resizeOnFullScreen` so the keyboard resizes
+the edge-to-edge WebView — paired with
+`android:windowSoftInputMode="adjustResize"` in the manifest) are the
+installed plugins. After adding/removing any plugin, run
+`npx cap sync android` and commit the `android/` changes — the
+workflow fails the build if `git status --porcelain -- android/`
+isn't clean after sync. `android/app/src/main/assets/` is gitignored
+(it only holds generated cap-sync output: the baked `server.url`,
+plugin manifest, copied `public/`).
+
+Also in the manifest: `android:allowBackup="false"` — WebView
+cookies/localStorage must not roam to other devices via Auto Backup.
 
 Local builds need JDK 21 + Android SDK (`platforms;android-36`,
 `build-tools;36.0.0`), then `cd android && ./gradlew assembleDebug`.

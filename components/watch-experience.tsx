@@ -719,110 +719,113 @@ export function WatchExperience({
         </Link>
       </div>
 
-      {/* Video Player Area — an iframe_api load timeout swaps the
-          player for a notice; the header/footer links still exit. */}
+      {/* Video Player Area — an iframe_api load timeout overlays a
+          notice on the still-mounted player (a late API arrival can
+          then self-clear via onReady); the header/footer links exit. */}
       <div className="flex-1 flex items-center justify-center p-4 md:p-10">
         {/* Same `video-<id>` name as the grid thumbnail and the loading
             thumbnail, so the tapped card morphs into the player. */}
         <ViewTransition name={`video-${current.id}`}>
-          {loadFailed ? (
-            <div
-              className={cn(
-                "flex aspect-video w-full max-w-6xl flex-col",
-                "items-center justify-center gap-3 rounded-[32px]",
-                "border-4 border-slate-800 bg-slate-900 px-6",
-                "text-center shadow-2xl"
-              )}
-            >
-              <p className="text-xl font-black text-white sm:text-2xl">
-                Can&apos;t reach YouTube
-              </p>
-              <p
+          <FullscreenPlayer portrait={current.isShort}>
+            <div ref={containerRef} className="w-full h-full">
+              <div ref={mountRef} className="w-full h-full" />
+            </div>
+            {/* Reaction overlay must live inside FullscreenPlayer —
+                in native fullscreen only descendants of the
+                fullscreen element render. */}
+            <div className="absolute top-3 right-3 z-50 flex gap-3">
+              <button
+                onClick={() => react("like")}
+                aria-label="Like video"
+                className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+              >
+                <ThumbsUp
+                  size={24}
+                  weight={currentReaction === "like" ? "fill" : "regular"}
+                  className={
+                    currentReaction === "like"
+                      ? "text-primary"
+                      : "text-white"
+                  }
+                />
+              </button>
+              <button
+                onClick={() => react("dislike")}
+                aria-label="Dislike video"
+                className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+              >
+                <ThumbsDown
+                  size={24}
+                  weight={
+                    currentReaction === "dislike" ? "fill" : "regular"
+                  }
+                  className={
+                    currentReaction === "dislike"
+                      ? "text-red-500"
+                      : "text-white"
+                  }
+                />
+              </button>
+            </div>
+            {swipeEnabled && (
+              <>
+                {/* Edge swipe zones: touches starting inside the cross-origin
+                    YT iframe never reach our document, so these transparent
+                    strips catch swipes that begin at the screen edge. They
+                    must live INSIDE FullscreenPlayer — in native fullscreen
+                    only descendants of fullscreenElement render. bottom-16
+                    leaves the YouTube control bar (incl. corner buttons)
+                    reachable; the video center stays fully tappable. */}
+                <div
+                  className="absolute top-0 bottom-16 left-0 w-7 z-40 touch-none"
+                  onTouchStart={onTouchStart}
+                  onTouchMove={onTouchMove}
+                  onTouchEnd={onTouchEnd}
+                  onTouchCancel={onTouchCancel}
+                />
+                <div
+                  className="absolute top-0 bottom-16 right-0 w-7 z-40 touch-none"
+                  onTouchStart={onTouchStart}
+                  onTouchMove={onTouchMove}
+                  onTouchEnd={onTouchEnd}
+                  onTouchCancel={onTouchCancel}
+                />
+              </>
+            )}
+            {/* Opaque notice OVER the player, not a swap — unmounting
+                containerRef would null the ref and make the timeout's
+                onReady self-clear unreachable. Rendered below the
+                swipe dialog so it can't trap a pending confirm. */}
+            {loadFailed && (
+              <div
                 className={cn(
-                  "max-w-md text-sm font-medium text-slate-400",
-                  "sm:text-base"
+                  "absolute inset-0 z-50 flex flex-col",
+                  "items-center justify-center gap-3",
+                  "bg-slate-900 px-6 text-center"
                 )}
               >
-                Check the connection, then reload to try again.
-              </p>
-            </div>
-          ) : (
-            <FullscreenPlayer portrait={current.isShort}>
-              <div ref={containerRef} className="w-full h-full">
-                <div ref={mountRef} className="w-full h-full" />
-              </div>
-              {/* Reaction overlay must live inside FullscreenPlayer —
-                  in native fullscreen only descendants of the
-                  fullscreen element render. */}
-              <div className="absolute top-3 right-3 z-50 flex gap-3">
-                <button
-                  onClick={() => react("like")}
-                  aria-label="Like video"
-                  className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+                <p className="text-xl font-black text-white sm:text-2xl">
+                  Can&apos;t reach YouTube
+                </p>
+                <p
+                  className={cn(
+                    "max-w-md text-sm font-medium text-slate-400",
+                    "sm:text-base"
+                  )}
                 >
-                  <ThumbsUp
-                    size={24}
-                    weight={currentReaction === "like" ? "fill" : "regular"}
-                    className={
-                      currentReaction === "like"
-                        ? "text-primary"
-                        : "text-white"
-                    }
-                  />
-                </button>
-                <button
-                  onClick={() => react("dislike")}
-                  aria-label="Dislike video"
-                  className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
-                >
-                  <ThumbsDown
-                    size={24}
-                    weight={
-                      currentReaction === "dislike" ? "fill" : "regular"
-                    }
-                    className={
-                      currentReaction === "dislike"
-                        ? "text-red-500"
-                        : "text-white"
-                    }
-                  />
-                </button>
+                  Check the connection, then reload to try again.
+                </p>
               </div>
-              {swipeEnabled && (
-                <>
-                  {/* Edge swipe zones: touches starting inside the cross-origin
-                      YT iframe never reach our document, so these transparent
-                      strips catch swipes that begin at the screen edge. They
-                      must live INSIDE FullscreenPlayer — in native fullscreen
-                      only descendants of fullscreenElement render. bottom-16
-                      leaves the YouTube control bar (incl. corner buttons)
-                      reachable; the video center stays fully tappable. */}
-                  <div
-                    className="absolute top-0 bottom-16 left-0 w-7 z-40 touch-none"
-                    onTouchStart={onTouchStart}
-                    onTouchMove={onTouchMove}
-                    onTouchEnd={onTouchEnd}
-                    onTouchCancel={onTouchCancel}
-                  />
-                  <div
-                    className="absolute top-0 bottom-16 right-0 w-7 z-40 touch-none"
-                    onTouchStart={onTouchStart}
-                    onTouchMove={onTouchMove}
-                    onTouchEnd={onTouchEnd}
-                    onTouchCancel={onTouchCancel}
-                  />
-                </>
-              )}
-              {pendingSwipe && (
-                <SwipeConfirmDialog
-                  direction={pendingSwipe.dir}
-                  targetTitle={pendingSwipe.title}
-                  onConfirm={confirmSwipe}
-                  onCancel={cancelSwipe}
-                />
-              )}
-            </FullscreenPlayer>
-          )}
+            )}
+            {pendingSwipe && (
+              <SwipeConfirmDialog
+                direction={pendingSwipe.dir}
+                targetTitle={pendingSwipe.title}
+                onConfirm={confirmSwipe}
+                onCancel={cancelSwipe}
+              />
+            )}
+          </FullscreenPlayer>
         </ViewTransition>
       </div>
 

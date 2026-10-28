@@ -259,37 +259,39 @@ export function SongPlayerOverlay({
 
       {/* Video player area — FullscreenPlayer gives the same
           auto-fullscreen behavior as the watch page. An iframe_api
-          load timeout swaps the player for a notice; the header
+          load timeout overlays a notice on the still-mounted player
+          so a late API arrival self-clears via onReady; the header
           links and Escape still close. */}
       <div className="flex flex-1 items-center justify-center p-4 md:p-10">
-        {loadFailed ? (
-          <div
-            className={cn(
-              "flex aspect-video w-full max-w-6xl flex-col",
-              "items-center justify-center gap-3 rounded-[32px]",
-              "border-4 border-slate-800 bg-slate-900 px-6",
-              "text-center shadow-2xl"
-            )}
-          >
-            <p className="text-xl font-black text-white sm:text-2xl">
-              Can&apos;t reach YouTube
-            </p>
-            <p
+        <FullscreenPlayer>
+          <div ref={containerRef} className="h-full w-full">
+            <div ref={mountRef} className="h-full w-full" />
+          </div>
+          {/* Opaque notice OVER the player, not a swap — unmounting
+              containerRef would null the ref and make the timeout's
+              onReady self-clear unreachable. */}
+          {loadFailed && (
+            <div
               className={cn(
-                "max-w-md text-sm font-medium text-slate-400",
-                "sm:text-base"
+                "absolute inset-0 z-50 flex flex-col",
+                "items-center justify-center gap-3",
+                "bg-slate-900 px-6 text-center"
               )}
             >
-              Check the connection, then close and reopen the song.
-            </p>
-          </div>
-        ) : (
-          <FullscreenPlayer>
-            <div ref={containerRef} className="h-full w-full">
-              <div ref={mountRef} className="h-full w-full" />
+              <p className="text-xl font-black text-white sm:text-2xl">
+                Can&apos;t reach YouTube
+              </p>
+              <p
+                className={cn(
+                  "max-w-md text-sm font-medium text-slate-400",
+                  "sm:text-base"
+                )}
+              >
+                Check the connection, then close and reopen the song.
+              </p>
             </div>
-          </FullscreenPlayer>
-        )}
+          )}
+        </FullscreenPlayer>
       </div>
 
       {/* Bottom bar — mirrors the watch page's "Watching as" block. */}

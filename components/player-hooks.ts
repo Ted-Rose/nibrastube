@@ -43,6 +43,10 @@ const API_LOAD_TIMEOUT_MS = 10_000;
 // covering a never-ready player. The callback identities ARE the
 // recreate signal — callers must memoize events/getInitialLoad/
 // getCatchUpLoad on the inputs that should rebuild the player.
+// Consumers must OVERLAY the loadFailed notice on the still-mounted
+// containerRef div — swapping it out nulls the ref, createPlayer
+// early-returns, and a late API arrival can never reach the onReady
+// self-clear below (the error becomes terminal until remount).
 export function useYouTubePlayer({
   containerRef,
   mountRef,
@@ -116,7 +120,9 @@ export function useYouTubePlayer({
             // it was already destroyed, so don't publish the ref.
             if (cancelled || !createdPlayer) return;
             playerRef.current = createdPlayer;
-            // A ready player supersedes any load-timeout error.
+            // A ready player supersedes any load-timeout error —
+            // reachable only because consumers keep containerRef
+            // mounted under the notice.
             setLoadFailed(false);
             // A nav during init skipped its loadVideoById (the ref
             // was still null) — catch up if the target moved.
@@ -130,8 +136,18 @@ export function useYouTubePlayer({
             }
             events.onReady?.(event);
           },
-          onStateChange: (event) => events.onStateChange?.(event),
-          onError: (event) => events.onError?.(event),
+          // Events from an already-destroyed player can still arrive
+          // (a queued postMessage landing after cleanup, a StrictMode
+          // straggler) — drop them so they can't set state or fire a
+          // phantom advance against the new effect's closures.
+          onStateChange: (event) => {
+            if (cancelled) return;
+            events.onStateChange?.(event);
+          },
+          onError: (event) => {
+            if (cancelled) return;
+            events.onError?.(event);
+          },
         },
       });
     };

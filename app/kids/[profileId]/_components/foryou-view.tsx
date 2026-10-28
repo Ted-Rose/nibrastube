@@ -5,6 +5,7 @@ import { KidsVideoGrid } from "@/components/kids-video-grid";
 import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
 import { loadMoreForYou } from "@/app/actions/kids-feed";
 import {
+  FOR_YOU_PAGE_SIZE,
   getPlaylists,
   getRecommendedVideos,
   kidsFeedQuery,
@@ -28,6 +29,7 @@ export async function ForYouView({
 
   const rows = await getRecommendedVideos(profileId, {
     q: query,
+    limit: FOR_YOU_PAGE_SIZE,
     type: feed.type,
     minLen: feed.minLen,
     maxLen: feed.maxLen,
@@ -88,7 +90,7 @@ export async function ForYouView({
             // A short first page means the whitelist is already
             // exhausted — no paging hook needed.
             loadMore={
-              rows.length === 60
+              rows.length === FOR_YOU_PAGE_SIZE
                 ? loadMoreForYou.bind(
                     null,
                     profileId,

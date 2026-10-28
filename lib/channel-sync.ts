@@ -11,9 +11,14 @@ import {
 } from "@/lib/db/schema";
 import { getUploadsPage, getVideosBatch } from "@/lib/youtube";
 import { upsertVideoRows } from "@/lib/video-cache";
+import {
+  captureInternalException,
+  captureProviderException,
+} from "@/lib/report";
 
 const MAX_CHANNELS_PER_RUN = 50;
-const MAX_BACKFILL_PAGES_PER_RUN = 40; // ~2000 videos per run; resume via backfillPageToken
+// ~2000 videos per run; resume via backfillPageToken
+const MAX_BACKFILL_PAGES_PER_RUN = 40;
 const MAX_POLL_PAGES_PER_RUN = 5; // ~250 newest uploads checked per poll
 
 export class QuotaExceededError extends Error {}
@@ -256,7 +261,8 @@ export async function syncAllChannels(): Promise<number> {
     .orderBy(asc(whitelistedChannels.lastSyncAt))
     .limit(MAX_CHANNELS_PER_RUN);
 
-  // Postgres asc() puts NULLs last; sort in JS so never-synced channels go first.
+  // Postgres asc() puts NULLs last; sort in JS so never-synced
+  // channels go first.
   rows.sort((a, b) => {
     const at = a.whitelist.lastSyncAt?.getTime() ?? 0;
     const bt = b.whitelist.lastSyncAt?.getTime() ?? 0;
@@ -275,12 +281,17 @@ export async function syncAllChannels(): Promise<number> {
     } catch (err) {
       if (err instanceof QuotaExceededError || isQuotaError(err)) {
         console.error("YouTube quota exceeded — aborting sync run early");
+        // Quota aborts are an expected provider state — warning-level
+        // trend stream, never the error fix queue.
+        captureProviderException(err, "rate_limited");
         break;
       }
       console.error(
-        `Channel sync failed for ${row.channel.id} (profile ${row.whitelist.profileId}):`,
+        `Channel sync failed for ${row.channel.id} ` +
+          `(profile ${row.whitelist.profileId}):`,
         err
       );
+      captureInternalException(err);
     }
   }
 

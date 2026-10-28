@@ -6,7 +6,10 @@
 import { count, desc, eq, sql } from "drizzle-orm";
 import { db } from "../lib/db";
 import { profiles, videos, watchHistory } from "../lib/db/schema";
-import { getRecommendedVideos } from "../lib/kids-feed";
+import {
+  FOR_YOU_PAGE_SIZE,
+  getRecommendedVideos,
+} from "../lib/kids-feed";
 
 const [top] = await db
   .select({ id: profiles.id, name: profiles.name, n: count() })
@@ -46,8 +49,11 @@ const tier = (t: string) => {
 };
 
 const seen = new Set<string>();
-for (let offset = 0; offset <= 1200; offset += 60) {
-  const rows = await getRecommendedVideos(top.id, { offset, limit: 60 });
+for (let offset = 0; offset <= 1200; offset += FOR_YOU_PAGE_SIZE) {
+  const rows = await getRecommendedVideos(top.id, {
+    offset,
+    limit: FOR_YOU_PAGE_SIZE,
+  });
   if (rows.length === 0) {
     console.log(`offset ${offset}: empty — end of feed`);
     break;

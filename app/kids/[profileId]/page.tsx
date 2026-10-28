@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { MusicNotes, UserSwitch } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import PusherListener from "@/components/pusher-listener";
+import WatchFromTracker from "@/components/watch-from-tracker";
 import DailySyncPing from "@/components/daily-sync-ping";
 import { KidsFooterGate } from "@/components/kids-footer-gate";
 import { KidLogoutButton } from "@/components/kid-logout-button";
@@ -93,6 +94,7 @@ export default async function KidsPortalPage({
   return (
     <div className="min-h-screen bg-[#F0F4FF]">
       <PusherListener profileId={profileId} />
+      <WatchFromTracker />
       <DailySyncPing />
       {/* Kids Header — row 1 (search, profile, parent gate) collapses
           into the tab strip on phones; see KidsHeader */}

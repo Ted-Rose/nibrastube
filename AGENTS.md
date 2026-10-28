@@ -115,7 +115,11 @@ components/
                                 input, label)
   watch-experience.tsx          YouTube IFrame player: auto-advance,
                                 resume, rogue-video snapback,
-                                progress beacons
+                                progress beacons; Back pops history
+                                when the nt:watchFrom marker is set
+  watch-from-tracker.tsx        Capture-phase document listener that
+                                sets nt:watchFrom on any /watch/ link
+                                tap — feed→watch entry marker
   fullscreen-player.tsx         Fullscreen wrapper w/ iOS CSS-overlay
                                 fallback
   parental-gate*.tsx            4-digit Parent PIN modal (portals to
@@ -192,6 +196,10 @@ lib/
   auth.ts                       JWT encrypt/decrypt,
                                 login/loginKid/logout, getSession,
                                 isKidSession/parentSession helpers
+  feed-memory.ts                sessionStorage feed snapshots (key
+                                `nt:feed:<profile>:<query>`): order +
+                                depth + scroll restore, row merge
+                                helpers, nt:watchFrom marker
   profiles.ts                   assertCanManageProfile,
                                 getManageableProfiles
   kids-feed.ts                  Kids feed params/URL builder + row
@@ -354,6 +362,15 @@ docs/plans/                     Implementation plans with status
   timestamped tracklist (`lib/song-timestamps.ts`) into `songs` rows.
   Re-import identity = `sourceCommentId`; (videoId, startSeconds) is
   unique.
+- **Kids feed memory:** leaving a feed for the watch page and
+  returning restores the feed's order, mounted window depth and
+  scroll position from a sessionStorage snapshot (`lib/feed-memory.ts`,
+  key `nt:feed:<profile>:<feedQuery>` — a sort/filter change is a
+  different key → fresh server order). Same-feed `router.refresh()`s
+  merge rows in place rather than reordering; the History tab
+  restores scroll + expanded day sections only. The watch page's
+  Back button is `router.back()` when `nt:watchFrom` says the kid
+  arrived via a feed card, else `router.push(portalUrl)`.
 - **Real-time:** after any whitelist change, trigger Pusher on
   channel `profile-<profileId>` with `video-pinned`/`video-unpinned`;
   `PusherListener` calls `router.refresh()`. Import `pusherServer`

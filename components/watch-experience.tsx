@@ -74,6 +74,10 @@ export function WatchExperience({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayer | null>(null);
   const advancingRef = useRef(false);
+  // Timestamp of the last goTo() load request — the watchdog below
+  // treats a load that produces neither PLAYING nor an error event
+  // within ~15s as a skip, so advancingRef can't latch forever.
+  const loadStartedRef = useRef(0);
   // Latest position sample, kept fresh by the 500ms tick below.
   const latestRef = useRef({ videoId: "", position: 0, duration: 0 });
   const lastSentRef = useRef(0);
@@ -98,6 +102,10 @@ export function WatchExperience({
   // Videos finished during this session — their startSeconds prop is a
   // stale page-load resume point, so replays must start at 0.
   const completedRef = useRef(new Set<string>());
+  // Videos that failed to play this session (error event or watchdog
+  // stall) — folded into statusAt so autoplay and back-nav never land
+  // on a dead video again.
+  const skippedRef = useRef(new Set<string>());
   // Swipe-"back" history: every navigation pushes the outgoing video id
   // (an index would retarget on a mid-session reorder), so prev = the
   // video the kid just came from (not blindly index−1) and
@@ -136,16 +144,18 @@ export function WatchExperience({
     router.prefetch(portalUrl);
   }, [router, portalUrl]);
 
-  // Disliked videos rank as tier 2 (with watched) — shared by autoplay
-  // and the swipe-next target, so the dialog previews what advance()
-  // would actually pick and both skip dislikes while any
-  // unwatched/started video remains. Memoized on playlist so the effect
-  // below can depend on it without re-running every render.
+  // Disliked videos rank as tier 2 (with watched) — so do skipped
+  // (unplayable) ones, which must never be re-picked. Shared by
+  // autoplay and the swipe-next target, so the dialog previews what
+  // advance() would actually pick and both skip dislikes while any
+  // unwatched/started video remains. Memoized on playlist so the
+  // effect below can depend on it without re-running every render.
   const statusAt = useCallback(
     (i: number): WatchStatus => {
       const status = statusRef.current.get(playlist[i].id) ?? 0;
       return (
-        reactionsRef.current.get(playlist[i].id) === "dislike"
+        reactionsRef.current.get(playlist[i].id) === "dislike" ||
+        skippedRef.current.has(playlist[i].id)
           ? Math.max(status, 2)
           : status
       ) as WatchStatus;
@@ -264,6 +274,21 @@ export function WatchExperience({
           ? 0
           : (playlist[next].startSeconds ?? 0),
       });
+      // Watchdog: a load that produces neither PLAYING nor an error
+      // event within ~15s is a silent stall — treat it as a skip so
+      // advancingRef can't latch forever. PLAYING clears the stamp in
+      // onStateChange and a newer goTo supersedes it.
+      const loadStamp = Date.now();
+      loadStartedRef.current = loadStamp;
+      window.setTimeout(() => {
+        if (
+          !cancelled &&
+          advancingRef.current &&
+          loadStartedRef.current === loadStamp
+        ) {
+          skipAndAdvance();
+        }
+      }, 15_000);
       window.history.replaceState(
         null,
         "",
@@ -287,13 +312,18 @@ export function WatchExperience({
       if (advancingRef.current) return;
       advancingRef.current = true;
       // Pop until a stacked id still resolves in the playlist — a
-      // mid-session unpin leaves dangling entries, and entries pointing
-      // at the current video are useless.
+      // mid-session unpin leaves dangling entries, entries pointing
+      // at the current video are useless, and skipped (unplayable)
+      // ids must not be landed on again.
       let prev = -1;
       let id = navStackRef.current.pop();
       while (id !== undefined) {
         const idx = playlist.findIndex((v) => v.id === id);
-        if (idx !== -1 && idx !== indexRef.current) {
+        if (
+          idx !== -1 &&
+          idx !== indexRef.current &&
+          !skippedRef.current.has(id)
+        ) {
           prev = idx;
           break;
         }
@@ -304,6 +334,20 @@ export function WatchExperience({
           ? (indexRef.current - 1 + playlist.length) % playlist.length
           : prev
       );
+    };
+
+    // Shared by the player's error event and the goTo watchdog: the
+    // current video can't play, so it never emitted the PLAYING that
+    // releases advancingRef. Mark it skipped (statusAt ranks it with
+    // watched), free the guard and move on — but stop instead of
+    // spinning once every queue entry has failed.
+    const skipAndAdvance = () => {
+      const cur = playlist[indexRef.current];
+      if (!cur) return;
+      skippedRef.current.add(cur.id);
+      advancingRef.current = false;
+      if (skippedRef.current.size >= playlist.length) return;
+      advance();
     };
 
     swipeNavRef.current = { next: advance, prev: goBack };
@@ -370,6 +414,7 @@ export function WatchExperience({
           onStateChange: (event) => {
             if (event.data === window.YT?.PlayerState.PLAYING) {
               advancingRef.current = false;
+              loadStartedRef.current = 0;
             }
             // Pausing often precedes exiting — warm the exit routes.
             if (event.data === window.YT?.PlayerState.PAUSED) {
@@ -385,6 +430,13 @@ export function WatchExperience({
               };
               advance();
             }
+          },
+          onError: () => {
+            // Embedding disabled / region-locked / deleted — skip to
+            // the next pick instead of stalling on YouTube's error
+            // screen. advancingRef stays latched across the skip
+            // chain until a playable video's PLAYING releases it.
+            skipAndAdvance();
           },
         },
       });
@@ -501,7 +553,13 @@ export function WatchExperience({
       const idx = playlist.findIndex(
         (v) => v.id === navStackRef.current[i]
       );
-      if (idx !== -1 && idx !== indexRef.current) return idx;
+      if (
+        idx !== -1 &&
+        idx !== indexRef.current &&
+        !skippedRef.current.has(navStackRef.current[i])
+      ) {
+        return idx;
+      }
     }
     return (indexRef.current - 1 + playlist.length) % playlist.length;
   };

@@ -23,6 +23,7 @@ import { pickNextIndex } from "@/lib/autoplay";
 import { classifySwipe } from "@/lib/gestures";
 import type { SwipeDirection } from "@/lib/gestures";
 import { cn } from "@/lib/utils";
+import { takeWatchFrom } from "@/lib/feed-memory";
 import type { VideoReaction, WatchStatus } from "@/lib/kids-feed";
 import {
   ensureYouTubeAPI,
@@ -665,6 +666,18 @@ export function WatchExperience({
           href={portalUrl}
           aria-label="Back to videos"
           onPointerDown={prefetchExits}
+          onClick={(e) => {
+            // Reached the player by tapping a feed card → a real
+            // popstate: native scroll restoration, no history-stack
+            // growth (in-player advance replaceStates, so feed→watch
+            // is one entry), and it fixes the shelf→back→wrong-tab
+            // quirk. Deep-linked watch pages have no marker → fall
+            // through to the Link's normal push navigation.
+            if (takeWatchFrom()) {
+              e.preventDefault();
+              router.back();
+            }
+          }}
         >
           <Button
             variant="ghost"

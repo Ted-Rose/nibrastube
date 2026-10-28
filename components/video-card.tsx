@@ -113,7 +113,13 @@ export function VideoCard({
   return (
     // No `group` here — the ⋮ menu trigger is this div's child too, and an
     // outer group would fire the card's group-hover lift when hovering it.
-    <div className="relative">
+    // data-feed-anchor marks the tapped card so the feed-memory snapshot
+    // can scroll it back into view on return — grid-only like `vt`,
+    // since shelves may render the same video at the same time.
+    <div
+      className="relative"
+      data-feed-anchor={vt ? video.id : undefined}
+    >
       <Link
         href={href}
         className="group block rounded-[32px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"

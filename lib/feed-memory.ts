@@ -289,8 +289,19 @@ export function restoreFeedScroll(snap: FeedSnapshot): () => void {
 // ~400ms-throttled scroll listener plus an unmount flush. `write` is
 // read through a ref so the listener never goes stale, and the
 // unmount flush uses the last OBSERVED scrollY — a route change can
-// reset the live scrollY before the cleanup runs.
-export function useFeedSaver(write: (scrollY: number) => void) {
+// reset the live scrollY before the cleanup runs. `key` must be the
+// feedQuery the snapshot is stored under: an in-place feedQuery
+// change does NOT remount the grid, so without keying, a pending
+// throttled write or the cleanup flush would land the old feed's
+// scrollY/rows under the new feed's key (or clobber the old feed's
+// saved position with a nav-reset scrollY of 0). On a key change the
+// old listener's cleanup runs BEFORE writeRef is swapped to the new
+// render's saveSnapshot — the pending timer dies and the flush still
+// writes under the OUTGOING key.
+export function useFeedSaver(
+  write: (scrollY: number) => void,
+  key: string
+) {
   const writeRef = useRef(write);
   useEffect(() => {
     writeRef.current = write;
@@ -310,7 +321,11 @@ export function useFeedSaver(write: (scrollY: number) => void) {
     return () => {
       window.removeEventListener("scroll", onScroll);
       if (timer !== null) clearTimeout(timer);
-      writeRef.current(lastY);
+      // lastY === 0 is a nav-clamp artifact (the incoming tree resets
+      // scroll before this cleanup runs) — or a true top-of-feed
+      // exit, whose restore is a no-op anyway. Either way it must
+      // not clobber the last real scrollY.
+      if (lastY > 0) writeRef.current(lastY);
     };
-  }, []);
+  }, [key]);
 }

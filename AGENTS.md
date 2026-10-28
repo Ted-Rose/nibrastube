@@ -373,9 +373,13 @@ docs/plans/                     Implementation plans with status
   key `nt:feed:<profile>:<feedQuery>` — a sort/filter change is a
   different key → fresh server order). Same-feed `router.refresh()`s
   merge rows in place rather than reordering; the History tab
-  restores scroll + expanded day sections only. The watch page's
-  Back button is `router.back()` when `nt:watchFrom` says the kid
-  arrived via a feed card, else `router.push(portalUrl)`.
+  restores scroll + expanded day sections only. Snapshot writes are
+  bound to the `feedQuery` they were taken under (`useFeedSaver`'s
+  `key`) — a param change cancels pending writes and flushes under
+  the outgoing key, so one feed's state can never leak into the next
+  feed's snapshot. The watch page's Back button is `router.back()`
+  when `nt:watchFrom` says the kid arrived via a feed card, else
+  `router.push(portalUrl)`.
 - **Real-time:** after any whitelist change, trigger Pusher on
   channel `profile-<profileId>` with `video-pinned`/`video-unpinned`;
   `PusherListener` calls `router.refresh()`. Import `pusherServer`

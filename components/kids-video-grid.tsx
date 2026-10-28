@@ -89,6 +89,10 @@ export function KidsVideoGrid({
 
   const saveSnapshot = (scrollY: number, anchor?: string | null) => {
     if (anchor !== undefined) anchorRef.current = anchor;
+    // A snapshot whose only information is "top of feed, no anchor"
+    // is a no-op restore — don't store it (a nav-clamp scrollY of 0
+    // must also never overwrite a real saved position).
+    if (scrollY === 0 && anchorRef.current === null) return;
     writeFeedSnapshot(feedSnapshotKey(profileId, feedQuery), {
       savedAt: Date.now(),
       scrollY,
@@ -102,7 +106,7 @@ export function KidsVideoGrid({
       rows: loadMore ? rows : null,
     });
   };
-  useFeedSaver(saveSnapshot);
+  useFeedSaver(saveSnapshot, feedQuery);
 
   // --- snapshot restore, once on mount ----------------------------
   // Applied from an effect (not initial state) so the first client

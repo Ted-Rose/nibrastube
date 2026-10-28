@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { VideoGridSkeleton } from "@/components/video-grid-skeleton";
-import { getSession, parentSession } from "@/lib/auth";
+import { getSession, isKidSession, parentSession } from "@/lib/auth";
 import {
   parseSongsFeedParams,
   songsCatalogUrl,
@@ -28,18 +28,21 @@ interface SongsPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-// The public song catalog — no sign-in required. The session only
-// switches sections on: a signed-in parent gets the "Yours" tab, the
-// "Your imports" shelf, delete menus on their own rows and a Parent
-// portal link; anonymous visitors (and kid-locked devices, which carry
-// no session) get the read-only catalog plus a signup invite.
+// The public song catalog — no sign-in required. A parent session
+// switches sections on: the "Yours" tab, the "Your imports" shelf,
+// delete menus on their own rows and a Parent portal link; anonymous
+// visitors (and kid-locked devices, which carry no session) get the
+// read-only catalog plus a signup invite; kid sessions get the
+// read-only catalog plus a Videos pill back to their feed.
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function SongsPage({ searchParams }: SongsPageProps) {
   const session = await getSession();
+  const parent = parentSession(session);
+  const kid = isKidSession(session) ? session : null;
   const raw = await searchParams;
-  const feed = parseSongsFeedParams(raw, !!session);
+  const feed = parseSongsFeedParams(raw, !!parent);
   const { view } = feed;
 
   // ?song=<uuid> opens the in-app player overlay on top of this feed.
@@ -48,16 +51,18 @@ export default async function SongsPage({ searchParams }: SongsPageProps) {
   const rawSong = Array.isArray(raw.song) ? raw.song[0] : raw.song;
   const songId = rawSong && UUID_RE.test(rawSong) ? rawSong : null;
 
-  // A kid-locked device carries activeProfileId but no session — give
-  // its catalog header a Videos link back to that feed so a kid who
-  // followed the Songs button isn't stranded on the public page.
+  // Kids need a way back to their feed from this public page: a kid
+  // session links to its own profileId; a kid-locked device (no
+  // session, but an activeProfileId cookie) links to that profile —
+  // otherwise a kid who followed the Songs button is stranded here.
   const activeProfileId = (await cookies()).get("activeProfileId")?.value;
-  const kidsHref =
-    !session && activeProfileId && UUID_RE.test(activeProfileId)
+  const kidsHref = kid
+    ? `/kids/${kid.profileId}`
+    : !session && activeProfileId && UUID_RE.test(activeProfileId)
       ? `/kids/${activeProfileId}`
       : null;
 
-  const userId = parentSession(session)?.id ?? null;
+  const userId = parent?.id ?? null;
 
   const tabDefs: readonly (readonly [
     SongsView,
@@ -65,7 +70,7 @@ export default async function SongsPage({ searchParams }: SongsPageProps) {
   ])[] = [
     ["songs", { view: "songs", video: null }],
     ["compilations", { view: "compilations", video: null }],
-    ...(session
+    ...(parent
       ? ([["mine", { view: "mine", video: null }]] as const)
       : []),
   ];
@@ -85,7 +90,7 @@ export default async function SongsPage({ searchParams }: SongsPageProps) {
       <CatalogHeader
         feed={feed}
         tabs={tabs}
-        signedIn={!!session}
+        signedIn={!!parent}
         kidsHref={kidsHref}
       />
 

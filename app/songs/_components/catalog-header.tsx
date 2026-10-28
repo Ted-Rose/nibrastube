@@ -13,9 +13,10 @@ import { searchPlaceholder } from "./view-config";
 // The catalog's sticky header — the KidsHeader shell with the brand,
 // type-ahead search and the view tabs. Anonymous visitors get Log in /
 // Sign up links on the right; signed-in parents get a way back to the
-// dashboard; kid-locked devices (no session, but an activeProfileId
-// cookie) additionally get a Videos pill back to their feed — the
-// Songs button in the kids header leads here, and this is the way back.
+// dashboard; kid sessions and kid-locked devices (no session, but an
+// activeProfileId cookie) additionally get a Videos pill back to
+// their feed — the Songs button in the kids header leads here, and
+// this is the way back.
 export function CatalogHeader({
   feed,
   tabs,

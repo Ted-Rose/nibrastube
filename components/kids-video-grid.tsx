@@ -108,7 +108,10 @@ export function KidsVideoGrid({
         if (snap.rows?.length) {
           // Paged grid — restore every mounted page verbatim, then
           // patch per-id fields from the fresh first page in place
-          // (order untouched).
+          // (order untouched). Accepted tradeoff: snapshot-only rows
+          // stay verbatim, so a video unpinned since the snapshot can
+          // remain visible until TTL/refresh — the watch page's
+          // whitelist check still blocks playback.
           setRows(patchRows(snap.rows, initialRows));
         } else {
           // Non-paged — reorder the fresh full list to the saved
@@ -217,10 +220,13 @@ export function KidsVideoGrid({
         onClickCapture={(e) => {
           // Record the tapped card as the scroll anchor and take the
           // final-position snapshot before the watch page pushes on
-          // top.
-          const anchor = (e.target as HTMLElement).closest?.(
-            "[data-feed-anchor]"
-          );
+          // top. Only real card-link taps count — the ⋮ menu trigger
+          // is a sibling of the Link inside the same data-feed-anchor
+          // wrapper, so without the href check a menu tap would pin a
+          // stale anchor that later overrides the accurate scrollY.
+          const target = e.target as HTMLElement;
+          if (!target.closest?.('a[href*="/watch/"]')) return;
+          const anchor = target.closest("[data-feed-anchor]");
           if (anchor) {
             saveSnapshot(
               window.scrollY,

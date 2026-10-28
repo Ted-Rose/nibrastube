@@ -1,19 +1,26 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, MusicNotes, X } from "@phosphor-icons/react";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
+import {
+  useYouTubePlayer,
+  type PlayerEvents,
+  type PlayerLoad,
+} from "@/components/player-hooks";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { SongQueueEntry } from "@/lib/songs-feed";
-import {
-  ensureYouTubeAPI,
-  loadedVideoId,
-  type YTPlayer,
-} from "@/lib/yt-player";
+import { loadedVideoId } from "@/lib/yt-player";
 
 // In-app segment player for ?song=<uuid> — same chrome and playback
 // model as the kids watch page: full-screen dark layout around a
@@ -48,15 +55,65 @@ export function SongPlayerOverlay({
   const indexRef = useRef(startIndex);
   const containerRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const playerRef = useRef<YTPlayer | null>(null);
   const advancingRef = useRef(false);
+  // finishSong lives inside the effect (it closes over goTo/close);
+  // this ref surfaces it to the player events created above.
+  const finishRef = useRef<(() => void) | null>(null);
+
+  const events = useMemo<PlayerEvents>(
+    () => ({
+      onStateChange: (event) => {
+        if (event.data === window.YT?.PlayerState.PLAYING) {
+          advancingRef.current = false;
+        }
+        if (event.data === window.YT?.PlayerState.ENDED) {
+          finishRef.current?.();
+        }
+      },
+      onError: () => {
+        // A dead video never emits the PLAYING that releases
+        // advancingRef — release it here so finishSong can skip
+        // to the next song (or close at queue end).
+        advancingRef.current = false;
+        finishRef.current?.();
+      },
+    }),
+    []
+  );
+  const getInitialLoad = useCallback((): PlayerLoad | null => {
+    const cur = queue[indexRef.current];
+    if (!cur) return null;
+    return {
+      key: cur.id,
+      videoId: cur.videoId,
+      startSeconds: cur.startSeconds,
+      endSeconds: cur.endSeconds ?? undefined,
+    };
+  }, [queue]);
+  // A finishSong() during init skipped its loadVideoById (the ref
+  // was still null) — catch up if the index moved meanwhile.
+  const getCatchUpLoad = useCallback(
+    (initial: PlayerLoad): PlayerLoad | null => {
+      const want = queue[indexRef.current];
+      if (!want || want.id === initial.key) return null;
+      return {
+        key: want.id,
+        videoId: want.videoId,
+        startSeconds: want.startSeconds,
+        endSeconds: want.endSeconds ?? undefined,
+      };
+    },
+    [queue]
+  );
+  const { playerRef, loadFailed } = useYouTubePlayer({
+    containerRef,
+    mountRef,
+    events,
+    getInitialLoad,
+    getCatchUpLoad,
+  });
 
   useEffect(() => {
-    let cancelled = false;
-    // Held until onReady publishes it to playerRef — the API methods
-    // don't exist before then.
-    let createdPlayer: YTPlayer | null = null;
-
     const joiner = closeHref.includes("?") ? "&" : "?";
     const urlFor = (id: string) => `${closeHref}${joiner}song=${id}`;
     const close = () => router.push(closeHref, { scroll: false });
@@ -88,72 +145,7 @@ export function SongPlayerOverlay({
         close();
       }
     };
-
-    const createPlayer = () => {
-      const container = containerRef.current;
-      if (cancelled || !container || !window.YT?.Player) return;
-      // The YT API replaces the mount node with its iframe — after a
-      // StrictMode remount the old node is detached, so create a
-      // fresh one (same guard as watch-experience).
-      if (!mountRef.current || !mountRef.current.isConnected) {
-        const el = document.createElement("div");
-        el.className = "w-full h-full";
-        container.appendChild(el);
-        mountRef.current = el;
-      }
-      const cur = queue[indexRef.current];
-      if (!cur) return;
-      const end = cur.endSeconds ?? undefined;
-      createdPlayer = new window.YT.Player(mountRef.current, {
-        videoId: cur.videoId,
-        width: "100%",
-        height: "100%",
-        playerVars: {
-          autoplay: 1,
-          modestbranding: 1,
-          rel: 0,
-          iv_load_policy: 3,
-          controls: 1,
-          playsinline: 1,
-          start: cur.startSeconds,
-          ...(end !== undefined ? { end } : {}),
-        },
-        events: {
-          onReady: () => {
-            if (cancelled || !createdPlayer) return;
-            playerRef.current = createdPlayer;
-            // A finishSong() during init skipped its loadVideoById
-            // (the ref was still null) — catch up if the index moved
-            // meanwhile.
-            const want = queue[indexRef.current];
-            if (want.id !== cur.id) {
-              createdPlayer.loadVideoById({
-                videoId: want.videoId,
-                startSeconds: want.startSeconds,
-                endSeconds: want.endSeconds ?? undefined,
-              });
-            }
-          },
-          onStateChange: (event) => {
-            if (event.data === window.YT?.PlayerState.PLAYING) {
-              advancingRef.current = false;
-            }
-            if (event.data === window.YT?.PlayerState.ENDED) {
-              finishSong();
-            }
-          },
-          onError: () => {
-            // A dead video never emits the PLAYING that releases
-            // advancingRef — release it here so finishSong can skip
-            // to the next song (or close at queue end).
-            advancingRef.current = false;
-            finishSong();
-          },
-        },
-      });
-    };
-
-    ensureYouTubeAPI(createPlayer);
+    finishRef.current = finishSong;
 
     // 500ms poll: snap a rogue suggested-video load back to the
     // current segment, and advance once the playhead reaches the
@@ -196,21 +188,12 @@ export function SongPlayerOverlay({
     document.body.style.overflow = "hidden";
 
     return () => {
-      cancelled = true;
       window.clearInterval(tick);
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = prevOverflow;
-      const p = playerRef.current ?? createdPlayer;
-      playerRef.current = null;
-      createdPlayer = null;
-      try {
-        p?.destroy();
-      } catch {
-        // The API throws if destroy() races a not-yet-ready player.
-      }
-      mountRef.current = null;
+      finishRef.current = null;
     };
-  }, [queue, closeHref, router]);
+  }, [queue, closeHref, router, playerRef]);
 
   // Clamp at render too: a server-driven queue change can leave
   // `index` pointing past the new end until the effect re-seeds.
@@ -275,13 +258,38 @@ export function SongPlayerOverlay({
       </div>
 
       {/* Video player area — FullscreenPlayer gives the same
-          auto-fullscreen behavior as the watch page. */}
+          auto-fullscreen behavior as the watch page. An iframe_api
+          load timeout swaps the player for a notice; the header
+          links and Escape still close. */}
       <div className="flex flex-1 items-center justify-center p-4 md:p-10">
-        <FullscreenPlayer>
-          <div ref={containerRef} className="h-full w-full">
-            <div ref={mountRef} className="h-full w-full" />
+        {loadFailed ? (
+          <div
+            className={cn(
+              "flex aspect-video w-full max-w-6xl flex-col",
+              "items-center justify-center gap-3 rounded-[32px]",
+              "border-4 border-slate-800 bg-slate-900 px-6",
+              "text-center shadow-2xl"
+            )}
+          >
+            <p className="text-xl font-black text-white sm:text-2xl">
+              Can&apos;t reach YouTube
+            </p>
+            <p
+              className={cn(
+                "max-w-md text-sm font-medium text-slate-400",
+                "sm:text-base"
+              )}
+            >
+              Check the connection, then close and reopen the song.
+            </p>
           </div>
-        </FullscreenPlayer>
+        ) : (
+          <FullscreenPlayer>
+            <div ref={containerRef} className="h-full w-full">
+              <div ref={mountRef} className="h-full w-full" />
+            </div>
+          </FullscreenPlayer>
+        )}
       </div>
 
       {/* Bottom bar — mirrors the watch page's "Watching as" block. */}

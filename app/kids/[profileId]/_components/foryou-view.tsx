@@ -8,10 +8,9 @@ import {
   getPlaylists,
   getRecommendedVideos,
   kidsFeedQuery,
-  kidsPortalUrl,
-  lenRangeLabel,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
+import { emptyStateFor } from "@/lib/empty-state";
 import { FeedHeader } from "@/components/feed-header";
 import { feedTitle, KIDS_VIEWS } from "./view-config";
 
@@ -38,6 +37,28 @@ export async function ForYouView({
   const playlistRows = await getPlaylists(profileId);
   const ViewIcon = KIDS_VIEWS.foryou.icon;
 
+  const empty = emptyStateFor({
+    feed,
+    profileId,
+    icon: ViewIcon,
+    noun: feed.type === "shorts" ? "shorts" : "videos",
+    filtered: [
+      { type: "shorts", message: "No shorts picked yet!" },
+      { type: "videos", message: "No videos picked yet!" },
+      {
+        type: "band",
+        message: (l) => `Nothing ${l} picked yet!`,
+      },
+    ],
+    empty: {
+      message: "Nothing picked yet!",
+      action: {
+        label: "Find videos",
+        overrides: { view: "videos", channel: null },
+      },
+    },
+  });
+
   return (
     <>
       <FeedHeader
@@ -54,47 +75,7 @@ export async function ForYouView({
       />
 
       {rows.length === 0 ? (
-        <EmptyState
-          icon={<ViewIcon size={48} weight="fill" />}
-          message={
-            query
-              ? feed.type === "shorts"
-                ? "No shorts found!"
-                : "No videos found!"
-              : feed.type === "shorts"
-                ? "No shorts picked yet!"
-                : feed.type === "videos"
-                  ? "No videos picked yet!"
-                  : feed.minLen !== null || feed.maxLen !== null
-                    ? `Nothing ${lenRangeLabel(feed.minLen, feed.maxLen)} picked yet!`
-                    : "Nothing picked yet!"
-          }
-          action={
-            query
-              ? {
-                  label: "Clear search",
-                  href: kidsPortalUrl(profileId, feed, { q: "" }),
-                }
-              : feed.type !== "all" ||
-                  feed.minLen !== null ||
-                  feed.maxLen !== null
-                ? {
-                    label: "Show everything",
-                    href: kidsPortalUrl(profileId, feed, {
-                      type: "all",
-                      minLen: null,
-                      maxLen: null,
-                    }),
-                  }
-                : {
-                    label: "Find videos",
-                    href: kidsPortalUrl(profileId, feed, {
-                      view: "videos",
-                      channel: null,
-                    }),
-                  }
-          }
-        />
+        <EmptyState {...empty} />
       ) : (
         <SaveToPlaylistProvider
           profileId={profileId}

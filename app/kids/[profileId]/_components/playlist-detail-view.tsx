@@ -11,10 +11,10 @@ import { SaveToPlaylistProvider } from "@/components/save-to-playlist-dialog";
 import {
   kidsFeedQuery,
   kidsPortalUrl,
-  lenRangeLabel,
   type KidsFeedParams,
   type KidsPlaylist,
 } from "@/lib/kids-feed";
+import { emptyStateFor } from "@/lib/empty-state";
 import { BackLink } from "@/components/back-link";
 import { FeedHeader } from "@/components/feed-header";
 import { feedTitle } from "./view-config";
@@ -34,28 +34,27 @@ export function PlaylistDetailView({
   playlistRows: KidsPlaylist[];
   rows: FeedRow[];
 }) {
-  const { q: query } = feed;
-  const emptyAction = query
-    ? {
-        label: "Clear search",
-        href: kidsPortalUrl(profileId, feed, { q: "" }),
-      }
-    : feed.type !== "all" || feed.minLen !== null || feed.maxLen !== null
-      ? {
-          label: "Show everything",
-          href: kidsPortalUrl(profileId, feed, {
-            type: "all",
-            minLen: null,
-            maxLen: null,
-          }),
-        }
-      : {
-          label: "Find videos",
-          href: kidsPortalUrl(profileId, feed, {
-            view: "videos",
-            channel: null,
-          }),
-        };
+  const empty = emptyStateFor({
+    feed,
+    profileId,
+    icon: Playlist,
+    noun: feed.type === "shorts" ? "shorts" : "videos",
+    filtered: [
+      { type: "shorts", message: "No shorts in this playlist!" },
+      { type: "videos", message: "No videos in this playlist!" },
+      {
+        type: "band",
+        message: (l) => `No videos ${l} in this playlist!`,
+      },
+    ],
+    empty: {
+      message: "No videos yet! Tap ⋮ on a video to add it.",
+      action: {
+        label: "Find videos",
+        overrides: { view: "videos", channel: null },
+      },
+    },
+  });
 
   return (
     <>
@@ -92,23 +91,7 @@ export function PlaylistDetailView({
       />
 
       {rows.length === 0 ? (
-        <EmptyState
-          icon={<Playlist size={48} weight="fill" />}
-          message={
-            query
-              ? feed.type === "shorts"
-                ? "No shorts found!"
-                : "No videos found!"
-              : feed.type === "shorts"
-                ? "No shorts in this playlist!"
-                : feed.type === "videos"
-                  ? "No videos in this playlist!"
-                  : feed.minLen !== null || feed.maxLen !== null
-                    ? `No videos ${lenRangeLabel(feed.minLen, feed.maxLen)} in this playlist!`
-                    : "No videos yet! Tap ⋮ on a video to add it."
-          }
-          action={emptyAction}
-        />
+        <EmptyState {...empty} />
       ) : (
         <SaveToPlaylistProvider
           profileId={profileId}

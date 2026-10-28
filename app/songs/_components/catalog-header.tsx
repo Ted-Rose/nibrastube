@@ -46,6 +46,9 @@ export function CatalogHeader({
             <KidsSearch
               query={feed.q}
               placeholder={searchPlaceholder(feed)}
+              // ?song= is not a feed param — searching drops it so the
+              // player overlay closes.
+              stripParams={["song"]}
             />
           </div>
           {signedIn ? (

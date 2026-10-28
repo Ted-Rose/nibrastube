@@ -534,23 +534,54 @@ set — no DSN, no traffic. `app/global-error.tsx` reports
 root-layout render crashes; `lib/report.ts` is the chokepoint for
 caught failures.
 
+**INERT until activated**: `NEXT_PUBLIC_SENTRY_DSN` is not yet set
+on the `redzi` Vercel project (Production scope, then redeploy —
+env vars bake in at build time; pending user action), so prod
+sends nothing today. The server-side transport was verified E2E
+locally with a real DSN. Org config worth knowing: project
+inbound filters (browser-extensions, web-crawlers,
+legacy-browsers, localhost), org-level dataScrubber +
+sensitiveFields, and a "New issues and regressions (production)"
+email workflow matching `environment:production` +
+`level:error`. REST `rateLimit` PUTs silently no-op — the
+rate-limits feature is not enabled on these orgs.
+
 `is:unresolved level:error environment:production` = agent-fixable
 bugs only:
 
-| Stream | Transport | Level | Tag |
-|---|---|---|---|
-| Client exceptions | captureException / global-error | error | — |
-| Server/RSC crashes | onRequestError + runtime init | error | — |
-| Caught server bugs | captureInternalException | error |
-  `error_code:internal_error` |
-| YouTube quota/outages | captureProviderException | warning |
-  `error_code:{rate_limited,provider_error}` |
+- Client exceptions — `captureException` / `global-error`, level
+  error.
+- Server/RSC crashes — `onRequestError` + runtime init, level
+  error.
+- Caught server bugs — `captureInternalException`, level error,
+  tag `error_code:internal_error`.
+- YouTube quota/outages — `captureProviderException`, level
+  warning, tag `error_code:rate_limited` / `provider_error`.
 
 Events carry `environment` from `NEXT_PUBLIC_VERCEL_ENV` /
 `VERCEL_ENV` (`production`/`preview`/`development`) and `release`
 from the Vercel git SHA, so previews and dev stay out of the prod
 queue and `resolvedInNextRelease` resolves at the next deploy.
 Logs stay console/Vercel logs — no logging integration events.
+
+REST ops (the agent fix queue) — `source
+~/.config/devin/sentry.env` (exports `SENTRY_API_TOKEN`), then:
+
+```bash
+curl -sS -H "Authorization: Bearer $SENTRY_API_TOKEN" \
+  "https://de.sentry.io/api/0/projects/<org>/<proj>/issues/"\
+"?query=is:unresolved+level:error+environment:production"
+```
+
+That issue list IS the fix queue; `GET
+/issues/<id>/events/latest/` for event detail; `PUT
+/issues/<id>/` with `{"status":"resolvedInNextRelease"}` — only
+after the fix merges.
+
+Scripting quirk: `import * as Sentry from "@sentry/nextjs"` under
+plain `tsx`/ESM loses the named exports (CJS interop) — write
+one-off Sentry test scripts as `.cts` + `require()` or import
+`@sentry/node` instead.
 
 ## Conventions / rules
 

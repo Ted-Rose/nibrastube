@@ -19,6 +19,8 @@ import {
   writeFeedSnapshot,
   type FeedSnapshot,
 } from "@/lib/feed-memory";
+import { useImpressionObserver } from "@/lib/feed-impressions";
+import { cn } from "@/lib/utils";
 import type { FeedVideo, VideoReaction } from "@/lib/kids-feed";
 
 export interface FeedRow {
@@ -72,6 +74,10 @@ export function KidsVideoGrid({
   // drop rows, and the offset must still advance past them.
   const [offset, setOffset] = useState(initialRows.length);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // Cards held on screen ≥1s without a tap feed the "shown but
+  // ignored" ranking penalty (lib/feed-impressions.ts).
+  const gridRef = useRef<HTMLDivElement>(null);
+  useImpressionObserver(gridRef, profileId);
   // Generation counter the reset invalidates: fetchNext captures it
   // before loadMore and .then/.catch bail if it changed mid-flight,
   // so a stale page can neither append old-filter rows nor corrupt
@@ -252,7 +258,11 @@ export function KidsVideoGrid({
   return (
     <>
       <div
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"
+        ref={gridRef}
+        className={cn(
+          "grid grid-cols-1 gap-8",
+          "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        )}
         onClickCapture={(e) => {
           // Record the tapped card as the scroll anchor and take the
           // final-position snapshot before the watch page pushes on
@@ -292,7 +302,13 @@ export function KidsVideoGrid({
             type="button"
             disabled={fetching}
             onClick={showMore}
-            className="rounded-full bg-white px-8 py-3 text-lg font-bold text-slate-500 shadow-sm hover:text-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40 disabled:opacity-60"
+            className={cn(
+              "rounded-full bg-white px-8 py-3 text-lg font-bold",
+              "text-slate-500 shadow-sm transition-colors",
+              "hover:text-slate-800 focus-visible:outline-none",
+              "focus-visible:ring-4 focus-visible:ring-primary/40",
+              "disabled:opacity-60"
+            )}
           >
             {fetching
               ? "Loading…"

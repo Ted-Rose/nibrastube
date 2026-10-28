@@ -21,6 +21,7 @@ import {
   channels,
   playlistItems,
   playlists,
+  videoImpressions,
   videoReactions,
   videos,
   watchHistory,
@@ -211,6 +212,27 @@ const lenFilter = (
     maxLen ? lte(videos.durationSeconds, maxLen) : undefined
   );
 
+// "Shown but ignored" penalty (lib/feed-impressions.ts records a grid
+// card held on screen ≥1s without a tap, once per kid-local day). It
+// grows with ln(1 + seen_days), caps at 12 (below the −20
+// channel-dislike, so "ignored" never outweighs explicit hate),
+// halves every 14 days without a fresh impression (~6 weeks ≈ full
+// forgiveness), and is masked entirely once the kid actually watches
+// the video — a tap wins over any amount of scroll-past. Lazily
+// evaluated against the joined aliases, so callers must leftJoin
+// watch_progress and video_impressions on (profile_id, video_id) — a
+// PK join, no fan-out; a missing row → coalesce → ln(1) = 0.
+const impressionPenalty = sql<number>`
+  case
+    when ${watchProgress.positionSeconds} > 0
+      or coalesce(${watchProgress.completed}, false) then 0
+    else least(12,
+      4.0 * ln(1 + coalesce(${videoImpressions.seenDays}, 0)))
+      * power(0.5,
+          greatest(0,
+            current_date - ${videoImpressions.lastSeenOn}) / 14.0)
+  end`;
+
 // Only the columns the feed grid and the watch-page playlist actually
 // render. The full `videos` row carries description/tags/raw JSONB
 // (~9KB/row); fetching it for ~2k whitelisted videos made every feed
@@ -272,11 +294,15 @@ export async function getKidsVideos(
     when ${watchProgress.positionSeconds} > 0 then 1
     else 0 end`;
   const newestFirst = sql`${videos.publishedAt} desc nulls last`;
+  // Default sort only: inside each status tier, never-shown cards come
+  // first and repeatedly-ignored ones sink (the penalty is masked to 0
+  // for started/watched rows, so it only reorders tier 0). Explicit
+  // kid-chosen sorts (age/added) stay literal.
   const orderBy =
     sort === "status"
       ? dir === "asc"
-        ? [asc(statusRank), newestFirst]
-        : [desc(statusRank), newestFirst]
+        ? [asc(statusRank), asc(impressionPenalty), newestFirst]
+        : [desc(statusRank), asc(impressionPenalty), newestFirst]
       : sort === "added"
         ? // pinned_at = when the parent added it to the platform, not
           // the YouTube upload date. NOT NULL, so no nulls handling.
@@ -307,6 +333,13 @@ export async function getKidsVideos(
       and(
         eq(videoReactions.profileId, whitelistedVideos.profileId),
         eq(videoReactions.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .leftJoin(
+      videoImpressions,
+      and(
+        eq(videoImpressions.profileId, whitelistedVideos.profileId),
+        eq(videoImpressions.videoId, whitelistedVideos.videoId)
       )
     )
     .where(
@@ -432,7 +465,10 @@ export async function getNewForYou(
         typeFilter(type),
         lenFilter(minLen, maxLen),
         gte(whitelistedVideos.pinnedAt, cutoff),
-        or(isNull(watchProgress.completed), eq(watchProgress.completed, false)),
+        or(
+          isNull(watchProgress.completed),
+          eq(watchProgress.completed, false)
+        ),
         or(
           isNull(videoReactions.reaction),
           ne(videoReactions.reaction, "dislike")
@@ -582,6 +618,9 @@ export const FOR_YOU_PAGE_SIZE = 60;
 //     + 4 if the video itself is 'liked'
 //     − 20 if the channel has a 'dislike'
 //   disliked videos are excluded entirely.
+//   impression_penalty (module-level `impressionPenalty`) = "shown
+//     but ignored": min(12, 4·ln(1 + seen_days))
+//     · 0.5^(days since last seen / 14), 0 once watched.
 // Depth blend — rn is the row's position under the plain
 // affinity+flat ranking; popularity = 0.5^((rn−1)/120) halves every
 // ~120 rows, so the deeper a kid scrolls the less their most-watched
@@ -597,7 +636,12 @@ export const FOR_YOU_PAGE_SIZE = 60;
 // more a channel is watched the deeper its videos persist before
 // discovery takes over:
 //   order = weight(affinity_score)·popularity + flat_score
-//           + discovery·(1 − popularity)
+//           − impression_penalty + discovery·(1 − popularity)
+// The penalty is a separate additive term, deliberately NOT inside
+// rn: folding it into the depth dial would lower a sinking row's
+// popularity and grow its discovery slack, partially re-floating the
+// very card being penalized. As its own term, −N means −N at every
+// depth.
 // Postgres allows window functions in ORDER BY, so rn and the
 // within-channel position live in the same ORDER BY — one stable
 // ordering means offset paging can't duplicate or skip rows between
@@ -748,6 +792,13 @@ export async function getRecommendedVideos(
       eq(channelAffinity.channelId, videos.channelId)
     )
     .leftJoin(channelFlags, eq(channelFlags.channelId, videos.channelId))
+    .leftJoin(
+      videoImpressions,
+      and(
+        eq(videoImpressions.profileId, whitelistedVideos.profileId),
+        eq(videoImpressions.videoId, whitelistedVideos.videoId)
+      )
+    )
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
@@ -765,6 +816,7 @@ export async function getRecommendedVideos(
     .orderBy(
       sql`${affinityWeight} * ${popularity}
           + ${flatScore}
+          - ${impressionPenalty}
           + ${discovery} * (1 - ${popularity}) desc`,
       sql`${videos.publishedAt} desc nulls last`,
       sql`md5(${videos.id} || current_date)`
@@ -802,8 +854,9 @@ export async function getKidsChannels(
   const grouped = await db
     .select({
       channelId: videos.channelId,
-      // Titles can drift across cached rows after a channel rename — group by
-      // id only and take any title, or one channel would yield several cards.
+      // Titles can drift across cached rows after a channel rename —
+      // group by id only and take any title, or one channel would
+      // yield several cards.
       channelTitle: sql<string>`max(${videos.channelTitle})`,
       videoCount: count(videos.id),
     })

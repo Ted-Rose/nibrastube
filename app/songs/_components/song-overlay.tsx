@@ -22,8 +22,9 @@ export async function SongOverlay({
 }: {
   songId: string;
   feed: SongsFeedParams;
-  // session.user.id, or null for anonymous and kid-locked devices —
-  // getSongs needs it for the "mine" filter and the canDelete stamp.
+  // session.user.id, or null for anonymous visitors, kid-locked
+  // devices, and kid sessions — getSongs needs it for the "mine"
+  // filter and the canDelete stamp.
   userId: string | null;
   closeHref: string;
 }) {

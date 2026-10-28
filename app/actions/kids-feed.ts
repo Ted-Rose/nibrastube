@@ -2,7 +2,11 @@
 
 import { cookies } from "next/headers";
 import { getSession } from "@/lib/auth";
-import { getRecommendedVideos, type KidsType } from "@/lib/kids-feed";
+import {
+  clampFeedEpoch,
+  getRecommendedVideos,
+  type KidsType,
+} from "@/lib/kids-feed";
 import { canViewProfile } from "@/lib/profiles";
 
 // Client-supplied filters — clamp to a valid KidsType, and ?min=/?max=
@@ -19,14 +23,18 @@ const asLenBound = (n: number | null): number | null =>
 // so it passes the same canViewProfile gate as the portal page itself
 // (kid lock, matching kid session, or managing parent) instead of
 // assertCanManageProfile. Returns [] past the end of the whitelist —
-// the grid treats an empty page as the end of the feed.
+// the grid treats an empty page as the end of the feed. `epoch` is
+// the server time page 1 was ranked at (client round-trip, so
+// clampFeedEpoch validates it): every page ranks impressions "as of"
+// it, keeping OFFSET paging stable while the kid's impressions land.
 export async function loadMoreForYou(
   profileId: string,
   q: string,
   type: KidsType,
   minLen: number | null,
   maxLen: number | null,
-  offset: number
+  offset: number,
+  epoch: number
 ) {
   const session = await getSession();
   const activeProfileId = (await cookies()).get("activeProfileId")?.value;
@@ -39,6 +47,7 @@ export async function loadMoreForYou(
     minLen: asLenBound(minLen),
     maxLen: asLenBound(maxLen),
     offset: Math.max(0, Math.floor(offset) || 0),
+    asOf: clampFeedEpoch(epoch),
   });
 }
 
@@ -49,7 +58,8 @@ export async function loadMoreShorts(
   q: string,
   minLen: number | null,
   maxLen: number | null,
-  offset: number
+  offset: number,
+  epoch: number
 ) {
   const session = await getSession();
   const activeProfileId = (await cookies()).get("activeProfileId")?.value;
@@ -62,5 +72,6 @@ export async function loadMoreShorts(
     type: "shorts",
     minLen: asLenBound(minLen),
     maxLen: asLenBound(maxLen),
+    asOf: clampFeedEpoch(epoch),
   });
 }

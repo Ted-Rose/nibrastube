@@ -50,6 +50,7 @@ export function KidsVideoGrid({
   feedQuery,
   eagerCount = 4,
   loadMore,
+  epoch: initialEpoch = 0,
 }: {
   rows: FeedRow[];
   profileId: string;
@@ -60,8 +61,13 @@ export function KidsVideoGrid({
   // Server-paging hook (For You): called with the next row offset once
   // the local window is exhausted; resolves with the next page ([] =
   // end of feed). When omitted, `rows` is the complete feed and only
-  // client-side windowing applies.
-  loadMore?: (offset: number) => Promise<FeedRow[]>;
+  // client-side windowing applies. Also passed the feed epoch.
+  loadMore?: (offset: number, epoch: number) => Promise<FeedRow[]>;
+  // Paged grids: server time (ms) page 1 was ranked at. Every loadMore
+  // ranks impressions "as of" it so OFFSET paging stays stable (see
+  // impressionPenalty in lib/kids-feed.ts). 0 = unknown → the server
+  // falls back to now.
+  epoch?: number;
 }) {
   const [rows, setRows] = useState(initialRows);
   const [visible, setVisible] = useState(PAGE_SIZE);
@@ -73,9 +79,13 @@ export function KidsVideoGrid({
   // Fetch offset tracked separately from rows.length — dedup below can
   // drop rows, and the offset must still advance past them.
   const [offset, setOffset] = useState(initialRows.length);
+  // The epoch the CURRENT row order was ranked at — page 1's on a
+  // fresh mount, the snapshot's on restore. A pusher refresh keeps it
+  // (patchRows keeps the old order); a feedQuery change resets it.
+  const [epoch, setEpoch] = useState(initialEpoch);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  // Cards held on screen ≥1s without a tap feed the "shown but
-  // ignored" ranking penalty (lib/feed-impressions.ts).
+  // Cards held on screen ≥1s feed the "shown but ignored" ranking
+  // penalty (lib/feed-impressions.ts; masked once watched).
   const gridRef = useRef<HTMLDivElement>(null);
   useImpressionObserver(gridRef, profileId);
   // Generation counter the reset invalidates: fetchNext captures it
@@ -110,6 +120,7 @@ export function KidsVideoGrid({
       // keep full rows because pages 2+ can't be refetched for free.
       orderIds: loadMore ? [] : rows.map((r) => r.video.id),
       rows: loadMore ? rows : null,
+      ...(loadMore ? { epoch } : {}),
     });
   };
   useFeedSaver(saveSnapshot, feedQuery);
@@ -139,6 +150,9 @@ export function KidsVideoGrid({
           // remain visible until TTL/refresh — the watch page's
           // whitelist check still blocks playback.
           setRows(patchRows(snap.rows, initialRows));
+          // Deeper pages must keep ranking as of the epoch the saved
+          // order came from (isSnapshot guarantees it is present).
+          setEpoch(snap.epoch ?? initialEpoch);
         } else {
           // Non-paged — reorder the fresh full list to the saved
           // order; removed ids drop out, new ids append at the end.
@@ -189,6 +203,7 @@ export function KidsVideoGrid({
     setExhausted(false);
     setFailed(false);
     setOffset(initialRows.length);
+    setEpoch(initialEpoch);
   } else if (prevInitial !== initialRows) {
     setPrevInitial(initialRows);
     // The refresh swaps in a new first page, which bumps the fetch
@@ -207,7 +222,7 @@ export function KidsVideoGrid({
     if (!loadMore || fetching || exhausted) return;
     setFetching(true);
     const generation = generationRef.current;
-    loadMore(offset)
+    loadMore(offset, epoch)
       .then((page) => {
         // A reset landed mid-flight — this page belongs to the old
         // first page's filter.
@@ -231,7 +246,7 @@ export function KidsVideoGrid({
       .finally(() => {
         if (generation === generationRef.current) setFetching(false);
       });
-  }, [loadMore, fetching, exhausted, offset]);
+  }, [loadMore, fetching, exhausted, offset, epoch]);
 
   const showMore = useCallback(() => {
     if (visible < rows.length) {

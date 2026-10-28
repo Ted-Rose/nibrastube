@@ -97,7 +97,6 @@ export function flushImpressions(profileId: string, beacon = false) {
     const payload = JSON.stringify({
       profileId,
       videoIds: ids.slice(i, i + MAX_BATCH),
-      sentAt: Date.now(),
       day,
     });
     try {

@@ -256,7 +256,8 @@ export const videoReactions = pgTable(
 );
 
 // "Shown but ignored" feed impressions per (profile, video): a grid
-// card ≥50% visible for ≥1s without a tap. A weak negative ranking
+// card ≥50% visible for ≥1s (tapped or not — the ranking masks the
+// penalty once the video has watch progress). A weak negative ranking
 // signal (lib/kids-feed.ts `impressionPenalty`); written silently by
 // /api/impressions, pruned there after ~45 days without a sighting.
 export const videoImpressions = pgTable(
@@ -268,7 +269,7 @@ export const videoImpressions = pgTable(
     videoId: text("video_id")
       .references(() => videos.id, { onDelete: "cascade" })
       .notNull(),
-    // Days this card was shown ≥1s without a tap — the upsert
+    // Days this card was shown ≥1s (masked once watched) — the upsert
     // increments it at most once per kid-local day.
     seenDays: integer("seen_days").default(1).notNull(),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })

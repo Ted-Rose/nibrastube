@@ -398,7 +398,8 @@ docs/plans/                     Implementation plans with status
   by `sentAt` so late beacons can't overwrite newer positions.
   `completed` ≥95%.
 - **Feed impressions:** `KidsVideoGrid` cards held ≥50% visible for
-  ≥1s without a tap queue per profile (`lib/feed-impressions.ts`,
+  ≥1s queue per profile (tapped cards too — the penalty is masked
+  once the video has watch progress) (`lib/feed-impressions.ts`,
   sessionStorage seen-set `nt:imp:<profileId>`) and flush every ~15s
   / on hidden / pagehide / unmount to `/api/impressions` — auth gated
   exactly like watch-progress (kid session → own profile, else
@@ -408,12 +409,20 @@ docs/plans/                     Implementation plans with status
   (a refresh per flush would reshuffle the grid under the kid). The
   penalty (cap 12, 14-day half-life, masked once watched) only
   reorders For You/Shorts and the default `sort=status` of
-  All-videos/channel drill-in; it never lifts or hides rows. The
-  latest impression day is discounted until its server `lastSeenAt`
-  is 3h old (> the 2h feed-memory TTL), so a kid's own fresh
-  impressions never reshuffle the open session — OFFSET paging
-  (`loadMore`) would otherwise skip rows. Keep that discount if you
-  touch the formula. Shelf cards don't record impressions.
+  All-videos/channel drill-in; it never lifts or hides rows.
+  For You/Shorts rank "as of" a feed **epoch**: the server time page
+  1 was rendered (`epoch` prop on `KidsVideoGrid`, persisted in the
+  feed-memory snapshot — a paged snapshot without one is rejected),
+  passed back to `loadMoreForYou`/`loadMoreShorts` and validated by
+  `clampFeedEpoch` (finite, ≤ now, ≤ 24h old, else now). Rows with
+  server `lastSeenAt` > epoch get `seenDays − 1`, so the kid's own
+  in-session impressions never reshuffle the open feed — OFFSET
+  paging would otherwise dupe/skip rows. `lastSeenAt` is server
+  time (never the client clock); `day` is clamped to server UTC
+  date ±1. Accepted drift: the decay factor keys off `lastSeenOn`,
+  so a row re-seen on a new day mid-session nudges slightly. Keep
+  the epoch plumbing if you touch the formula. Shelf cards don't
+  record impressions.
 - **Kids portal chrome:** the feed page has no footer — the parent
   gate is the lock icon in `KidsHeader` (`KidsFooterGate` with
   `variant="icon"`); the `/kids` picker keeps the labelled "footer"

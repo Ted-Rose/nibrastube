@@ -24,12 +24,17 @@ const PRUNE_AFTER_DAYS = 45;
 
 const bodySchema = z.object({
   profileId: z.string().uuid(),
-  videoIds: z.array(z.string().min(1)).min(1).max(MAX_BATCH),
-  sentAt: z.number(), // client epoch ms — clamped to server now
+  // YouTube ids are 11 chars; 32 leaves slack without letting a
+  // forged batch smuggle megabyte strings into the IN list.
+  videoIds: z.array(z.string().min(1).max(32)).min(1).max(MAX_BATCH),
   // z.iso.date (not a bare regex) so impossible dates like 2026-02-30
   // get a 400 instead of a Postgres date/time-out-of-range 500.
   day: z.iso.date(), // kid-local date — the per-day dedup key
 });
+
+// YYYY-MM-DD of server now shifted by `days`, in UTC.
+const utcDay = (now: number, days: number) =>
+  new Date(now + days * 86_400_000).toISOString().slice(0, 10);
 
 export async function POST(request: NextRequest) {
   let body: z.infer<typeof bodySchema>;
@@ -76,9 +81,20 @@ export async function POST(request: NextRequest) {
     );
   if (approved.length === 0) return NextResponse.json({ ok: true });
 
-  // Clamp to server time: a far-future client clock must not poison
-  // last_seen_at.
-  const sentAt = new Date(Math.min(body.sentAt, Date.now()));
+  // last_seen_at is SERVER time (never the client clock): the feed
+  // epoch it is compared against (impressionPenalty in
+  // lib/kids-feed.ts) is also server Date.now(), same clock.
+  const now = Date.now();
+  // Clamp (not reject) the kid-local day to server UTC date ±1 day —
+  // every real timezone lands inside that band, so only a skewed or
+  // forged clock is affected; a far-future day would otherwise
+  // freeze the row (setWhere rejects every later "earlier" day).
+  // Clamping keeps a skewed device's impressions instead of dropping
+  // the whole batch with a 400.
+  const minDay = utcDay(now, -1);
+  const maxDay = utcDay(now, 1);
+  const day =
+    body.day < minDay ? minDay : body.day > maxDay ? maxDay : body.day;
 
   await db
     .insert(videoImpressions)
@@ -86,8 +102,8 @@ export async function POST(request: NextRequest) {
       approved.map(({ videoId }) => ({
         profileId: body.profileId,
         videoId,
-        lastSeenAt: sentAt,
-        lastSeenOn: body.day,
+        lastSeenAt: new Date(now),
+        lastSeenOn: day,
       }))
     )
     .onConflictDoUpdate({

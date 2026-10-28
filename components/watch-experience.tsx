@@ -31,6 +31,7 @@ import { pickNextIndex } from "@/lib/autoplay";
 import { classifySwipe } from "@/lib/gestures";
 import type { SwipeDirection } from "@/lib/gestures";
 import { cn } from "@/lib/utils";
+import { takeWatchFrom } from "@/lib/feed-memory";
 import type { VideoReaction, WatchStatus } from "@/lib/kids-feed";
 import { loadedVideoId } from "@/lib/yt-player";
 
@@ -115,6 +116,9 @@ export function WatchExperience({
     prev: () => void;
     skip: () => void;
   } | null>(null);
+  // Whether this watch page was entered from a feed link — consumed on
+  // mount (see the effect below), read by the Back button.
+  const watchFromRef = useRef(false);
   const [pendingSwipe, setPendingSwipe] = useState<{
     dir: SwipeDirection;
     title?: string;
@@ -236,6 +240,16 @@ export function WatchExperience({
     }),
     [flush, prefetchExits]
   );
+
+  // Read-and-clear nt:watchFrom on mount — not when Back is tapped:
+  // a marker left behind by ctrl/cmd+click or an unconsumed
+  // browser/Android back would otherwise be picked up by a later
+  // watch page reached without a feed-link tap, and router.back()
+  // would pop an unrelated history entry. StrictMode-safe: the
+  // second mount's read returns false and must not erase a true.
+  useEffect(() => {
+    if (takeWatchFrom()) watchFromRef.current = true;
+  }, []);
 
   const getInitialLoad = useCallback((): PlayerLoad | null => {
     const currentVideo = stablePlaylist[indexRef.current];
@@ -691,6 +705,21 @@ export function WatchExperience({
           href={portalUrl}
           aria-label="Back to videos"
           onPointerDown={prefetchExits}
+          onClick={(e) => {
+            // Reached the player by tapping a feed card → a real
+            // popstate: native scroll restoration, no history-stack
+            // growth (in-player advance replaceStates, so feed→watch
+            // is one entry), and it fixes the shelf→back→wrong-tab
+            // quirk. Deep-linked watch pages have no marker → fall
+            // through to the Link's normal push navigation. Depth is
+            // required too: ctrl/cmd+click sets the marker AND clones
+            // sessionStorage into the new tab, where back() on a
+            // one-entry stack is a dead button.
+            if (watchFromRef.current && window.history.length > 1) {
+              e.preventDefault();
+              router.back();
+            }
+          }}
         >
           <Button
             variant="ghost"

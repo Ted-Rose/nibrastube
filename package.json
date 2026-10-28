@@ -26,6 +26,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-slider": "^1.6.1",
+    "@sentry/nextjs": "^11.9.0",
     "axios": "^1.13.6",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

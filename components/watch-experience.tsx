@@ -33,7 +33,7 @@ import type { SwipeDirection } from "@/lib/gestures";
 import { cn } from "@/lib/utils";
 import { takeWatchFrom } from "@/lib/feed-memory";
 import type { VideoReaction, WatchStatus } from "@/lib/kids-feed";
-import { loadedVideoId } from "@/lib/yt-player";
+import { loadedVideoId, YT_MOUNT_CLASS } from "@/lib/yt-player";
 
 interface PlaylistVideo {
   id: string;
@@ -128,6 +128,11 @@ export function WatchExperience({
     dir: SwipeDirection;
     title?: string;
   } | null>(null);
+  // Ref mirror of pendingSwipe for the effect's timers/Player events —
+  // the load watchdog and onError must not release advancingRef out
+  // from under an open dialog (it doubles as the pause-during-dialog
+  // hold there).
+  const pendingSwipeRef = useRef(false);
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(
     null
   );
@@ -341,6 +346,7 @@ export function WatchExperience({
     // Playlist changed under an open swipe dialog — the pending target
     // preview may be stale, so drop it. The recreated player autoplays,
     // which is the "keep watching" outcome anyway.
+    pendingSwipeRef.current = false;
     setPendingSwipe(null);
   }, [stablePlaylist]);
 
@@ -406,6 +412,7 @@ export function WatchExperience({
         if (
           !cancelled &&
           advancingRef.current &&
+          !pendingSwipeRef.current &&
           loadStartedRef.current === loadStamp
         ) {
           skipAndAdvance();
@@ -454,6 +461,10 @@ export function WatchExperience({
       const cur = stablePlaylist[indexRef.current];
       if (!cur) return;
       skippedRef.current.add(cur.id);
+      // An open swipe dialog holds advancingRef deliberately
+      // (pause-during-dialog) — don't free it or navigate out from
+      // under the modal; confirm/cancel releases it.
+      if (pendingSwipeRef.current) return;
       advancingRef.current = false;
       if (skippedRef.current.size >= stablePlaylist.length) return;
       advance();
@@ -555,6 +566,20 @@ export function WatchExperience({
     playerRef,
   ]);
 
+  // Suppress pull-to-refresh while swipe-nav is on. overscroll-behavior
+  // only applies to scroll containers, so a class on the (non-scrolling)
+  // root div is a no-op — it has to go on the document scroller. Done
+  // here, scoped to this page's lifetime, rather than in globals.css.
+  useEffect(() => {
+    if (!swipeEnabled) return;
+    const root = document.documentElement;
+    const prev = root.style.overscrollBehaviorY;
+    root.style.overscrollBehaviorY = "none";
+    return () => {
+      root.style.overscrollBehaviorY = prev;
+    };
+  }, [swipeEnabled]);
+
   // The index goBack would pick, for the confirm dialog's title preview.
   const peekPrevTarget = () => {
     const prev = peekPrevIndex();
@@ -599,11 +624,13 @@ export function WatchExperience({
     preSwipeStateRef.current = playerRef.current?.getPlayerState() ?? null;
     // Pause under the modal so audio doesn't keep playing.
     playerRef.current?.pauseVideo();
+    pendingSwipeRef.current = true;
     setPendingSwipe({ dir, title: stablePlaylist[target]?.title });
   };
 
   const confirmSwipe = (dontAskAgain: boolean) => {
     const dir = pendingSwipe?.dir;
+    pendingSwipeRef.current = false;
     setPendingSwipe(null);
     // Release the nav guard BEFORE the nav function re-acquires it.
     advancingRef.current = false;
@@ -620,6 +647,7 @@ export function WatchExperience({
   };
 
   const cancelSwipe = () => {
+    pendingSwipeRef.current = false;
     setPendingSwipe(null);
     advancingRef.current = false;
     // Resume only if the video was actually playing when the swipe
@@ -707,20 +735,39 @@ export function WatchExperience({
     reactions.get(activeVideoId || current.id) ?? null;
 
   return (
-    // touch-none when swipe is on so scroll/pull-to-refresh doesn't steal
-    // the gesture — the watch page is built to fit the viewport.
+    // select-none when swipe is on; pull-to-refresh is suppressed on the
+    // document scroller by the effect above. touch-action:none is kept
+    // OFF this root and the player wrapper — an ancestor touch-action
+    // interferes with gesture arbitration for touches inside the
+    // cross-origin iframe on Android WebView (dead player controls).
+    // touch-none stays only on regions that don't wrap the iframe: the
+    // header, footer, and edge strips.
     <div
       className={cn(
-        "min-h-screen bg-black flex flex-col",
-        swipeEnabled && "touch-none select-none"
+        // h-screen, not min-h-screen: percentage heights (the player's
+        // h-full chain) only resolve through a DEFINITE ancestor height —
+        // a min-height-clamped auto height is indefinite, so h-full on
+        // the flex item below resolved to 0 and the player collapsed.
+        // Content taller than the viewport still scrolls (nothing clips).
+        // svh upgrades vh on modern browsers: 100vh is the LARGE
+        // viewport (address bar hidden), so with the bar visible the
+        // player ran ~60-80px taller than the screen on phones. svh
+        // tracks the smallest viewport — everything fits without the
+        // resize-on-scroll jank dvh would add. The fallback rides a
+        // supports-[] variant rather than stacking "h-screen h-svh" —
+        // twMerge would drop h-screen, and browsers without svh would
+        // collapse the h-full chain again.
+        "h-screen supports-[height:100svh]:h-svh bg-black flex flex-col",
+        swipeEnabled && "select-none"
       )}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       onTouchCancel={onTouchCancel}
     >
-      {/* Player Header */}
-      <div className="bg-slate-900/80 backdrop-blur px-3 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 flex items-center justify-between gap-2 text-white border-b border-slate-800">
+      {/* Player Header — touch-none: not an iframe ancestor, so it can
+          safely claim its gestures (a swipe here shouldn't scroll/PTR). */}
+      <div className="bg-slate-900/80 backdrop-blur px-3 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:pb-4 flex items-center justify-between gap-2 text-white border-b border-slate-800 touch-none">
         <Link
           href={portalUrl}
           aria-label="Back to videos"
@@ -768,20 +815,33 @@ export function WatchExperience({
         </Link>
       </div>
 
-      {/* Video Player Area — an iframe_api load timeout overlays a
-          notice on the still-mounted player (a late API arrival can
-          then self-clear via onReady); the header/footer links exit. */}
-      <div className="flex-1 flex items-center justify-center p-4 md:p-10">
+      {/* Video Player Area — edge-to-edge in plain flow on phones
+          (items-stretch + p-0), centered card on desktop. NO
+          fixed/absolute/overflow layer may ever wrap the iframe — see
+          the invariant in fullscreen-player.tsx. min-h-0: without it
+          the default min-height:auto clamps this item to the portrait
+          aspect box's min-content height (a 9:16 box's height resolves
+          from its WIDTH when the % chain is still indefinite), so on a
+          short landscape screen the player grew to ~3x the viewport
+          instead of letterboxing to the free space. The md padding is
+          height-gated: a landscape phone is ≥768px wide but only
+          ~390px tall — md:p-10 there ate most of the player area. An
+          iframe_api load timeout overlays a notice on the still-mounted
+          player (a late API arrival can then self-clear via onReady);
+          the header/footer links exit. */}
+      <div className="flex-1 min-h-0 flex items-stretch justify-center p-0 sm:items-center sm:p-4 md:[@media(min-height:480px)]:p-10">
         {/* Same `video-<id>` name as the grid thumbnail and the loading
             thumbnail, so the tapped card morphs into the player. */}
         <ViewTransition name={`video-${current.id}`}>
           <FullscreenPlayer portrait={current.isShort}>
             <div ref={containerRef} className="w-full h-full">
-              <div ref={mountRef} className="w-full h-full" />
+              {/* YT_MOUNT_CLASS transfers to the iframe when the YT API
+                  replaces this mount div — see lib/yt-player.ts. */}
+              <div ref={mountRef} className={YT_MOUNT_CLASS} />
             </div>
-            {/* Reaction overlay must live inside FullscreenPlayer —
-                in native fullscreen only descendants of the
-                fullscreen element render. */}
+            {/* Reaction overlay lives inside FullscreenPlayer so it anchors
+                to the player box. It's hidden while the embed's own ⛶
+                fullscreen is up — only the iframe renders there. */}
             <div className="absolute top-3 right-3 z-50 flex gap-3">
               <button
                 onClick={() => react("like")}
@@ -820,20 +880,21 @@ export function WatchExperience({
               <>
                 {/* Edge swipe zones: touches starting inside the cross-origin
                     YT iframe never reach our document, so these transparent
-                    strips catch swipes that begin at the screen edge. They
-                    must live INSIDE FullscreenPlayer — in native fullscreen
-                    only descendants of fullscreenElement render. bottom-16
+                    strips catch swipes that begin at the player edge. They
+                    live INSIDE FullscreenPlayer to anchor to the player
+                    box (inline only — the embed's own ⛶ fullscreen
+                    renders just the iframe, so no swipes there). bottom-24
                     leaves the YouTube control bar (incl. corner buttons)
                     reachable; the video center stays fully tappable. */}
                 <div
-                  className="absolute top-0 bottom-16 left-0 w-7 z-40 touch-none"
+                  className="absolute top-0 bottom-24 left-0 w-7 z-40 touch-none"
                   onTouchStart={onTouchStart}
                   onTouchMove={onTouchMove}
                   onTouchEnd={onTouchEnd}
                   onTouchCancel={onTouchCancel}
                 />
                 <div
-                  className="absolute top-0 bottom-16 right-0 w-7 z-40 touch-none"
+                  className="absolute top-0 bottom-24 right-0 w-7 z-40 touch-none"
                   onTouchStart={onTouchStart}
                   onTouchMove={onTouchMove}
                   onTouchEnd={onTouchEnd}
@@ -878,8 +939,9 @@ export function WatchExperience({
         </ViewTransition>
       </div>
 
-      {/* Kid-Friendly Controls (Optional/Simplified) */}
-      <div className="bg-slate-900/50 p-4 sm:p-8 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-4">
+      {/* Kid-Friendly Controls (Optional/Simplified) — touch-none like
+          the header: it doesn't wrap the iframe. */}
+      <div className="bg-slate-900/50 p-4 sm:p-8 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-4 touch-none">
         <div className="flex items-center gap-4 sm:gap-10">
           <Link
             href="/kids"

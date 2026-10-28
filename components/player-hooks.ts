@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   ensureYouTubeAPI,
+  YT_MOUNT_CLASS,
   type YTPlayer,
   type YTPlayerEvent,
 } from "@/lib/yt-player";
@@ -88,7 +89,7 @@ export function useYouTubePlayer({
       // a fresh mount point.
       if (!mountRef.current || !mountRef.current.isConnected) {
         const el = document.createElement("div");
-        el.className = "w-full h-full";
+        el.className = YT_MOUNT_CLASS;
         container.appendChild(el);
         mountRef.current = el;
       }

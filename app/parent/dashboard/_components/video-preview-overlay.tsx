@@ -25,6 +25,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { YT_MOUNT_CLASS } from "@/lib/yt-player";
 import type { DashboardVideo } from "@/lib/youtube";
 
 // In-app ?video= preview for the parent dashboard — watch-page chrome
@@ -86,13 +87,9 @@ export function VideoPreviewOverlay({
       if (e.key === "Escape") close();
     };
     window.addEventListener("keydown", onKeyDown);
-    // Keep the dashboard from scrolling behind the player.
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
 
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
     };
   }, [closeHref, router]);
 
@@ -105,6 +102,9 @@ export function VideoPreviewOverlay({
       : null;
 
   return (
+    // KNOWN ISSUE: same `fixed inset-0` modal pattern as
+    // song-player-overlay — see the note there (WebKit bug 261390).
+    // No body scroll-lock, so no overflow layer wraps the iframe.
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
       {/* Player header — same chrome as the kids watch page. */}
       <div
@@ -154,15 +154,18 @@ export function VideoPreviewOverlay({
         </Link>
       </div>
 
-      {/* Video player area — FullscreenPlayer gives the same
-          auto-fullscreen behavior as the watch page; portrait keeps
-          Shorts letterboxed. An embed failure (or an iframe_api load
+      {/* Video player area — FullscreenPlayer gives the same player
+          chrome as the watch page (fullscreen only via the embed's own
+          ⛶, never auto-requested); portrait keeps Shorts letterboxed.
+          min-h-0 + height-gated md padding as in song-player-overlay. An embed failure (or an iframe_api load
           timeout) overlays a notice on the still-mounted player —
           there is no queue to advance. */}
-      <div className="flex flex-1 items-center justify-center p-4 md:p-10">
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4 md:[@media(min-height:480px)]:p-10">
         <FullscreenPlayer portrait={video.isShort}>
           <div ref={containerRef} className="h-full w-full">
-            <div ref={mountRef} className="h-full w-full" />
+            {/* YT_MOUNT_CLASS transfers to the iframe — see
+                lib/yt-player.ts. */}
+            <div ref={mountRef} className={YT_MOUNT_CLASS} />
           </div>
           {/* Opaque notice OVER the player, not a swap — unmounting
               containerRef would null the ref and make the timeout's

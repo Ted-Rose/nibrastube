@@ -59,7 +59,7 @@ export function HistoryView({
       expandedDays: [...expanded],
     });
   };
-  useFeedSaver(saveSnapshot);
+  useFeedSaver(saveSnapshot, feedQuery);
 
   // Restore once on mount — applied from an effect so the first client
   // render still matches the server HTML (no hydration mismatch).

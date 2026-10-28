@@ -25,6 +25,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { loadedVideoId } from "@/lib/yt-player";
 import type { DashboardVideo } from "@/lib/youtube";
 
 // In-app ?video= preview for the parent dashboard — watch-page chrome
@@ -59,10 +60,20 @@ export function VideoPreviewOverlay({
   // An embed failure overlays a notice on the player — a parent-only
   // surface has no queue to advance.
   const [errored, setErrored] = useState(false);
+  // The block-flag POST needs playerRef, which useYouTubePlayer only
+  // returns after `events` exists — the report reaches it through
+  // this ref instead (player events arrive via postMessage once the
+  // iframe is up, so the ref is assigned by then).
+  const reportBlockedRef = useRef<((code: number) => void) | null>(
+    null
+  );
 
   const events = useMemo<PlayerEvents>(
     () => ({
-      onError: () => setErrored(true),
+      onError: (event) => {
+        setErrored(true);
+        reportBlockedRef.current?.(event.data);
+      },
     }),
     []
   );
@@ -72,13 +83,39 @@ export function VideoPreviewOverlay({
   );
   // Single-video surface — nothing to catch up to.
   const getCatchUpLoad = useCallback(() => null, []);
-  const { loadFailed } = useYouTubePlayer({
+  const { playerRef, loadFailed } = useYouTubePlayer({
     containerRef,
     mountRef,
     events,
     getInitialLoad,
     getCatchUpLoad,
   });
+
+  useEffect(() => {
+    reportBlockedRef.current = (code) => {
+      // A permanent failure (100 removed/private, 101
+      // embed-disabled, 150 age-gate) flags the video so
+      // suitableVideo hides it everywhere — dead content vetted
+      // here should never reach a kid. Transient codes (2/5)
+      // write nothing. Flag the id the embed actually loaded —
+      // with no snapback guard here, a rogue "More videos" pick
+      // that errored would otherwise mark the previewed video
+      // dead.
+      if (code !== 100 && code !== 101 && code !== 150) return;
+      const p = playerRef.current;
+      fetch("/api/video-errors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoId: (p ? loadedVideoId(p) : undefined) ?? video.id,
+          code,
+        }),
+      }).catch(() => {});
+    };
+    return () => {
+      reportBlockedRef.current = null;
+    };
+  }, [video.id, playerRef]);
 
   useEffect(() => {
     const close = () => router.push(closeHref, { scroll: false });

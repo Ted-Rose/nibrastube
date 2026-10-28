@@ -121,6 +121,8 @@ app/
   api/sync-channels/            Daily channel sync trigger (GET+POST)
   api/watch-progress/           POST upsert for resume position
   api/video-reactions/          POST like/dislike per profile+video
+  api/video-errors/             POST IFrame onError 100/101/150 →
+                                videos.playback_blocked flag
   global-error.tsx              Root-layout crash boundary — reports
                                 the error to Sentry, own <html>/<body>
 components/
@@ -301,13 +303,25 @@ docs/plans/                     Implementation plans with status
     pinned it. Enforced at query time via the shared
     `suitableVideo` WHERE fragment (`lib/video-suitability.ts`,
     `age_restricted IS DISTINCT FROM true` — NULL flags count as
-    suitable) on every display/write surface: all
+    suitable — `AND playback_blocked = false`) on every
+    display/write surface: all
     `lib/kids-feed.ts` queries (which also cover the watch page),
     `lib/songs-feed.ts`, `searchYouTube` hydration, and the
     `/api/watch-progress` + `/api/video-reactions` whitelist
     checks. There is no ingest drop — a pin on a restricted video
     is an inert row, labeled "Blocked" in the dashboard's
     Approved Videos list so it isn't silently invisible.
+    `playback_blocked` is the runtime-observed sibling: the
+    players POST a permanent IFrame onError code (100/101/150) to
+    `/api/video-errors`, which sets the flag + `blocked_reason` /
+    `blocked_at` on the global `videos` row. Unlike
+    `age_restricted`/`embeddable` it is NOT API-sourced —
+    `videos:refresh` never clears it, and a rogue "More videos"
+    suggestion's id is refused by the whitelist check (403) or a
+    missing-row 404. Players POST the embed's actually-loaded id
+    (`loadedVideoId(playerRef.current)`) — required on the
+    dashboard preview, which has no snapback guard: an erroring
+    rogue suggestion must not flag the previewed video.
   - `made_for_kids=true` (the only under-13 signal) is filtered
     **on unvetted surfaces only** — YouTube search hydration and
     the public `/songs` catalog/imports. Parent-approved content

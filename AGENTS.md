@@ -318,7 +318,10 @@ docs/plans/                     Implementation plans with status
     `age_restricted`/`embeddable` it is NOT API-sourced —
     `videos:refresh` never clears it, and a rogue "More videos"
     suggestion's id is refused by the whitelist check (403) or a
-    missing-row 404.
+    missing-row 404. Players POST the embed's actually-loaded id
+    (`loadedVideoId(playerRef.current)`) — required on the
+    dashboard preview, which has no snapback guard: an erroring
+    rogue suggestion must not flag the previewed video.
   - `made_for_kids=true` (the only under-13 signal) is filtered
     **on unvetted surfaces only** — YouTube search hydration and
     the public `/songs` catalog/imports. Parent-approved content

@@ -1,17 +1,11 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
 import Link from "next/link";
 import { Check } from "@phosphor-icons/react";
 import { approveChannel } from "@/app/actions/channels";
 import { DashboardVideoCard } from "@/components/dashboard-video-card";
 import { SubmitButton } from "@/components/submit-button";
+import { TokenPagerSentinel } from "@/components/token-pager-sentinel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,13 +13,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useTokenPager } from "@/components/use-token-pager";
 import { cn } from "@/lib/utils";
 import type { DashboardVideo, YouTubeChannel } from "@/lib/youtube";
 
 export type SearchGridItem = DashboardVideo | YouTubeChannel;
 
 // Both paging actions fit this shape — pinnedIds for video pages,
-// approvedIds for channel pages; the grid unions them into one set.
+// approvedIds for channel pages; the pager unions them into one set.
 export type SearchLoadMore = (pageToken: string | null) => Promise<{
   items: SearchGridItem[];
   nextPageToken: string | null;
@@ -33,20 +28,13 @@ export type SearchLoadMore = (pageToken: string | null) => Promise<{
   approvedIds?: string[];
 }>;
 
-// Layout effect on the client, plain effect during SSR (layout
-// effects don't run there). The stale-fetch generation bump must land
-// in the same commit as the fresh first page — a passive effect would
-// leave a microtask window where an in-flight loadMore could still
-// append a stale page over the reset.
-const useIsomorphicLayoutEffect =
-  typeof window === "undefined" ? useEffect : useLayoutEffect;
+// Video pages flag pins, channel pages flag channel approvals —
+// union both (only one kind appears per search type).
+const FLAG_KEYS = ["pinnedIds", "approvedIds"] as const;
 
 // Infinite-scroll wrapper around the dashboard's YouTube search
-// results — same accumulation model as kids-video-grid.tsx but keyed
-// on YouTube's opaque page token instead of a row offset. Exhaustion
-// is `nextPageToken == null`, never an empty page (a hydrated page can
-// filter to zero usable cards while a token remains — the sentinel
-// stays alive so the observer re-fires or the user clicks).
+// results — the token-keyed paging machinery lives in
+// use-token-pager.ts; this component owns only the grid + cards.
 export function SearchResultsGrid({
   searchType,
   initialItems,
@@ -73,90 +61,24 @@ export function SearchResultsGrid({
   channelBaseHref: string;
   loadMore?: SearchLoadMore;
 }) {
-  const [items, setItems] = useState(initialItems);
-  const [flaggedIds, setFlaggedIds] = useState(
-    () => new Set(initialFlaggedIds)
-  );
-  const [nextToken, setNextToken] = useState(initialNextPageToken);
-  const [fetching, setFetching] = useState(false);
-  // A failed fetch pauses the observer (no auto-retry loop) but keeps
-  // the sentinel's button as a manual retry.
-  const [failed, setFailed] = useState(false);
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  // Generation counter the reset invalidates: fetchNext captures it
-  // before loadMore and .then bails if it changed mid-flight, so a
-  // stale page can't append over the fresh first page. Bumped in the
-  // commit (not during render — refs are render-pure) so it also
-  // can't trip on a discarded concurrent render.
-  const generationRef = useRef(0);
-  useIsomorphicLayoutEffect(() => {
-    generationRef.current += 1;
-  }, [initialItems]);
-  const hasMore = !!loadMore && nextToken != null;
-
-  // A server refresh (new search, pin revalidation, tab switch) swaps
-  // in a fresh first page — drop appended pages and restart from it.
-  // Same accepted tradeoff as the kids feed's prevInitial reset.
-  const [prevInitial, setPrevInitial] = useState(initialItems);
-  if (prevInitial !== initialItems) {
-    setPrevInitial(initialItems);
-    setItems(initialItems);
-    setFlaggedIds(new Set(initialFlaggedIds));
-    setNextToken(initialNextPageToken);
-    setFetching(false);
-    setFailed(false);
-  }
-
-  const fetchNext = useCallback(() => {
-    if (!loadMore || fetching || nextToken == null) return;
-    setFetching(true);
-    const generation = generationRef.current;
-    loadMore(nextToken)
-      .then((page) => {
-        // A reset landed mid-flight — this page belongs to the old
-        // first page's token chain.
-        if (generation !== generationRef.current) return;
-        // YouTube ranking drifts between pages — dedup by id so a
-        // shifted result never mounts twice.
-        setItems((prev) => {
-          const seen = new Set(prev.map((v) => v.id));
-          return [
-            ...prev,
-            ...page.items.filter((v) => !seen.has(v.id)),
-          ];
-        });
-        setFlaggedIds((prev) => {
-          const next = new Set(prev);
-          for (const id of page.pinnedIds ?? page.approvedIds ?? []) {
-            next.add(id);
-          }
-          return next;
-        });
-        setNextToken(page.nextPageToken);
-      })
-      .catch(() => setFailed(true))
-      .finally(() => setFetching(false));
-  }, [loadMore, fetching, nextToken]);
-
-  const showMore = useCallback(() => {
-    setFailed(false);
-    fetchNext();
-  }, [fetchNext]);
-
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el || !hasMore || failed) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) showMore();
-      },
-      // Tighter than the kids feed's 600px — each search page costs
-      // 100 YouTube quota units.
-      { rootMargin: "300px" }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [hasMore, failed, showMore]);
+  const {
+    items,
+    flaggedIds,
+    hasMore,
+    fetching,
+    failed,
+    sentinelRef,
+    showMore,
+  } = useTokenPager<SearchGridItem>({
+    initialItems,
+    initialFlaggedIds,
+    initialNextPageToken,
+    loadMore,
+    flagKeys: FLAG_KEYS,
+    // Tighter than the kids feed's 600px — each search page costs
+    // 100 YouTube quota units.
+    rootMargin: "300px",
+  });
 
   return (
     <>
@@ -184,26 +106,13 @@ export function SearchResultsGrid({
         )}
       </div>
       {hasMore && (
-        <div ref={sentinelRef} className="flex justify-center pt-8">
-          <button
-            type="button"
-            disabled={fetching}
-            onClick={showMore}
-            className={cn(
-              "rounded-full bg-white px-8 py-3 text-lg font-bold",
-              "text-slate-500 shadow-sm transition-colors",
-              "hover:text-slate-800 focus-visible:outline-none",
-              "focus-visible:ring-4 focus-visible:ring-primary/40",
-              "disabled:opacity-60"
-            )}
-          >
-            {fetching
-              ? "Loading…"
-              : failed
-                ? "Couldn't load more — retry"
-                : "Show more results"}
-          </button>
-        </div>
+        <TokenPagerSentinel
+          sentinelRef={sentinelRef}
+          fetching={fetching}
+          failed={failed}
+          onClick={showMore}
+          label="Show more results"
+        />
       )}
     </>
   );

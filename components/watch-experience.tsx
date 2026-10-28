@@ -109,6 +109,9 @@ export function WatchExperience({
   const swipeNavRef = useRef<{ next: () => void; prev: () => void } | null>(
     null
   );
+  // Whether this watch page was entered from a feed link — consumed on
+  // mount (see the effect below), read by the Back button.
+  const watchFromRef = useRef(false);
   const [pendingSwipe, setPendingSwipe] = useState<{
     dir: SwipeDirection;
     title?: string;
@@ -153,6 +156,16 @@ export function WatchExperience({
     },
     [playlist]
   );
+
+  // Read-and-clear nt:watchFrom on mount — not when Back is tapped:
+  // a marker left behind by ctrl/cmd+click or an unconsumed
+  // browser/Android back would otherwise be picked up by a later
+  // watch page reached without a feed-link tap, and router.back()
+  // would pop an unrelated history entry. StrictMode-safe: the
+  // second mount's read returns false and must not erase a true.
+  useEffect(() => {
+    if (takeWatchFrom()) watchFromRef.current = true;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -673,7 +686,7 @@ export function WatchExperience({
             // is one entry), and it fixes the shelf→back→wrong-tab
             // quirk. Deep-linked watch pages have no marker → fall
             // through to the Link's normal push navigation.
-            if (takeWatchFrom()) {
+            if (watchFromRef.current) {
               e.preventDefault();
               router.back();
             }

@@ -34,6 +34,15 @@ export function PlaylistDetailView({
   playlistRows: KidsPlaylist[];
   rows: FeedRow[];
 }) {
+  // Drag-reorder is only meaningful on the full list: a filtered view
+  // shows a subset, and persisting a filtered order would scramble the
+  // real one.
+  const sortable =
+    !feed.q &&
+    feed.type === "all" &&
+    feed.minLen === null &&
+    feed.maxLen === null;
+
   const empty = emptyStateFor({
     feed,
     profileId,
@@ -102,6 +111,13 @@ export function PlaylistDetailView({
             playlistId={playlist.id}
             rows={rows}
             feedQuery={kidsFeedQuery(feed)}
+            sortable={sortable}
+            clearFiltersHref={kidsPortalUrl(profileId, feed, {
+              q: "",
+              type: "all",
+              minLen: null,
+              maxLen: null,
+            })}
           />
         </SaveToPlaylistProvider>
       )}

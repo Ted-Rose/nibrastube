@@ -3,6 +3,7 @@ import { NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
 import { dailySyncs } from "@/lib/db/schema";
 import { syncAllChannels } from "@/lib/channel-sync";
+import { captureInternalException } from "@/lib/report";
 
 async function runDailySync() {
   // UTC date YYYY-MM-DD — one row per day doubles as the dedup lock
@@ -25,6 +26,7 @@ async function runDailySync() {
       synced = await syncAllChannels();
     } catch (err) {
       console.error("Daily channel sync failed:", err);
+      captureInternalException(err);
     } finally {
       await db
         .update(dailySyncs)

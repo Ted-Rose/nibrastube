@@ -64,6 +64,19 @@ function isFresh(savedAt: number) {
   );
 }
 
+// Stored JSON is untrusted: `rows: ["x"]` satisfies Array.isArray but
+// patchRows then dereferences row.video.id and crashes the mount
+// layout effect — element shapes are checked so corruption fails open.
+function isFeedRow(value: unknown): value is FeedRow {
+  if (!value || typeof value !== "object") return false;
+  const row = value as FeedRow;
+  return (
+    !!row.video &&
+    typeof row.video === "object" &&
+    typeof row.video.id === "string"
+  );
+}
+
 function isSnapshot(value: unknown): value is FeedSnapshot {
   if (!value || typeof value !== "object") return false;
   const snap = value as FeedSnapshot;
@@ -77,9 +90,12 @@ function isSnapshot(value: unknown): value is FeedSnapshot {
     (snap.anchorVideoId === null ||
       typeof snap.anchorVideoId === "string") &&
     Array.isArray(snap.orderIds) &&
-    (snap.rows === null || Array.isArray(snap.rows)) &&
+    snap.orderIds.every((id) => typeof id === "string") &&
+    (snap.rows === null ||
+      (Array.isArray(snap.rows) && snap.rows.every(isFeedRow))) &&
     (snap.expandedDays === undefined ||
-      Array.isArray(snap.expandedDays))
+      (Array.isArray(snap.expandedDays) &&
+        snap.expandedDays.every((day) => typeof day === "string")))
   );
 }
 

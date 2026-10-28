@@ -685,8 +685,11 @@ export function WatchExperience({
             // growth (in-player advance replaceStates, so feed→watch
             // is one entry), and it fixes the shelf→back→wrong-tab
             // quirk. Deep-linked watch pages have no marker → fall
-            // through to the Link's normal push navigation.
-            if (watchFromRef.current) {
+            // through to the Link's normal push navigation. Depth is
+            // required too: ctrl/cmd+click sets the marker AND clones
+            // sessionStorage into the new tab, where back() on a
+            // one-entry stack is a dead button.
+            if (watchFromRef.current && window.history.length > 1) {
               e.preventDefault();
               router.back();
             }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -47,6 +47,9 @@ export function VideoPreviewOverlay({
   const containerRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayer | null>(null);
+  // An embed failure swaps the player area for a notice — a
+  // parent-only surface has no queue to advance.
+  const [errored, setErrored] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +86,9 @@ export function VideoPreviewOverlay({
         events: {
           onReady: () => {
             if (!cancelled) playerRef.current = createdPlayer;
+          },
+          onError: () => {
+            if (!cancelled) setErrored(true);
           },
         },
       });
@@ -174,13 +180,38 @@ export function VideoPreviewOverlay({
 
       {/* Video player area — FullscreenPlayer gives the same
           auto-fullscreen behavior as the watch page; portrait keeps
-          Shorts letterboxed. */}
+          Shorts letterboxed. An embed failure swaps the player for a
+          notice — there is no queue to advance. */}
       <div className="flex flex-1 items-center justify-center p-4 md:p-10">
-        <FullscreenPlayer portrait={video.isShort}>
-          <div ref={containerRef} className="h-full w-full">
-            <div ref={mountRef} className="h-full w-full" />
+        {errored ? (
+          <div
+            className={cn(
+              "flex aspect-video w-full max-w-6xl flex-col",
+              "items-center justify-center gap-3 rounded-[32px]",
+              "border-4 border-slate-800 bg-slate-900 px-6",
+              "text-center shadow-2xl"
+            )}
+          >
+            <p className="text-xl font-black text-white sm:text-2xl">
+              This video can&apos;t be played in the embed
+            </p>
+            <p
+              className={cn(
+                "max-w-md text-sm font-medium text-slate-400",
+                "sm:text-base"
+              )}
+            >
+              The owner may have disabled embedding — open it on
+              YouTube instead.
+            </p>
           </div>
-        </FullscreenPlayer>
+        ) : (
+          <FullscreenPlayer portrait={video.isShort}>
+            <div ref={containerRef} className="h-full w-full">
+              <div ref={mountRef} className="h-full w-full" />
+            </div>
+          </FullscreenPlayer>
+        )}
       </div>
 
       {/* Bottom bar — vetting metadata + the pin action. Pinning does

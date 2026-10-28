@@ -142,6 +142,13 @@ export function SongPlayerOverlay({
               finishSong();
             }
           },
+          onError: () => {
+            // A dead video never emits the PLAYING that releases
+            // advancingRef — release it here so finishSong can skip
+            // to the next song (or close at queue end).
+            advancingRef.current = false;
+            finishSong();
+          },
         },
       });
     };
@@ -207,9 +214,10 @@ export function SongPlayerOverlay({
 
   // Clamp at render too: a server-driven queue change can leave
   // `index` pointing past the new end until the effect re-seeds.
-  const current = queue[Math.min(index, queue.length - 1)];
+  const curIndex = Math.min(index, queue.length - 1);
+  const current = queue[curIndex];
   if (!current) return null;
-  const next = queue[index + 1];
+  const next = queue[curIndex + 1];
 
   const start = formatDuration(current.startSeconds) ?? "0:00";
   const endLabel =

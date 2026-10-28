@@ -408,8 +408,12 @@ docs/plans/                     Implementation plans with status
   (a refresh per flush would reshuffle the grid under the kid). The
   penalty (cap 12, 14-day half-life, masked once watched) only
   reorders For You/Shorts and the default `sort=status` of
-  All-videos/channel drill-in; it never lifts or hides rows. Shelf
-  cards don't record impressions.
+  All-videos/channel drill-in; it never lifts or hides rows. The
+  latest impression day is discounted until its server `lastSeenAt`
+  is 3h old (> the 2h feed-memory TTL), so a kid's own fresh
+  impressions never reshuffle the open session — OFFSET paging
+  (`loadMore`) would otherwise skip rows. Keep that discount if you
+  touch the formula. Shelf cards don't record impressions.
 - **Kids portal chrome:** the feed page has no footer — the parent
   gate is the lock icon in `KidsHeader` (`KidsFooterGate` with
   `variant="icon"`); the `/kids` picker keeps the labelled "footer"

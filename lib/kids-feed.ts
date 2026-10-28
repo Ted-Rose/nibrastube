@@ -222,12 +222,32 @@ const lenFilter = (
 // evaluated against the joined aliases, so callers must leftJoin
 // watch_progress and video_impressions on (profile_id, video_id) — a
 // PK join, no fan-out; a missing row → coalesce → ln(1) = 0.
+//
+// Paging stability: For You / Shorts page with OFFSET while the client
+// flushes impressions every ~15s, so a penalty that bit immediately
+// would sink page-1 rows mid-scroll and pull rows 61+ above the next
+// offset — loadMore would skip them. So the most recent impression
+// day doesn't count while it is "fresh": seen_days is discounted by 1
+// until the SERVER-side last_seen_at is 3h old (server clock, not the
+// kid-local last_seen_on vs UTC current_date, so no TZ skew; 3h
+// deliberately exceeds the 2h feed-memory snapshot TTL). A first-ever
+// impression therefore contributes 0 until it ages, and a re-sighting
+// on a new day keeps the old count until then. Known residual: the
+// decay factor keys off last_seen_on, so a row re-seen on a new day
+// jumps from 0.5^(d/14) to 1 mid-session — a small bounded nudge
+// (≤ ~12·(1 − 0.5^(d/14))), not the 0 → −2.8 first-impression jump.
 const impressionPenalty = sql<number>`
   case
     when ${watchProgress.positionSeconds} > 0
       or coalesce(${watchProgress.completed}, false) then 0
     else least(12,
-      4.0 * ln(1 + coalesce(${videoImpressions.seenDays}, 0)))
+      4.0 * ln(1 + greatest(0,
+        coalesce(${videoImpressions.seenDays}, 0)
+        - case
+            when ${videoImpressions.lastSeenAt}
+              > now() - interval '3 hours' then 1
+            else 0
+          end)))
       * power(0.5,
           greatest(0,
             current_date - ${videoImpressions.lastSeenOn}) / 14.0)
@@ -295,9 +315,11 @@ export async function getKidsVideos(
     else 0 end`;
   const newestFirst = sql`${videos.publishedAt} desc nulls last`;
   // Default sort only: inside each status tier, never-shown cards come
-  // first and repeatedly-ignored ones sink (the penalty is masked to 0
-  // for started/watched rows, so it only reorders tier 0). Explicit
-  // kid-chosen sorts (age/added) stay literal.
+  // first and repeatedly-ignored ones sink. The penalty is masked to 0
+  // for started/watched rows, so it reorders tier 0 plus the disliked-
+  // but-unwatched rows sharing tier 2 (no progress row → unmasked);
+  // harmless, they're already sunk. Explicit kid-chosen sorts
+  // (age/added) stay literal.
   const orderBy =
     sort === "status"
       ? dir === "asc"
@@ -619,8 +641,11 @@ export const FOR_YOU_PAGE_SIZE = 60;
 //     − 20 if the channel has a 'dislike'
 //   disliked videos are excluded entirely.
 //   impression_penalty (module-level `impressionPenalty`) = "shown
-//     but ignored": min(12, 4·ln(1 + seen_days))
-//     · 0.5^(days since last seen / 14), 0 once watched.
+//     but ignored": min(12, 4·ln(1 + eff_days))
+//     · 0.5^(days since last seen / 14), 0 once watched;
+//     eff_days = seen_days − (1 if last_seen_at < 3h ago), so the
+//     kid's own fresh impressions never reshuffle the open session
+//     (offset paging would otherwise skip rows).
 // Depth blend — rn is the row's position under the plain
 // affinity+flat ranking; popularity = 0.5^((rn−1)/120) halves every
 // ~120 rows, so the deeper a kid scrolls the less their most-watched

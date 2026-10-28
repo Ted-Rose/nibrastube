@@ -62,9 +62,30 @@ export function VideoPreviewOverlay({
 
   const events = useMemo<PlayerEvents>(
     () => ({
-      onError: () => setErrored(true),
+      onError: (event) => {
+        setErrored(true);
+        // A permanent failure (100 removed/private, 101
+        // embed-disabled, 150 age-gate) flags the video so
+        // suitableVideo hides it everywhere — dead content vetted
+        // here should never reach a kid. Transient codes (2/5)
+        // write nothing.
+        if (
+          event.data === 100 ||
+          event.data === 101 ||
+          event.data === 150
+        ) {
+          fetch("/api/video-errors", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              videoId: video.id,
+              code: event.data,
+            }),
+          }).catch(() => {});
+        }
+      },
     }),
-    []
+    [video.id]
   );
   const getInitialLoad = useCallback(
     (): PlayerLoad => ({ key: video.id, videoId: video.id }),

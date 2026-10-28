@@ -5,13 +5,23 @@ import {
   useRouter,
   useSearchParams,
 } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   MagnifyingGlass,
   SpinnerGap,
   X,
 } from "@phosphor-icons/react";
 import { Input } from "./ui/input";
+
+// SSR-safe — layout effects don't run on the server.
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 interface KidsSearchProps {
   query: string;
@@ -53,10 +63,12 @@ export function KidsSearch({
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Fresh pathname + params for the debounced callback, which fires
-  // after the render that scheduled it.
+  // after the render that scheduled it. Synced in a layout effect —
+  // commits run layout effects in the same task, so a timer scheduled
+  // before this commit can't fire navigate() with the pre-commit URL
+  // (a passive effect would leave that gap).
   const urlRef = useRef({ pathname, searchParams });
-
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     urlRef.current = { pathname, searchParams };
   }, [pathname, searchParams]);
 

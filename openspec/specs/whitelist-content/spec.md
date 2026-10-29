@@ -134,8 +134,9 @@ Pin, unpin, and channel un-approve SHALL trigger Pusher on channel
 `profile-<profileId>` immediately — `video-pinned` for a pin,
 `video-unpinned` for removals. A channel approve SHALL NOT fire
 directly: its background backfill emits `video-pinned` only when it
-inserts at least one video. `pusherServer` SHALL be imported
-dynamically inside the action.
+attempts at least one insert — `onConflictDoNothing` may still
+skip every row. `pusherServer` SHALL be imported dynamically
+inside the action.
 
 #### Scenario: Pin triggers a live refresh
 
@@ -145,6 +146,6 @@ dynamically inside the action.
 
 #### Scenario: Approval without inserts stays silent
 
-- **WHEN** an approved channel's backfill inserts no videos (muted
+- **WHEN** an approved channel's backfill queues no inserts (muted
   or zero new uploads)
 - **THEN** no Pusher event fires for the approval

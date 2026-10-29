@@ -149,11 +149,13 @@ manage.
 
 ### Requirement: Sync emits real-time notifications
 
-Whenever backfill or poll adds at least one video, the sync SHALL
-trigger a `video-pinned` event on Pusher channel
-`profile-<profileId>` so open kids' sessions refresh.
+Whenever backfill or poll attempts at least one insert, the sync
+SHALL trigger a `video-pinned` event on Pusher channel
+`profile-<profileId>` so open kids' sessions refresh — `added`
+counts rows queued for `onConflictDoNothing`, so an all-conflict
+batch still fires the event.
 
 #### Scenario: Batch insert notifies the profile
 
-- **WHEN** a sync run pins N > 0 new videos for a profile
+- **WHEN** a sync run queues N > 0 whitelist inserts for a profile
 - **THEN** one `video-pinned` event fires on `profile-<id>`

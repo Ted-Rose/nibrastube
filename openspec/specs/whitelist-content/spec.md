@@ -50,7 +50,7 @@ Enforcement SHALL be query-time: the `suitableVideo` WHERE fragment
 ANDed into feed/`songs` queries and the write APIs, plus the
 equivalent `ageRestricted !== true` predicate in search hydration.
 There SHALL be no ingest drop: a pin on a restricted video is an
-inert row shown as "Blocked" in the parent dashboard.
+inert row.
 
 #### Scenario: Pinned 18+ video never plays
 

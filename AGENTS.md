@@ -244,8 +244,14 @@ instrumentation-client.ts       Sentry browser init (DSN-gated,
 capacitor-www/                  Placeholder webDir for `cap sync`
                                 (SSR app has no static export; APK
                                 loads remote URL)
+openspec/                       Spec-driven planning: specs/ = current
+                                behavior, changes/ = proposed changes
+                                (see "OpenSpec")
+.agents/skills/                 OpenSpec-generated workflow skills —
+                                upstream-owned, keep verbatim
 docs/plans/                     Implementation plans with status
-                                headers — deleted once fully
+                                headers — frozen for new work (see
+                                "OpenSpec"), deleted once fully
                                 implemented (see Conventions)
 .devin/skills/                  Agent skills (see "Agent config
                                 layout")
@@ -629,9 +635,9 @@ Workflow rules (workspace-wide conventions — follow them all):
    Verify: `awk 'length > 79 {print FILENAME":"NR}' <file>`. Fix
    violations you introduce plus long lines in files already being
    modified. Exempt: Prettier's `printWidth: 80` may emit 80-char
-   lines in TS/TSX (formatter output — don't hand-tune it), and the
-   vendored upstream docs under
-   `.devin/skills/vercel-react-best-practices/` stay verbatim.
+   lines in TS/TSX (formatter output — don't hand-tune it), and
+   vendored upstream skill files under `.devin/skills/`
+   (`vercel-react-best-practices/`, `openspec-*`) stay verbatim.
    Historical `docs/plans/*` files carry pre-existing long lines
    (tables/code blocks) — don't re-wrap them unless rewriting the
    section anyway.
@@ -684,8 +690,9 @@ Workflow rules (workspace-wide conventions — follow them all):
     contract doc for future sessions) after functionality changes,
     and delete any `docs/plans/*-plan.md` the change fully implements
     (see rule 11).
-11. **Plans live in `docs/plans/`** as `<feature>-plan.md`
-    (multi-file plans get a subdirectory), each with a status header:
+11. **Plans live in `docs/plans/`** — *frozen for new feature work:
+    new plans go through `openspec changes` (see "OpenSpec").*
+    Existing `<feature>-plan.md` files keep their status header:
     `implemented` / `partial` / `in progress` / `not implemented` /
     `reverted`. **A fully implemented plan is deleted, not archived**
     — a done plan only garbages the directory. In the implementing
@@ -716,12 +723,43 @@ Workflow rules (workspace-wide conventions — follow them all):
   file with implementer → reviewer → fixer subagents.
 - `.devin/skills/vercel-react-best-practices/` — vendored React/Next
   performance rules (SKILL.md index + per-rule files).
+- `.devin/skills/openspec-*/` — OpenSpec workflow skills: copies of
+  `.agents/skills/openspec-*/` with frontmatter stripped to
+  `name:`/`description:` (see "OpenSpec").
 - `.devin/workflows/create-pr.md` — PR body via `--body-file`.
 - `.devin/config.local.json` — permission allowlist, user-local and
   untracked (gitignored).
 
 Skill frontmatter must be plain `name:` + `description:` only —
 extra fields silently break discovery.
+
+## OpenSpec
+
+`openspec/` at the repo root is the spec-driven planning layer (npm
+`@fission-ai/openspec`). `openspec/specs/` holds capability specs —
+the source of truth for how the system behaves NOW — seeded with
+`auth-session`, `whitelist-content`, `action-api-contract` and
+`channel-sync`; grow them as real changes touch new areas.
+`openspec/changes/` holds proposed changes (`proposal.md`,
+`design.md`, `tasks.md` + delta specs that merge into `specs/` on
+archive).
+
+- **Run `openspec` commands from the repo root.** The CLI is a
+  global npm install under `/opt/homebrew/bin` — prepend it to PATH
+  in non-interactive shells (see "Known gaps").
+- Workflow: `openspec-propose` → implement via
+  `openspec-apply-change` → `openspec-archive-change`. The skills
+  live twice: `.agents/skills/openspec-*/` are the upstream-owned
+  originals `openspec update` refreshes (keep verbatim);
+  `.devin/skills/openspec-*/` are the Devin discovery copies with
+  frontmatter stripped to `name:`/`description:`. After
+  `openspec update`, re-copy each SKILL.md into `.devin/skills/`
+  and re-strip the frontmatter.
+- Specs describe CURRENT behavior — write them by verifying claims
+  against the code, not stale docs (code wins).
+- **`docs/plans/` is frozen for new feature plans** — new feature
+  work goes through `openspec changes`. Existing `docs/plans/*`
+  files stay as history; rule 11 still governs their lifecycle.
 
 ## Known gaps & sharp edges (do NOT "fix" without asking)
 

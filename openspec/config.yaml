@@ -1,0 +1,54 @@
+schema: spec-driven
+
+# Project context (optional)
+# Add only constraints that should guide OpenSpec artifacts and workflows.
+# Include constraints an agent cannot infer by reading the code.
+# Keep general project documentation and discoverable codebase facts out.
+context: |
+  NibrasTube is a single-repo Next.js 16 App Router app (React 19, TS,
+  ESM): a parent-curated, whitelist-only YouTube player for kids. Data
+  layer is Drizzle ORM over Postgres (Neon); all mutations are Server
+  Actions in app/actions/, reads happen in Server Components; three
+  /api/* routes exist for beacons and the daily channel sync. Deploy
+  targets: Vercel-style HTTPS deploy + a Capacitor Android APK that
+  just loads server.url.
+
+  Specs under openspec/specs/ describe CURRENT behavior — the running
+  code is the source of truth. When docs (README, prd.md, docs/plans/*)
+  disagree with the code, the code wins. Seed and update specs by
+  verifying claims against the implementation, not the docs.
+
+  Conventions that constrain artifacts:
+  - Max 79 chars per line in every file type (specs included).
+  - Commit format: `Type: Capitalized message` (Feat/Fix/Docs/
+    Refactor/Test/Chore); feature branches only, never main.
+  - DB: edit lib/db/schema.ts then `npm run db:generate` to produce
+    migration files (safe). Agents never run `npm run db:migrate` or
+    `drizzle-kit push` — flag the command for the user instead.
+  - No test suite exists; verification = `npm run typecheck` +
+    `npm run lint` (+ `npm run build` for infra changes).
+  - Route protection lives in proxy.ts (Next 16's middleware
+    replacement). There is no middleware.ts — extend proxy.ts.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+rules:
+  proposal:
+    - State which existing capability specs the change touches
+    - Call out whitelist-safety impact: does the change affect what a
+      kid can see, or only parent surfaces?
+  tasks:
+    - Include a typecheck+lint verification task
+    - Note any user-run commands (e.g. npm run db:migrate) as explicit
+      hand-off items, not agent tasks
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+operations:
+  apply:
+    guidance:
+      - Keep specs in sync: when implementation diverges from a seeded
+        spec, update the delta specs before archiving
+  archive:
+    guidance:
+      - Summarize the archive outcome before finishing

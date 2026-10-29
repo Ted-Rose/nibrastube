@@ -46,8 +46,10 @@ Actions writing kid-side data (playlists, reactions) SHALL gate via
 `assertCanEditKidData` — which accepts a matching kid session, a
 matching `activeProfileId` lock, or a managing parent — and SHALL
 NOT call `requireParentUnlocked`, so a locked kid device can keep
-using them. Read actions SHALL gate via the boolean
-`canViewProfile` instead of the throwing manage check.
+using them. Kid-scope read actions SHALL gate via the boolean
+`canViewProfile` instead of the throwing manage check; dashboard
+paging reads keep the unlocked-parent + `assertCanManageProfile`
+gate.
 
 #### Scenario: Locked kid device edits its playlist
 

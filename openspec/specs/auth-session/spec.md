@@ -167,7 +167,7 @@ session or a matching `activeProfileId`.
 `/login`, a kid-locked device (`activeProfileId` set) or a
 missing/stale unlock redirects to `/kids?gate=1` with the stale
 cookie deleted. `/login` and `/signup` SHALL redirect signed-in
-sessions to `/parent/dashboard`.
+parent sessions to `/parent/dashboard`.
 
 #### Scenario: Locked device bounces off the parent portal
 
@@ -175,9 +175,10 @@ sessions to `/parent/dashboard`.
 - **THEN** it is redirected to `/kids?gate=1`, which auto-opens the
   PIN modal
 
-#### Scenario: Signed-in user skips auth pages
+#### Scenario: Signed-in parent skips auth pages
 
-- **WHEN** a signed-in session requests `/login` or `/signup`
+- **WHEN** a signed-in parent session requests `/login` or
+  `/signup`
 - **THEN** it is redirected to `/parent/dashboard`
 
 ### Requirement: Profile authorization guards

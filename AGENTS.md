@@ -636,8 +636,9 @@ Workflow rules (workspace-wide conventions — follow them all):
    violations you introduce plus long lines in files already being
    modified. Exempt: Prettier's `printWidth: 80` may emit 80-char
    lines in TS/TSX (formatter output — don't hand-tune it), and
-   vendored upstream skill files under `.devin/skills/`
-   (`vercel-react-best-practices/`, `openspec-*`) stay verbatim.
+   vendored upstream skill files under `.agents/skills/` and
+   `.devin/skills/` (`openspec-*`, `vercel-react-best-practices/`)
+   stay verbatim.
    Historical `docs/plans/*` files carry pre-existing long lines
    (tables/code blocks) — don't re-wrap them unless rewriting the
    section anyway.

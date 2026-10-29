@@ -45,12 +45,12 @@ exists.
 
 `videos.age_restricted` (YouTube's 18+ flag) SHALL disqualify a
 video for kids absolutely — even when a parent pinned it.
-Enforcement SHALL be query-time via the shared `suitableVideo`
-WHERE fragment (`age_restricted IS DISTINCT FROM true` — NULL
-counts suitable) ANDed into every display and write surface: feed
-queries, search hydration, and the write APIs. There SHALL be no
-ingest drop: a pin on a restricted video is an inert row shown as
-"Blocked" in the parent dashboard.
+Enforcement SHALL be query-time: the `suitableVideo` WHERE fragment
+(`age_restricted IS DISTINCT FROM true` — NULL counts suitable)
+ANDed into feed/`songs` queries and the write APIs, plus the
+equivalent `ageRestricted !== true` predicate in search hydration.
+There SHALL be no ingest drop: a pin on a restricted video is an
+inert row shown as "Blocked" in the parent dashboard.
 
 #### Scenario: Pinned 18+ video never plays
 
@@ -130,13 +130,21 @@ videos, while manual pins survive.
 
 ### Requirement: Whitelist changes notify open sessions
 
-After any whitelist mutation (pin, unpin, channel approve/un-approve,
-sync-added batch) the action SHALL trigger Pusher on channel
-`profile-<profileId>` with `video-pinned` or `video-unpinned`, and
-`pusherServer` SHALL be imported dynamically inside the action.
+Pin, unpin, and channel un-approve SHALL trigger Pusher on channel
+`profile-<profileId>` immediately — `video-pinned` for a pin,
+`video-unpinned` for removals. A channel approve SHALL NOT fire
+directly: its background backfill emits `video-pinned` only when it
+inserts at least one video. `pusherServer` SHALL be imported
+dynamically inside the action.
 
 #### Scenario: Pin triggers a live refresh
 
 - **WHEN** a video is pinned for a profile
 - **THEN** a `video-pinned` event fires on `profile-<id>` so open
   clients refresh
+
+#### Scenario: Approval without inserts stays silent
+
+- **WHEN** an approved channel's backfill inserts no videos (muted
+  or zero new uploads)
+- **THEN** no Pusher event fires for the approval

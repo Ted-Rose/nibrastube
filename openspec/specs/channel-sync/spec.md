@@ -65,8 +65,9 @@ pins skipping tombstoned exclusions.
 
 `syncAllChannels` SHALL process ≤50 channels per run ordered
 never-synced-first (lastSyncAt nulls first via JS sort — Postgres
-`asc()` puts NULLs last), resuming incomplete backfills before
-polling. `pollChannel` SHALL fetch newest uploads (≤5 pages,
+`asc()` puts NULLs last); for each channel, an incomplete backfill
+SHALL resume in place of a poll. `pollChannel` SHALL fetch newest
+uploads (≤5 pages,
 ~250 videos) until it hits a videoId already whitelisted, insert
 the new batch with the same re-checks as backfill, and update
 `lastSyncAt` only while the channel remains enabled.

@@ -106,7 +106,9 @@ app/
                                 server components, KIDS_VIEWS table
     settings/                   Kid-facing profile settings — name +
                                 preset-emoji avatar picker
-                                (avatar-picker.tsx)
+                                (avatar-picker.tsx) + native-only
+                                "Check for updates" row
+                                (update-check-row.tsx)
   songs/                        Public song catalog — no sign-in
                                 required; session only adds the
                                 "Yours" tab, "Your imports" shelf,
@@ -193,7 +195,11 @@ components/
                                 trailing click swallowed
 lib/
   app-update.ts                 Hourly-throttled update.json poll →
-                                typed UpdateCheck union; never throws
+                                typed UpdateCheck union; never
+                                throws; {force} bypasses the
+                                throttle for manual checks;
+                                debug-* versionName builds skip
+                                auto checks
   auth.ts                       JWT encrypt/decrypt,
                                 login/loginKid/logout, getSession,
                                 isKidSession/parentSession helpers
@@ -527,9 +533,11 @@ deployed at a public HTTPS URL (set `CAPACITOR_SERVER_URL` locally /
 `APP_URL` repo variable in CI). `.github/workflows/android-release.yml`
 builds a debug APK on the `android` branch / dispatch, a signed
 release APK on `v*` tags (attached to that tag's release), and —
-on every push to `main` — a signed APK + `update.json` published on
-the rolling `continuous` prerelease (installed APKs poll the manifest
-and self-update via `AppUpdateBanner`; the `releases/latest` URL
+on every push to `main` — a signed APK + `update.json` gated by an
+emulator install test, then published on the rolling `continuous`
+prerelease as `nibrastube-<run>.apk` (versioned, never re-uploaded)
++ fixed `nibrastube.apk` (installed APKs poll the manifest and
+self-update via `AppUpdateBanner`; the `releases/latest` URL
 stays on `v*` milestones). Do not push `v*` tags or commits to
 `android` casually; each push spends CI and signed releases go
 straight to GitHub Releases. Capacitor plugins: `@capacitor/app`,

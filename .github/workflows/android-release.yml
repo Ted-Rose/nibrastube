@@ -4,10 +4,11 @@ name: Android APK
 # on non-main refs — the blind-development iteration artifact
 # (skipped on main runs, which only need the signed release).
 # Signed release APK: on `v*` tags, attached to that tag's GitHub
-# release as `nibrastube.apk` (fixed name keeps the download URL
-# stable: releases/latest/download/nibrastube.apk); and on every
-# `main` push, published on the rolling `continuous` prerelease
-# alongside update.json, which installed APKs poll for updates.
+# release as nibrastube-<ver>.apk plus the fixed nibrastube.apk
+# (releases/latest/download keeps working); and on every `main`
+# push, published on the rolling `continuous` prerelease — gated by
+# an emulator install test — alongside update.json, which installed
+# APKs poll for updates.
 on:
   workflow_dispatch:
   push:
@@ -35,6 +36,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history so `git describe` finds the latest v* tag
+          # for the continuous versionName.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
@@ -72,10 +77,15 @@ jobs:
           yes | "$SDKM" --licenses > /dev/null
           "$SDKM" "platforms;android-36" "build-tools;36.0.0"
 
+      # debug-r<N> versionName lets lib/app-update.ts tell dev builds
+      # apart and skip the automatic update nag on them.
       - name: Build debug APK
         if: github.ref != 'refs/heads/main'
         working-directory: android
-        run: ./gradlew assembleDebug -PversionCode=${{ github.run_number }}
+        run: >-
+          ./gradlew assembleDebug
+          -PversionCode=${{ github.run_number }}
+          -PversionName=debug-r${{ github.run_number }}
 
       - uses: actions/upload-artifact@v5
         if: github.ref != 'refs/heads/main'
@@ -90,15 +100,19 @@ jobs:
 
       # versionCode = github.run_number everywhere (monotonic — the
       # updater's newer-is-greater check depends on it). versionName
-      # is the tag name on v* builds, <pkg version>-r<run> on main.
+      # is the tag name on v* builds; on main it's <latest-v*-tag>+
+      # <run> so a continuous build never reads as a downgrade next
+      # to a tagged release.
       - name: Resolve release versionName
         if: >-
           startsWith(github.ref, 'refs/tags/v') ||
           github.ref == 'refs/heads/main'
         run: |
           if [ "$GITHUB_REF_NAME" = "main" ]; then
-            PKG=$(node -p "require('./package.json').version")
-            V="$PKG-r${{ github.run_number }}"
+            LATEST=$(git describe --tags --abbrev=0 --match 'v*' \
+              2>/dev/null \
+              || echo "v$(node -p "require('./package.json').version")")
+            V="$LATEST+${{ github.run_number }}"
           else
             V="${GITHUB_REF_NAME#v}"
           fi
@@ -147,26 +161,145 @@ jobs:
             | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
           test "$VC" = "${{ github.run_number }}"
 
-      - name: Write update.json
+      # The install-test/publish handoff travels via artifact files,
+      # not job outputs — plain output strings get secret-scanned
+      # and can be silently dropped downstream.
+      #
+      # update.json's apkUrl points at nibrastube-<run>.apk, a name
+      # that is uploaded once and never re-uploaded — the fixed
+      # nibrastube.apk gets replaced every publish, and phones that
+      # fetched it mid-swap got 404s/truncated files ("problem
+      # parsing the package").
+      - name: Stage publish payload
         if: github.ref == 'refs/heads/main'
         env:
+          APK_ASSET: nibrastube-${{ github.run_number }}.apk
           VERSION_CODE: ${{ github.run_number }}
-          VERSION_NAME: ${{ env.VERSION_NAME }}
-        run: node scripts/write-update-json.mjs
-
-      # `continuous` doesn't match the v* tag trigger, so moving the
-      # tag does not retrigger this workflow.
-      - name: Retag continuous
-        if: github.ref == 'refs/heads/main'
         run: |
-          git tag -f continuous
-          git push -f origin refs/tags/continuous
+          cp nibrastube.apk "$APK_ASSET"
+          {
+            echo "APK_ASSET=$APK_ASSET"
+            echo "VERSION_NAME=$VERSION_NAME"
+          } > publish.env
+          node scripts/write-update-json.mjs
+
+      - uses: actions/upload-artifact@v5
+        if: github.ref == 'refs/heads/main'
+        with:
+          name: nibrastube-release
+          path: |
+            nibrastube.apk
+            nibrastube-*.apk
+            update.json
+            publish.env
+          retention-days: 7
+
+      # Tag releases attach a versioned name (avoids Downloads
+      # filename collisions on phones) plus the fixed nibrastube.apk
+      # so releases/latest/download/nibrastube.apk keeps working.
+      - name: Stage tag-release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cp nibrastube.apk "nibrastube-${VERSION_NAME}.apk"
+
+      - name: Attach APK to GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            nibrastube-${{ env.VERSION_NAME }}.apk
+            nibrastube.apk
+
+  # Gates the `continuous` publish: the exact install paths a sideload
+  # update takes on a phone. Only `main` runs it — debug/branch/tag
+  # builds skip the emulator to keep CI fast.
+  install-test:
+    name: Emulator install test
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: nibrastube-release
+          path: dist
+
+      # The update leg needs a genuinely OLDER APK — resolve what the
+      # release currently advertises via update.json. Missing manifest
+      # or failed fetch → the leg is skipped, not failed.
+      - name: Download the advertised APK
+        run: |
+          BASE=https://github.com/${{ github.repository }}/releases
+          PREV_URL=$(curl -fsSL \
+            "$BASE/download/continuous/update.json" \
+            | jq -r '.apkUrl' 2>/dev/null || true)
+          if [ -n "$PREV_URL" ] \
+            && curl -fsSL -o prev.apk "$PREV_URL"; then
+            echo "HAVE_PREV=1" >> "$GITHUB_ENV"
+          else
+            echo "HAVE_PREV=0" >> "$GITHUB_ENV"
+            rm -f prev.apk
+          fi
+          # Negative control — the gate must be able to fail.
+          head -c 1048576 dist/nibrastube.apk > truncated.apk
+
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          disable-animations: true
+          script: |
+            set -e
+
+            install_ok() {
+              OUT=$(adb install "$@" 2>&1)
+              echo "$OUT"
+              echo "$OUT" | grep -q Success
+            }
+
+            echo "== fresh install =="
+            install_ok dist/nibrastube.apk
+            adb uninstall com.nibrastube.app
+
+            if [ "$HAVE_PREV" = "1" ]; then
+              echo "== over-the-top update =="
+              install_ok prev.apk
+              install_ok -r dist/nibrastube.apk
+            else
+              echo "== no advertised APK — update leg skipped =="
+            fi
+
+            echo "== truncated-APK negative control =="
+            if install_ok truncated.apk; then
+              echo "::error::truncated APK installed — gate broken"
+              exit 1
+            fi
+            echo "negative control passed"
+
+  # Runs only after the emulator gate passes. APK bytes upload before
+  # update.json — the manifest is the commit point, flipped last, so
+  # an installed app polling mid-publish never sees a manifest that
+  # points at a not-yet-uploaded asset.
+  publish:
+    name: Publish continuous prerelease
+    if: github.ref == 'refs/heads/main'
+    needs: install-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: nibrastube-release
+          path: dist
+
+      - name: Load publish env
+        run: grep -E '^(APK_ASSET|VERSION_NAME)=' dist/publish.env \
+          >> "$GITHUB_ENV"
 
       # prerelease + make_latest "false": releases/latest stays on the
-      # v* milestones while releases/download/continuous/... is the
-      # stable URL the in-app updater and install link use.
-      - name: Publish continuous prerelease
-        if: github.ref == 'refs/heads/main'
+      # v* milestones while releases/download/continuous/... stays the
+      # stable base URL the in-app updater and install link use.
+      - name: Upload APK assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: continuous
@@ -175,11 +308,57 @@ jobs:
           prerelease: true
           make_latest: "false"
           files: |
-            nibrastube.apk
-            update.json
+            dist/nibrastube.apk
+            dist/nibrastube-*.apk
 
-      - name: Attach APK to GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Upload update.json last
         uses: softprops/action-gh-release@v2
         with:
-          files: nibrastube.apk
+          tag_name: continuous
+          prerelease: true
+          make_latest: "false"
+          files: dist/update.json
+
+      # Old versioned assets would accumulate on the rolling release.
+      # Keep the newest two (a phone can hold the previous manifest
+      # for up to an hour and must still find its asset) and delete
+      # the rest — after the commit point, never before.
+      - name: Prune old versioned APK assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            "repos/$GITHUB_REPOSITORY/releases/tags/continuous" \
+            --paginate \
+            --jq '.assets[]
+              | select(.name != "nibrastube.apk"
+                  and (.name | startswith("nibrastube-"))
+                  and (.name | endswith(".apk")))
+              | (.id | tostring) + " " + .created_at' \
+            | sort -k2 -r | tail -n +3 | cut -d' ' -f1 \
+            | while read -r id; do
+                gh api -X DELETE \
+                  "repos/$GITHUB_REPOSITORY/releases/assets/$id"
+              done
+
+      # `git push` of a ref pointing at a commit that touches
+      # .github/workflows/ is refused — the GITHUB_TOKEN lacks the
+      # `workflows` scope — so the tag moves via the git-refs API.
+      # Runs LAST and non-fatally: the release and its assets exist
+      # regardless of where the git ref points (the old ordering ran
+      # the retag BEFORE publishing, so a retag failure stalled the
+      # whole release).
+      - name: Retag continuous
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          R="repos/${{ github.repository }}/git"
+          if gh api "$R/refs/tags/continuous" > /dev/null 2>&1; then
+            gh api -X PATCH "$R/refs/tags/continuous" \
+              -f sha="${{ github.sha }}" -F force=true
+          else
+            gh api -X POST "$R/refs" \
+              -f ref="refs/tags/continuous" \
+              -f sha="${{ github.sha }}"
+          fi

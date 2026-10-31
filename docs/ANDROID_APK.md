@@ -31,18 +31,23 @@ Until set, the config falls back to `https://nibrastube.example.com`
 ## Builds
 
 - Push to `android`, tag `v*`, or dispatch on a non-`main` ref →
-  debug APK, uploaded as workflow artifact `nibrastube-debug-apk`
-  (30d); skipped on `main` runs (push or dispatch), which publish
-  only the release below
-- Tag `v*` push → signed `nibrastube.apk` attached to that tag's
-  GitHub release
-- Push to `main` → signed `nibrastube.apk` + `update.json` on the
-  rolling `continuous` prerelease
+  debug APK (versionName `debug-r<run>`), uploaded as workflow
+  artifact `nibrastube-debug-apk` (30d); skipped on `main` runs
+  (push or dispatch), which publish only the release below
+- Tag `v*` push → signed `nibrastube-<ver>.apk` + a fixed-name
+  `nibrastube.apk` attached to that tag's GitHub release (the
+  versioned name avoids Downloads filename collisions; the fixed
+  name keeps `releases/latest/download/nibrastube.apk` working)
+- Push to `main` → signed `nibrastube.apk` + `nibrastube-<run>.apk`
+  + `update.json` on the rolling `continuous` prerelease, gated by
+  an emulator install test
 
-The stable sideload URL (used by the landing-page link shown on
-Android browsers) tracks the newest `main` build — host+repo
-`https://github.com/Ted-Rose/nibrastube`, path
-`/releases/download/continuous/nibrastube.apk`.
+The "Get the app" menu link resolves the newest versioned
+`nibrastube-<run>.apk` asset via `api.github.com` (the one GitHub
+host that sends ACAO — the release *download* endpoints send none,
+so a plain browser `fetch` can't read them). It falls back to the
+fixed `/releases/download/continuous/nibrastube.apk` URL while the
+API call is in flight or fails.
 
 `releases/latest/download/nibrastube.apk` also works but tracks only
 tagged `v*` milestones — the `continuous` release is a prerelease
@@ -52,7 +57,9 @@ with `make_latest: "false"`, so it never steals "latest".
 
 Every push to `main` (and a manual dispatch while on `main`) runs the
 full signed-release path with `versionCode = github.run_number`
-(monotonic) and `versionName = <pkg version>-r<run_number>`, then:
+(monotonic) and `versionName = <latest v* tag>+<run_number>` (e.g.
+`v0.1.0+22` — so continuous builds never read as downgrades next to
+tagged releases), then:
 
 1. `aapt dump badging` verifies the APK's real `versionCode` equals
    the run number — the update check keys off it.
@@ -61,16 +68,34 @@ full signed-release path with `versionCode = github.run_number`
    ```json
    {
      "versionCode": 123,
-     "versionName": "0.0.1-r123",
-     "apkUrl": "https://github.com/<repo>/releases/download/continuous/nibrastube.apk",
+     "versionName": "v0.1.0+123",
+     "apkUrl": "https://…/releases/download/continuous/nibrastube-123.apk",
      "releaseUrl": "https://github.com/<repo>/releases/tag/continuous",
      "publishedAt": "<iso>"
    }
    ```
 
-3. The `continuous` tag is force-moved to the built commit (it does
-   not match `v*`, so it can't retrigger the workflow) and
-   `action-gh-release` publishes both files as a prerelease.
+   `apkUrl` points at `nibrastube-<run>.apk`, a versioned asset that
+   is uploaded once and never re-uploaded. The fixed `nibrastube.apk`
+   gets deleted+re-uploaded every publish, and phones that fetched it
+   mid-publish got a 404 page or a truncated file — the "problem
+   parsing the package" sideload failure.
+3. An emulator job (`reactivecircus/android-emulator-runner`)
+   gates the publish: fresh `adb install`, `adb install -r` of the
+   new build over the APK `update.json` currently advertises, and a
+   truncated-APK negative control that must be rejected — proof the
+   gate can fail.
+4. The publish job uploads the APK assets first and `update.json`
+   last — the manifest is the commit point, so an app polling
+   mid-publish never sees a manifest pointing at a
+   not-yet-uploaded asset. It then prunes versioned assets older
+   than the newest two (a phone can hold the previous manifest for
+   up to an hour) and force-moves the `continuous` tag via the
+   git-refs API (`gh api -X PATCH …/git/refs/tags/continuous`) —
+   `git push` is refused whenever the built commit touches
+   `.github/workflows/` because GITHUB_TOKEN lacks the `workflows`
+   scope. The retag is last and `continue-on-error`: the release
+   exists regardless of where the git ref points.
 
 On-device, `lib/app-update.ts` polls that manifest once per launch
 (hourly `localStorage` throttle, stamped only once the check
@@ -83,6 +108,15 @@ positive integer and `apkUrl` must be `https:` on `github.com` or
 build (`App.getInfo().build`), `components/app-update-banner.tsx`
 shows a one-tap card; Update opens the APK URL in the system browser
 (`window.open(url, "_system")`) and Android installs over the top.
+Debug/dev APKs (versionName `debug-*` or the gradlew default `1.0`)
+skip the automatic check so a stale test build doesn't nag.
+
+The kid settings page (`/kids/<profileId>/settings`) has a
+native-only "Check for updates" row: `checkForAppUpdate({force:
+true})` bypasses the throttle and reports every outcome inline —
+the new version + Update button, "up to date", or "check failed" —
+use it to verify the update flow on-device and to re-read the live
+manifest when a sideload "didn't update".
 
 Over-the-top installs REQUIRE the same signing key — both release
 paths sign with the same keystore. Never uninstall the old APK first:

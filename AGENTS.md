@@ -104,6 +104,9 @@ app/
                                 Suspense
     _components/                Route-private view code: per-view
                                 server components, KIDS_VIEWS table
+    settings/                   Kid-facing profile settings — name +
+                                preset-emoji avatar picker
+                                (avatar-picker.tsx)
   songs/                        Public song catalog — no sign-in
                                 required; session only adds the
                                 "Yours" tab, "Your imports" shelf,
@@ -198,6 +201,9 @@ lib/
                                 `nt:feed:<profile>:<query>`): order +
                                 depth + scroll restore, row merge
                                 helpers, nt:watchFrom marker
+  kid-avatars.ts                KID_AVATARS preset-emoji allow-list —
+                                shared by the settings picker and
+                                updateKidAvatar validation
   profiles.ts                   assertCanManageProfile,
                                 getManageableProfiles
   kids-feed.ts                  Kids feed params/URL builder + row
@@ -397,7 +403,10 @@ docs/plans/                     Implementation plans with status
 - **Kids portal chrome:** the feed page has no footer — the parent
   gate is the lock icon in `KidsHeader` (`KidsFooterGate` with
   `variant="icon"`); the `/kids` picker keeps the labelled "footer"
-  variant. The PIN modal and its verifying spinner portal to
+  variant. The header avatar links to `/kids/<id>/settings` (gear
+  badge — kid self-service avatar picker; same link for kid
+  sessions, locked devices and parents), not the `/kids` picker.
+  The PIN modal and its verifying spinner portal to
   `document.body` — rendered inline inside the header, its
   backdrop-filter and collapse transform would clip the fixed
   overlay.

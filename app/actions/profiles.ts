@@ -3,10 +3,15 @@
 import { db } from "@/lib/db";
 import { profiles, users } from "@/lib/db/schema";
 import { getSession, requireParentUnlocked } from "@/lib/auth";
-import { assertCanManageProfile } from "@/lib/profiles";
+import {
+  assertCanEditKidData,
+  assertCanManageProfile,
+} from "@/lib/profiles";
+import { isKidAvatar } from "@/lib/kid-avatars";
 import bcrypt from "bcryptjs";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
 export interface ProfileFormState {
@@ -82,7 +87,12 @@ export async function deleteProfile(profileId: string) {
 
   await db
     .delete(profiles)
-    .where(and(eq(profiles.id, profileId), eq(profiles.parentId, session.user.id)));
+    .where(
+      and(
+        eq(profiles.id, profileId),
+        eq(profiles.parentId, session.user.id)
+      )
+    );
 
   revalidatePath("/parent/profiles");
 }
@@ -108,7 +118,10 @@ async function kidIdentifierTaken(
       columns: { id: true },
     }),
   ]);
-  return !!emailTaken || (!!usernameTaken && usernameTaken.id !== excludeProfileId);
+  return (
+    !!emailTaken ||
+    (!!usernameTaken && usernameTaken.id !== excludeProfileId)
+  );
 }
 
 // Shared kid-username rule: emails are valid usernames too (e.g. a
@@ -205,6 +218,66 @@ export async function setKidCredentials(
 
   revalidatePath("/parent/profiles");
   return {};
+}
+
+export interface AvatarFormState {
+  error?: string;
+  saved?: boolean;
+}
+
+const kidAvatarSchema = z.object({
+  profileId: z.string().uuid(),
+  avatar: z.string().min(1),
+});
+
+// Kid-facing avatar picker on /kids/<id>/settings. Kid-scope auth via
+// assertCanEditKidData (matching kid session, activeProfileId lock, or
+// managing parent) — never requireParentUnlocked, so a locked kid
+// device can use it. KID_AVATARS is the allow-list: values outside the
+// preset are rejected before any DB write, so stored avatars stay
+// render-safe short strings.
+export async function updateKidAvatar(
+  _prevState: AvatarFormState | null,
+  formData: FormData
+): Promise<AvatarFormState> {
+  const parsed = kidAvatarSchema.safeParse({
+    profileId: formData.get("profileId"),
+    avatar: formData.get("avatar"),
+  });
+  if (!parsed.success) {
+    return {
+      error:
+        parsed.error.issues[0]?.path[0] === "profileId"
+          ? "Profile not found."
+          : "Pick an avatar from the list.",
+    };
+  }
+  if (!isKidAvatar(parsed.data.avatar)) {
+    return { error: "Pick an avatar from the list." };
+  }
+  const { profileId, avatar } = parsed.data;
+
+  try {
+    await assertCanEditKidData(profileId);
+  } catch (error) {
+    unstable_rethrow(error);
+    return { error: "Not authorized." };
+  }
+
+  await db
+    .update(profiles)
+    .set({ avatar })
+    .where(eq(profiles.id, profileId));
+
+  // "layout" revalidates the whole /kids/<id> subtree — the feed
+  // header, this settings page, and watch pages all render the avatar.
+  // /kids, /parent/profiles, and the parent dashboard's Select Kid
+  // sidebar render it too.
+  revalidatePath(`/kids/${profileId}`, "layout");
+  revalidatePath("/kids");
+  revalidatePath("/parent/profiles");
+  revalidatePath("/parent/dashboard");
+  return { saved: true };
 }
 
 const swipeSchema = z.object({

@@ -23,8 +23,17 @@ export type UpdateCheck =
       versionName: string;
     }
   | { kind: "current" }
-  | { kind: "skipped" } // web platform, or throttled
+  // web platform, throttled, or a debug/dev build (auto checks only)
+  | { kind: "skipped" }
   | { kind: "error" };
+
+export type CheckOptions = {
+  // Manual checks (the settings-page button) bypass the throttle
+  // entirely — no read, no stamp — and report every outcome. The
+  // debug-build skip stays an automatic-checks-only rule so a manual
+  // check on a dev APK still runs.
+  force?: boolean;
+};
 
 // A compromised or malformed manifest must not smuggle javascript:/
 // intent: URLs into window.open — only https on GitHub hosts.
@@ -42,14 +51,19 @@ function isTrustedApkUrl(url: string): boolean {
 }
 
 // Never throws — callers render nothing on "skipped"/"error".
-export async function checkForAppUpdate(): Promise<UpdateCheck> {
+export async function checkForAppUpdate(
+  options?: CheckOptions
+): Promise<UpdateCheck> {
   if (!Capacitor.isNativePlatform()) return { kind: "skipped" };
 
-  try {
-    const last = Number(localStorage.getItem(THROTTLE_KEY) ?? 0);
-    if (Date.now() - last < THROTTLE_MS) return { kind: "skipped" };
-  } catch {
-    // localStorage unavailable — check anyway.
+  const force = options?.force === true;
+  if (!force) {
+    try {
+      const last = Number(localStorage.getItem(THROTTLE_KEY) ?? 0);
+      if (Date.now() - last < THROTTLE_MS) return { kind: "skipped" };
+    } catch {
+      // localStorage unavailable — check anyway.
+    }
   }
 
   let manifest: unknown;
@@ -82,9 +96,11 @@ export async function checkForAppUpdate(): Promise<UpdateCheck> {
   // App.getInfo() rejects on APKs built before @capacitor/app shipped
   // (v0.1.0-era installs) — those need one manual sideload.
   let installed: number;
+  let versionName: string;
   try {
     const info = await App.getInfo();
     installed = parseInt(info.build, 10);
+    versionName = info.version;
   } catch {
     return { kind: "error" };
   }
@@ -92,12 +108,26 @@ export async function checkForAppUpdate(): Promise<UpdateCheck> {
     return { kind: "error" };
   }
 
+  // Debug/dev APKs carry a debug-* versionName (CI debug artifacts)
+  // or the gradlew default "1.0" (local builds) — they skip the
+  // automatic nag so a stale test build doesn't pester about the
+  // release channel. Manual checks still run the full flow.
+  if (
+    !force &&
+    (versionName === "1.0" || versionName.startsWith("debug-"))
+  ) {
+    return { kind: "skipped" };
+  }
+
   // Every error path above returns before this point, so stamping
-  // here marks only a fully-validated check as consumed.
-  try {
-    localStorage.setItem(THROTTLE_KEY, String(Date.now()));
-  } catch {
-    // Non-fatal: next launch just checks again.
+  // here marks only a fully-validated check as consumed. Force
+  // checks never stamp — they leave the hourly cadence alone.
+  if (!force) {
+    try {
+      localStorage.setItem(THROTTLE_KEY, String(Date.now()));
+    } catch {
+      // Non-fatal: next launch just checks again.
+    }
   }
 
   if (m.versionCode > installed) {

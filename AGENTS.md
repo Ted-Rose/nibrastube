@@ -765,6 +765,10 @@ archive).
 - **Run `openspec` commands from the repo root.** The CLI is a
   global npm install under `/opt/homebrew/bin` — prepend it to PATH
   in non-interactive shells (see "Known gaps").
+- **Always run `openspec validate --all --strict` after
+  touching `openspec/`** — proposing, spec edits, sync,
+  archive. It must pass before committing; strict mode catches
+  >500-char requirement bodies and spec/delta drift.
 - Workflow: `openspec-propose` → implement via
   `openspec-apply-change` → `openspec-archive-change`. **Run the
   archive on the feature branch before merge** (sync the delta

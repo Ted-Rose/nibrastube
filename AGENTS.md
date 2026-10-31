@@ -758,7 +758,11 @@ archive).
   global npm install under `/opt/homebrew/bin` — prepend it to PATH
   in non-interactive shells (see "Known gaps").
 - Workflow: `openspec-propose` → implement via
-  `openspec-apply-change` → `openspec-archive-change`. The skills
+  `openspec-apply-change` → `openspec-archive-change`. **Run the
+  archive on the feature branch before merge** (sync the delta
+  specs + move the change dir to `changes/archive/` in the
+  implementing PR) so specs, code, and history land atomically —
+  not as a follow-up PR after merge. The skills
   live twice: `.agents/skills/openspec-*/` are the upstream-owned
   originals `openspec update` refreshes (keep verbatim);
   `.devin/skills/openspec-*/` are the Devin discovery copies with

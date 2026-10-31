@@ -4,6 +4,7 @@
 // forged value can never be stored. profiles.avatar still accepts any
 // parent-set string; this list only constrains the kid picker.
 export const KID_AVATARS = [
+  "👶",
   "🦊",
   "🐻",
   "🐼",

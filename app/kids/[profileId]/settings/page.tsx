@@ -55,7 +55,7 @@ export default async function KidSettingsPage({
           </p>
           <AvatarPicker
             profileId={profile.id}
-            currentAvatar={profile.avatar ?? "👶"}
+            currentAvatar={profile.avatar || "👶"}
           />
         </section>
       </main>

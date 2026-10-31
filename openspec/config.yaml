@@ -35,8 +35,8 @@ context: |
 rules:
   proposal:
     - State which existing capability specs the change touches
-    - Call out whitelist-safety impact: does the change affect what a
-      kid can see, or only parent surfaces?
+    - "Call out whitelist-safety impact: does the change affect what a
+      kid can see, or only parent surfaces?"
   tasks:
     - Include a typecheck+lint verification task
     - Note any user-run commands (e.g. npm run db:migrate) as explicit
@@ -47,8 +47,8 @@ rules:
 operations:
   apply:
     guidance:
-      - Keep specs in sync: when implementation diverges from a seeded
-        spec, update the delta specs before archiving
+      - "Keep specs in sync: when implementation diverges from a
+        seeded spec, update the delta specs before archiving"
   archive:
     guidance:
       - Summarize the archive outcome before finishing

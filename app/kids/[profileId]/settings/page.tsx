@@ -7,6 +7,7 @@ import { getSession } from "@/lib/auth";
 import { canViewProfile } from "@/lib/profiles";
 import { BackLink } from "@/components/back-link";
 import { AvatarPicker } from "./avatar-picker";
+import { UpdateCheckRow } from "./update-check-row";
 
 interface KidSettingsProps {
   params: Promise<{ profileId: string }>;
@@ -57,6 +58,7 @@ export default async function KidSettingsPage({
             profileId={profile.id}
             currentAvatar={profile.avatar || "👶"}
           />
+          <UpdateCheckRow />
         </section>
       </main>
     </div>

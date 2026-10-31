@@ -244,7 +244,15 @@ export async function updateKidAvatar(
     profileId: formData.get("profileId"),
     avatar: formData.get("avatar"),
   });
-  if (!parsed.success || !isKidAvatar(parsed.data.avatar)) {
+  if (!parsed.success) {
+    return {
+      error:
+        parsed.error.issues[0]?.path[0] === "profileId"
+          ? "Profile not found."
+          : "Pick an avatar from the list.",
+    };
+  }
+  if (!isKidAvatar(parsed.data.avatar)) {
     return { error: "Pick an avatar from the list." };
   }
   const { profileId, avatar } = parsed.data;
@@ -263,7 +271,12 @@ export async function updateKidAvatar(
 
   // "layout" revalidates the whole /kids/<id> subtree — the feed
   // header, this settings page, and watch pages all render the avatar.
+  // /kids, /parent/profiles, and the parent dashboard's Select Kid
+  // sidebar render it too.
   revalidatePath(`/kids/${profileId}`, "layout");
+  revalidatePath("/kids");
+  revalidatePath("/parent/profiles");
+  revalidatePath("/parent/dashboard");
   return { saved: true };
 }
 

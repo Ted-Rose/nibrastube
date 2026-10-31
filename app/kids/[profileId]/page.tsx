@@ -167,7 +167,7 @@ export default async function KidsPortalPage({
                     "text-2xl shadow-sm sm:h-14 sm:w-14 sm:text-3xl"
                   )}
                 >
-                  {profile.avatar}
+                  {profile.avatar || "👶"}
                 </div>
                 <div
                   className={cn(

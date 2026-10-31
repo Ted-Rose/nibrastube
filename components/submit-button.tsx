@@ -18,8 +18,10 @@ export function SubmitButton({
   ...props
 }: SubmitButtonProps) {
   const { pending } = useFormStatus();
+  // disabled comes after the spread so `pending` can never be
+  // overridden by a caller's disabled prop — they're OR-ed together.
   return (
-    <Button type="submit" disabled={pending} {...props}>
+    <Button type="submit" {...props} disabled={pending || props.disabled}>
       {pending ? (
         <>
           <SpinnerGap className="animate-spin" />

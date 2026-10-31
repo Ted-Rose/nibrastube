@@ -7,6 +7,7 @@ import {
   getPlaylists,
   getRecommendedVideos,
   kidsFeedQuery,
+  newFeedEpoch,
   type KidsFeedParams,
 } from "@/lib/kids-feed";
 import { emptyStateFor } from "@/lib/empty-state";
@@ -25,8 +26,14 @@ export async function ShortsView({
 }) {
   const { q: query } = feed;
 
+  // Feed epoch — the impression penalty is evaluated "as of" this
+  // server time on page 1 AND every loadMore page (see
+  // impressionPenalty in lib/kids-feed.ts), so OFFSET paging stays
+  // stable while the kid's own impressions land mid-scroll.
+  const epoch = newFeedEpoch();
   const rows = await getRecommendedVideos(profileId, {
     q: query,
+    asOf: new Date(epoch),
     limit: FOR_YOU_PAGE_SIZE,
     type: "shorts",
     minLen: feed.minLen,
@@ -67,6 +74,7 @@ export async function ShortsView({
             rows={rows}
             profileId={profileId}
             feedQuery={kidsFeedQuery(feed)}
+            epoch={epoch}
             // A short first page means the whitelist is already
             // exhausted — no paging hook needed.
             loadMore={

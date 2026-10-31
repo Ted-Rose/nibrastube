@@ -21,6 +21,7 @@ import {
   channels,
   playlistItems,
   playlists,
+  videoImpressions,
   videoReactions,
   videos,
   watchHistory,
@@ -211,6 +212,74 @@ const lenFilter = (
     maxLen ? lte(videos.durationSeconds, maxLen) : undefined
   );
 
+// "Shown but ignored" penalty (lib/feed-impressions.ts records a grid
+// card held ≥50% visible for ≥1s, once per kid-local day — tapped
+// cards record too; the watch-progress mask below zeroes them once
+// played). It grows with ln(1 + seen_days), caps at 12 (below the −20
+// channel-dislike, so "ignored" never outweighs explicit hate),
+// halves every 14 days without a fresh impression (~6 weeks ≈ full
+// forgiveness), and is masked entirely once the kid actually watches
+// the video — a tap wins over any amount of scroll-past. Lazily
+// evaluated against the joined aliases, so callers must leftJoin
+// watch_progress and video_impressions on (profile_id, video_id) — a
+// PK join, no fan-out; a missing row → coalesce → ln(1) = 0.
+//
+// Paging stability (`asOf`): For You / Shorts page with OFFSET while
+// the client flushes impressions every ~15s, so a penalty that bit
+// immediately would sink page-1 rows mid-scroll and pull rows 61+
+// above the next offset — loadMore would dupe/skip them. So the
+// penalty is evaluated "as of" the feed's epoch: the server time page
+// 1 was ranked at, carried to the client and back into every
+// loadMore. A row whose server-clock last_seen_at is after the epoch
+// had its seen_days bumped by exactly one during the session (the
+// upsert counts once per kid-local day), so subtracting 1 restores
+// the count it had at the epoch; rows last seen before the epoch are
+// untouched. Every page of one feed therefore ranks against the same
+// impression state, however long the session runs. asOf undefined
+// (non-paged lists, shelves, watch-page queue) = "now", no discount.
+// Accepted residual drift: the decay factor keys off last_seen_on, so
+// a row re-seen on a new day mid-session jumps from 0.5^(d/14) to 1
+// — a small bounded nudge (≤ ~12·(1 − 0.5^(d/14))).
+const impressionPenalty = (asOf?: Date) => {
+  const seenSinceEpoch = asOf
+    ? sql`case
+        when ${videoImpressions.lastSeenAt}
+          > ${asOf.toISOString()}::timestamptz then 1
+        else 0
+      end`
+    : sql`0`;
+  return sql<number>`
+  case
+    when ${watchProgress.positionSeconds} > 0
+      or coalesce(${watchProgress.completed}, false) then 0
+    else least(12,
+      4.0 * ln(1 + greatest(0,
+        coalesce(${videoImpressions.seenDays}, 0) - ${seenSinceEpoch})))
+      * power(0.5,
+          greatest(0,
+            current_date - ${videoImpressions.lastSeenOn}) / 14.0)
+  end`;
+};
+
+// Feed epoch bounds for `asOf` values that round-trip through the
+// client (loadMore). Anything non-finite, in the future or older than
+// a day falls back to now — 24h comfortably covers the 2h
+// feed-memory snapshot TTL.
+const MAX_EPOCH_AGE_MS = 24 * 60 * 60 * 1000;
+// Page 1's epoch (server ms). A helper, not an inline Date.now(), so
+// server components can stamp it without tripping react-hooks/purity
+// — a feed's epoch is intentionally per-render.
+export const newFeedEpoch = (): number => Date.now();
+export function clampFeedEpoch(epoch: unknown): Date {
+  const now = Date.now();
+  return typeof epoch === "number" &&
+    Number.isFinite(epoch) &&
+    epoch <= now &&
+    epoch >= now - MAX_EPOCH_AGE_MS
+    ? new Date(epoch)
+    : new Date(now);
+}
+
 // Only the columns the feed grid and the watch-page playlist actually
 // render. The full `videos` row carries description/tags/raw JSONB
 // (~9KB/row); fetching it for ~2k whitelisted videos made every feed
@@ -272,11 +341,17 @@ export async function getKidsVideos(
     when ${watchProgress.positionSeconds} > 0 then 1
     else 0 end`;
   const newestFirst = sql`${videos.publishedAt} desc nulls last`;
+  // Default sort only: inside each status tier, never-shown cards come
+  // first and repeatedly-ignored ones sink. The penalty is masked to 0
+  // for started/watched rows, so it reorders tier 0 plus the disliked-
+  // but-unwatched rows sharing tier 2 (no progress row → unmasked);
+  // harmless, they're already sunk. Explicit kid-chosen sorts
+  // (age/added) stay literal.
   const orderBy =
     sort === "status"
       ? dir === "asc"
-        ? [asc(statusRank), newestFirst]
-        : [desc(statusRank), newestFirst]
+        ? [asc(statusRank), asc(impressionPenalty()), newestFirst]
+        : [desc(statusRank), asc(impressionPenalty()), newestFirst]
       : sort === "added"
         ? // pinned_at = when the parent added it to the platform, not
           // the YouTube upload date. NOT NULL, so no nulls handling.
@@ -307,6 +382,13 @@ export async function getKidsVideos(
       and(
         eq(videoReactions.profileId, whitelistedVideos.profileId),
         eq(videoReactions.videoId, whitelistedVideos.videoId)
+      )
+    )
+    .leftJoin(
+      videoImpressions,
+      and(
+        eq(videoImpressions.profileId, whitelistedVideos.profileId),
+        eq(videoImpressions.videoId, whitelistedVideos.videoId)
       )
     )
     .where(
@@ -432,7 +514,10 @@ export async function getNewForYou(
         typeFilter(type),
         lenFilter(minLen, maxLen),
         gte(whitelistedVideos.pinnedAt, cutoff),
-        or(isNull(watchProgress.completed), eq(watchProgress.completed, false)),
+        or(
+          isNull(watchProgress.completed),
+          eq(watchProgress.completed, false)
+        ),
         or(
           isNull(videoReactions.reaction),
           ne(videoReactions.reaction, "dislike")
@@ -585,6 +670,14 @@ export const FOR_YOU_PAGE_SIZE = 60;
 //     + 4 if the video itself is 'liked'
 //     − 20 if the channel has a 'dislike'
 //   disliked videos are excluded entirely.
+//   impression_penalty (module-level `impressionPenalty`) = "shown
+//     but ignored": min(12, 4·ln(1 + eff_days))
+//     · 0.5^(days since last seen / 14), 0 once watched;
+//     eff_days = max(0, seen_days − (1 if last_seen_at > asOf)),
+//     where asOf = the feed's epoch (server time page 1 was ranked;
+//     clampFeedEpoch-validated when it comes back from loadMore), so
+//     the kid's own in-session impressions never reshuffle the open
+//     feed (offset paging would otherwise dupe/skip rows).
 // Depth blend — rn is the row's position under the plain
 // affinity+flat ranking; popularity = 0.5^((rn−1)/60) halves every
 // ~60 rows, so personalization cedes to discovery within the first
@@ -603,7 +696,12 @@ export const FOR_YOU_PAGE_SIZE = 60;
 // gradually, and the more a channel is watched the deeper its
 // videos persist before discovery takes over:
 //   order = weight(affinity_score)·popularity + flat_score
-//           + discovery·(1 − popularity)
+//           − impression_penalty + discovery·(1 − popularity)
+// The penalty is a separate additive term, deliberately NOT inside
+// rn: folding it into the depth dial would lower a sinking row's
+// popularity and grow its discovery slack, partially re-floating the
+// very card being penalized. As its own term, −N means −N at every
+// depth.
 // Postgres allows window functions in ORDER BY, so rn and the
 // within-channel position live in the same ORDER BY — one stable
 // ordering means offset paging can't duplicate or skip rows between
@@ -616,7 +714,8 @@ export const FOR_YOU_PAGE_SIZE = 60;
 // ?type= shorts/videos filter (the Shorts feed is this query with
 // type "shorts"). Pages of `limit`
 // rows at `offset` — the grid's sentinel fetches deeper pages via the
-// loadMoreForYou action. Ranking leans on current_date (recency tiers
+// loadMoreForYou action, passing back page 1's `asOf` epoch (omit it
+// for one-shot, unpaged callers). Ranking leans on current_date (recency tiers
 // + md5 shuffle), so never wrap this in unstable_cache/"use cache" —
 // that would freeze the daily re-rank.
 export async function getRecommendedVideos(
@@ -628,6 +727,7 @@ export async function getRecommendedVideos(
     type = "all",
     minLen,
     maxLen,
+    asOf,
   }: {
     q?: string;
     limit?: number;
@@ -635,6 +735,8 @@ export async function getRecommendedVideos(
     type?: KidsType;
     minLen?: number | null;
     maxLen?: number | null;
+    // Feed epoch for the impression penalty — see impressionPenalty.
+    asOf?: Date;
   } = {}
 ) {
   // Per-channel watch recency/frequency — the dominant signal.
@@ -760,6 +862,13 @@ export async function getRecommendedVideos(
       eq(channelAffinity.channelId, videos.channelId)
     )
     .leftJoin(channelFlags, eq(channelFlags.channelId, videos.channelId))
+    .leftJoin(
+      videoImpressions,
+      and(
+        eq(videoImpressions.profileId, whitelistedVideos.profileId),
+        eq(videoImpressions.videoId, whitelistedVideos.videoId)
+      )
+    )
     .where(
       and(
         eq(whitelistedVideos.profileId, profileId),
@@ -780,6 +889,7 @@ export async function getRecommendedVideos(
     .orderBy(
       sql`${affinityWeight} * ${popularity}
           + ${flatScore}
+          - ${impressionPenalty(asOf)}
           + ${discovery} * (1 - ${popularity}) desc`,
       sql`${videos.publishedAt} desc nulls last`,
       sql`md5(${videos.id} || current_date)`
@@ -817,8 +927,9 @@ export async function getKidsChannels(
   const grouped = await db
     .select({
       channelId: videos.channelId,
-      // Titles can drift across cached rows after a channel rename — group by
-      // id only and take any title, or one channel would yield several cards.
+      // Titles can drift across cached rows after a channel rename —
+      // group by id only and take any title, or one channel would
+      // yield several cards.
       channelTitle: sql<string>`max(${videos.channelTitle})`,
       videoCount: count(videos.id),
     })

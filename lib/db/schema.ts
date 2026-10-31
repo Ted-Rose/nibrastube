@@ -1,4 +1,16 @@
-import { pgTable, text, timestamp, uuid, boolean, integer, bigint, jsonb, primaryKey, uniqueIndex, date } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  boolean,
+  integer,
+  bigint,
+  jsonb,
+  primaryKey,
+  uniqueIndex,
+  date,
+} from "drizzle-orm/pg-core";
 
 // Parent Users
 export const users = pgTable("users", {
@@ -7,7 +19,8 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   name: text("name"),
   parentPin: text("parent_pin").default("0000").notNull(),
-  songCommenterHandle: text("song_commenter_handle"), // YT handle whose timestamped comments get imported as songs
+  // YT handle whose timestamped comments get imported as songs
+  songCommenterHandle: text("song_commenter_handle"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -24,7 +37,8 @@ export const profiles = pgTable("profiles", {
   // Both nullable — a profile without them simply has no kid login.
   username: text("username").unique(),
   passwordHash: text("password_hash"),
-  swipeEnabled: boolean("swipe_enabled").default(false).notNull(), // kid may swipe to switch videos on the watch page
+  // kid may swipe to switch videos on the watch page
+  swipeEnabled: boolean("swipe_enabled").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -35,17 +49,22 @@ export const videos = pgTable("videos", {
   thumbnail: text("thumbnail").notNull(),
   channelTitle: text("channel_title").notNull(),
   channelId: text("channel_id"), // YouTube Channel ID (UC...)
-  publishedAt: timestamp("published_at", { withTimezone: true }), // YouTube publish time; null for older cached rows
-  durationSeconds: integer("duration_seconds"), // total length; null if API didn't return it
+  // YouTube publish time; null for older cached rows
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  // total length; null if API didn't return it
+  durationSeconds: integer("duration_seconds"),
   // Rich metadata from videos.list (snippet/contentDetails/status/statistics)
   description: text("description"),
   tags: jsonb("tags"), // string[] of uploader tags
-  categoryId: integer("category_id"), // YouTube video category (27 = Education)
+  // YouTube video category (27 = Education)
+  categoryId: integer("category_id"),
   defaultLanguage: text("default_language"),
   defaultAudioLanguage: text("default_audio_language"),
-  liveBroadcastContent: text("live_broadcast_content"), // none | live | upcoming
+  // none | live | upcoming
+  liveBroadcastContent: text("live_broadcast_content"),
   madeForKids: boolean("made_for_kids"), // YouTube's own kids flag
-  ageRestricted: boolean("age_restricted"), // contentRating.ytRating === ytAgeRestricted
+  // contentRating.ytRating === ytAgeRestricted
+  ageRestricted: boolean("age_restricted"),
   embeddable: boolean("embeddable"), // can play in the IFrame embed
   privacyStatus: text("privacy_status"), // public | unlisted | private
   hasCaptions: boolean("has_captions"),
@@ -55,7 +74,8 @@ export const videos = pgTable("videos", {
   // YouTube's API exposes no Shorts flag — derived at fetch time:
   // duration <= 60s or "#shorts" in title/description/tags.
   isShort: boolean("is_short").default(false).notNull(),
-  fetchedAt: timestamp("fetched_at", { withTimezone: true }), // last API refresh; null = stale row from before these columns
+  // last API refresh; null = stale row from before these columns
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }),
   raw: jsonb("raw"), // full videos.list item for fields we didn't promote
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -71,7 +91,8 @@ export const channels = pgTable("channels", {
   publishedAt: timestamp("published_at", { withTimezone: true }),
   subscriberCount: bigint("subscriber_count", { mode: "number" }),
   videoCount: bigint("video_count", { mode: "number" }),
-  fetchedAt: timestamp("fetched_at", { withTimezone: true }), // last API refresh
+  // last API refresh
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }),
   raw: jsonb("raw"), // full channels.list item
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -93,7 +114,8 @@ export const songs = pgTable(
     // null = "play to the end of the video" — the comment gave a bare
     // start and there is no next song to bound it.
     endSeconds: integer("end_seconds"),
-    sourceCommentId: text("source_comment_id"), // YT comment id — re-import identity
+    // YT comment id — re-import identity
+    sourceCommentId: text("source_comment_id"),
     sourceHandle: text("source_handle"), // normalized handle, no "@"
     importedBy: uuid("imported_by").references(() => users.id, {
       onDelete: "set null",
@@ -118,7 +140,8 @@ export const whitelistedVideos = pgTable(
     videoId: text("video_id")
       .references(() => videos.id, { onDelete: "cascade" })
       .notNull(),
-    viaChannelId: text("via_channel_id"), // null = manually pinned; set = auto-added via approved channel
+    // null = manually pinned; set = auto-added via approved channel
+    viaChannelId: text("via_channel_id"),
     pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -138,7 +161,8 @@ export const whitelistedChannels = pgTable(
       .notNull(),
     approvedAt: timestamp("approved_at").defaultNow().notNull(),
     backfillComplete: boolean("backfill_complete").default(false).notNull(),
-    backfillPageToken: text("backfill_page_token"), // resume cursor for large channels
+    // resume cursor for large channels
+    backfillPageToken: text("backfill_page_token"),
     lastSyncAt: timestamp("last_sync_at"),
   },
   (table) => ({
@@ -176,7 +200,8 @@ export const watchProgress = pgTable(
       .references(() => videos.id, { onDelete: "cascade" })
       .notNull(),
     positionSeconds: integer("position_seconds").default(0).notNull(),
-    completed: boolean("completed").default(false).notNull(), // >= ~95% or ENDED
+    // >= ~95% or ENDED
+    completed: boolean("completed").default(false).notNull(),
     watchedAt: timestamp("watched_at", { withTimezone: true })
       .defaultNow()
       .notNull(), // last flush time
@@ -224,6 +249,37 @@ export const videoReactions = pgTable(
     reactedAt: timestamp("reacted_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.profileId, table.videoId] }),
+  })
+);
+
+// "Shown but ignored" feed impressions per (profile, video): a grid
+// card ≥50% visible for ≥1s (tapped or not — the ranking masks the
+// penalty once the video has watch progress). A weak negative ranking
+// signal (lib/kids-feed.ts `impressionPenalty`); written silently by
+// /api/impressions, pruned there after ~45 days without a sighting.
+export const videoImpressions = pgTable(
+  "video_impressions",
+  {
+    profileId: uuid("profile_id")
+      .references(() => profiles.id, { onDelete: "cascade" })
+      .notNull(),
+    videoId: text("video_id")
+      .references(() => videos.id, { onDelete: "cascade" })
+      .notNull(),
+    // Days this card was shown ≥1s (masked once watched) — the upsert
+    // increments it at most once per kid-local day.
+    seenDays: integer("seen_days").default(1).notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull(), // server-now of the last accepted write
+    // Kid-local YYYY-MM-DD of that write — the per-day dedup key
+    // (same client-controlled trust posture as watch_history.day).
+    lastSeenOn: date("last_seen_on", { mode: "string" }).notNull(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.profileId, table.videoId] }),
@@ -313,7 +369,8 @@ export const invites = pgTable("invites", {
   profileId: uuid("profile_id")
     .references(() => profiles.id, { onDelete: "cascade" })
     .notNull(),
-  status: text("status").default("pending").notNull(), // pending, accepted, rejected
+  // pending, accepted, rejected
+  status: text("status").default("pending").notNull(),
   token: text("token").notNull().unique(),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

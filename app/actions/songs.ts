@@ -40,7 +40,10 @@ export interface SongImportVideo {
 
 export type SongImportState =
   | {
-      video: SongImportVideo;
+      // Serialized to the client, so `description` is deliberately
+      // dropped — the card renders only id/title/thumbnail and the
+      // uploader's full text is several KB.
+      video: Omit<SongImportVideo, "description">;
       // The handle whose comment produced the tracklist; null on a
       // description-chapters import.
       handle: string | null;
@@ -323,7 +326,16 @@ export async function previewSongImport(
 
   const result = await runSongImport(videoId, handle, false);
   if ("error" in result) return result;
-  return { ...result, handle: result.sourceHandle };
+  // Shape explicitly — spreading PipelineResult would also ship
+  // sourceHandle and the multi-KB video.description to the client.
+  const { id, title, thumbnail, durationSeconds } = result.video;
+  return {
+    video: { id, title, thumbnail, durationSeconds },
+    handle: result.sourceHandle,
+    songs: result.songs,
+    sourceCommentId: result.sourceCommentId,
+    source: result.source,
+  };
 }
 
 // Confirm: reruns the same pipeline deterministically against the

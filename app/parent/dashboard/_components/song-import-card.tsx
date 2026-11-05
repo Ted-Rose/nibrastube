@@ -45,7 +45,8 @@ export async function SongImportCard({
           <MusicNotes size={20} className="mr-2 text-primary" /> Import Songs
         </CardTitle>
         <CardDescription>
-          Turn a commenter&apos;s timestamped tracklist into songs.
+          Turn a commenter&apos;s timestamped tracklist — or the
+          video&apos;s own description chapters — into songs.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -58,8 +59,11 @@ export async function SongImportCard({
             <p className="pb-2 text-xs text-muted-foreground">
               {importedSongs.length} song
               {importedSongs.length === 1 ? "" : "s"}
-              {importedSongs[0].sourceHandle &&
-                ` from @${importedSongs[0].sourceHandle}`}
+              {importedSongs[0].sourceHandle
+                ? ` from @${importedSongs[0].sourceHandle}`
+                : importedSongs[0].sourceCommentId === "description"
+                  ? " from description chapters"
+                  : ""}
             </p>
             <ul className="max-h-48 space-y-1 overflow-y-auto text-xs">
               {importedSongs.map((song) => (
@@ -72,6 +76,11 @@ export async function SongImportCard({
                       : "end"}
                   </span>{" "}
                   {song.title}
+                  {song.mightNotBeSong && (
+                    <span className="italic text-muted-foreground">
+                      {" — maybe not a song"}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

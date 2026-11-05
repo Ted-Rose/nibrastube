@@ -133,11 +133,3 @@ stale-row delete.
 - **WHEN** the preview came from description chapters
 - **THEN** flagged rows are marked in the preview list and the
   confirmation still requires the explicit Import action
-
-## REMOVED Requirements
-
-None.
-
-## MODIFIED Requirements
-
-None — this capability is new; prior behavior was unspec'd.

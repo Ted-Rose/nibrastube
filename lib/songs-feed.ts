@@ -115,6 +115,11 @@ export interface FeedSong {
   // the public route's client components, so the raw importedBy user
   // id never ships; deleteSong re-verifies ownership regardless.
   canDelete: boolean;
+  // Post-sermon description-chapter guess: hidden from every shared
+  // surface (catalog grid/search, compilation tiles + counts, the
+  // "Newly added" shelf, the ?song= queue); only owner-scoped views
+  // select it — the card badges it "maybe not a song".
+  mightNotBeSong: boolean;
 }
 
 // The subset of FeedSong the ?song= player needs for its queue —
@@ -152,6 +157,7 @@ const feedSongCols = {
   thumbnail: videos.thumbnail,
   channelTitle: videos.channelTitle,
   importedBy: songs.importedBy,
+  mightNotBeSong: songs.mightNotBeSong,
 };
 
 // Row → client-facing FeedSong: resolves canDelete against the session
@@ -169,6 +175,7 @@ function toFeedSong(row: SongRow, viewerId?: string): FeedSong {
     thumbnail: row.thumbnail,
     channelTitle: row.channelTitle,
     canDelete: viewerId != null && row.importedBy === viewerId,
+    mightNotBeSong: row.mightNotBeSong,
   };
 }
 
@@ -185,7 +192,9 @@ const visibleVideo = or(
 // Song length = end - start; an open end borrows the compilation's
 // duration. Null when the video's duration is also unknown — those
 // rows sort last on the length sort.
-const songLength = sql<number | null>`coalesce(${songs.endSeconds}, ${videos.durationSeconds}) - ${songs.startSeconds}`;
+const songLength = sql<number | null>`
+  coalesce(${songs.endSeconds}, ${videos.durationSeconds})
+  - ${songs.startSeconds}`;
 
 // Songs from a 5h stream can run 50+ and the registry only grows;
 // the grid windows client-side, so this cap is about payload, not
@@ -231,6 +240,11 @@ export const getSongs = cache(async function getSongs(
         visibleVideo,
         suitableVideo,
         feed.video ? eq(songs.videoId, feed.video) : undefined,
+        // Shared surfaces hide post-sermon guesses; "mine" is the
+        // importer's review surface and keeps them, badged.
+        feed.view !== "mine"
+          ? eq(songs.mightNotBeSong, false)
+          : undefined,
         // "mine" fails closed: a missing session id filters to zero
         // rows instead of dropping the predicate and listing
         // everyone's songs. The nil uuid keeps it a valid literal so
@@ -264,6 +278,8 @@ export interface FeedCompilation {
 }
 
 // One tile per compilation video that has at least one imported song.
+// Flagged might-not-be-song rows count toward nothing here — the tile
+// and its count reflect only real songs.
 export async function getCompilations({
   q,
 }: { q?: string } = {}): Promise<FeedCompilation[]> {
@@ -281,6 +297,7 @@ export async function getCompilations({
       and(
         visibleVideo,
         suitableVideo,
+        eq(songs.mightNotBeSong, false),
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )
@@ -315,13 +332,19 @@ export async function getNewSongs(
     .select(feedSongCols)
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
-    .where(and(visibleVideo, suitableVideo))
+    .where(
+      and(visibleVideo, suitableVideo, eq(songs.mightNotBeSong, false))
+    )
     .orderBy(desc(songs.createdAt))
     .limit(limit);
   return rows.map((row) => toFeedSong(row, viewerId));
 }
 
 // One parent's imports, newest first — the "Your imports" home shelf.
+// Deliberately unfiltered on mightNotBeSong: this is the importer's
+// review surface, so flagged rows stay visible (badged) and
+// deletable. getSong likewise resolves flagged rows so the owner can
+// preview them via ?song=<id>.
 export async function getUserSongs(
   userId: string,
   limit = 12

@@ -10,13 +10,16 @@ import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatDuration } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 // The commenter handle is a stored preference (users.song_commenter_
 // handle), saved once via its own action — it isn't re-asked per import
 // and never leaves the client as a form field. "Find songs" then
-// dry-runs the pipeline against the stored handle and shows the parsed
-// tracklist; only "Import N songs" writes. Comment formats drift, so a
-// parent eyeballs the parse before anything lands.
+// dry-runs the pipeline — the stored handle's tracklist when there is
+// one, the video's description chapters when the comment path finds
+// nothing — and shows the parsed tracklist; only "Import N songs"
+// writes. Comment formats drift, so a parent eyeballs the parse before
+// anything lands.
 export function SongImportForm({
   storedHandle,
   returnTo,
@@ -85,27 +88,27 @@ export function SongImportForm({
         </form>
       )}
 
-      {handle && (
-        <form action={previewAction} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="song-url">Compilation video link</Label>
-            <Input
-              id="song-url"
-              name="url"
-              placeholder="https://youtube.com/watch?v=…"
-              required
-            />
-          </div>
-          <SubmitButton
-            variant="outline"
-            size="touch"
-            pendingLabel="Scanning comments…"
-            className="w-full"
-          >
-            Find songs
-          </SubmitButton>
-        </form>
-      )}
+      {/* Without a saved handle the preview still runs — straight on
+          the description-chapters fallback. */}
+      <form action={previewAction} className="space-y-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="song-url">Compilation video link</Label>
+          <Input
+            id="song-url"
+            name="url"
+            placeholder="https://youtube.com/watch?v=…"
+            required
+          />
+        </div>
+        <SubmitButton
+          variant="outline"
+          size="touch"
+          pendingLabel="Scanning for songs…"
+          className="w-full"
+        >
+          Find songs
+        </SubmitButton>
+      </form>
 
       {error && (
         <p className="text-sm font-medium text-destructive">{error}</p>
@@ -121,7 +124,12 @@ export function SongImportForm({
                 className="w-20 shrink-0 rounded-md object-cover"
               />
             )}
-            <p className="min-w-0 text-xs font-medium leading-snug line-clamp-3">
+            <p
+              className={cn(
+                "min-w-0 text-xs font-medium",
+                "leading-snug line-clamp-3"
+              )}
+            >
               {ready.video.title}
             </p>
           </div>
@@ -136,11 +144,18 @@ export function SongImportForm({
                     : "end"}
                 </span>{" "}
                 {song.title}
+                {song.mightNotBeSong && (
+                  <span className="italic text-muted-foreground">
+                    {" — maybe not a song"}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
           <p className="text-[11px] text-muted-foreground">
-            Tracklist by @{ready.handle}
+            {ready.source === "description"
+              ? "Chapters from description"
+              : `Tracklist by @${ready.handle}`}
           </p>
           <form action={importAction}>
             <input type="hidden" name="videoId" value={ready.video.id} />

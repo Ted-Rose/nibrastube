@@ -87,21 +87,23 @@ non-fatal final step.
 
 - **WHEN** an installed app polls `update.json` during a publish
 - **THEN** the manifest it receives references an asset that is
-  already fully uploaded (or the previous manifest's still-pruned-
-  last asset)
+  already fully uploaded (or the previous manifest's
+  still-retained asset)
 
 #### Scenario: Retag failure cannot stall the release
 
 - **WHEN** moving the `continuous` tag fails (e.g. the pushed
   commit touched workflow files)
 - **THEN** the release assets and `update.json` are already
-  published; the failed retag only marks the run yellow
+  published; the failed retag only leaves a failed-step
+  annotation on an otherwise-green run
 
 ### Requirement: Continuous versionName tracks milestones
 
 The `versionName` of a `continuous` build SHALL be
-`<latest v* tag>+<run_number>` so it never reads as a downgrade
-beside a tagged release; `versionCode` SHALL remain the monotonic
+`<latest v* tag>+<run_number>` (or the package.json version when
+no `v*` tag exists yet) so it never reads as a downgrade beside
+a tagged release; `versionCode` SHALL remain the monotonic
 workflow run number.
 
 #### Scenario: Continuous build after a v1.x tag

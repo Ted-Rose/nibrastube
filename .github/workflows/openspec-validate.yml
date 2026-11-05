@@ -12,16 +12,23 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v6
         with:
           node-version: 22
 
-      - run: npm i -g @fission-ai/openspec@1.14.3
+      - run: >-
+          npm install -g --ignore-scripts --no-audit --no-fund
+          @fission-ai/openspec@1.14.3
 
       - run: openspec validate --all --strict

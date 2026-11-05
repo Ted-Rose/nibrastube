@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { getSession } from "@/lib/auth";
 import { canViewProfile } from "@/lib/profiles";
 import { BackLink } from "@/components/back-link";
+import { AppInstallMenu } from "@/components/app-install-menu";
 import { AvatarPicker } from "./avatar-picker";
 import { UpdateCheckRow } from "./update-check-row";
 
@@ -58,6 +59,17 @@ export default async function KidSettingsPage({
             profileId={profile.id}
             currentAvatar={profile.avatar || "👶"}
           />
+          <div className="mt-8 border-t-2 border-slate-100 pt-6">
+            <p
+              className={
+                "mb-3 text-sm font-black uppercase " +
+                "tracking-wide text-slate-400"
+              }
+            >
+              Get the app
+            </p>
+            <AppInstallMenu />
+          </div>
           <UpdateCheckRow />
         </section>
       </main>

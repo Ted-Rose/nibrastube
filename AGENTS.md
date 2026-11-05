@@ -755,9 +755,11 @@ extra fields silently break discovery.
 
 `openspec/` at the repo root is the spec-driven planning layer (npm
 `@fission-ai/openspec`). `openspec/specs/` holds capability specs —
-the source of truth for how the system behaves NOW — seeded with
-`auth-session`, `whitelist-content`, `action-api-contract` and
-`channel-sync`; grow them as real changes touch new areas.
+the source of truth for how the system behaves NOW —
+`action-api-contract`, `app-update`, `auth-session`,
+`channel-sync`, `kid-profile-settings` and `whitelist-content`
+(run `openspec spec list` for the current set); grow them as real
+changes touch new areas.
 `openspec/changes/` holds proposed changes (`proposal.md`,
 `design.md`, `tasks.md` + delta specs that merge into `specs/` on
 archive).
@@ -770,12 +772,14 @@ archive).
   archive. It must pass before committing; strict mode catches
   >500-char requirement bodies and spec/delta drift.
 - Workflow: `openspec-propose` → implement via
-  `openspec-apply-change` → `openspec-archive-change`. **Run the
-  archive on the feature branch before merge** (sync the delta
-  specs + move the change dir to `changes/archive/` in the
-  implementing PR) so specs, code, and history land atomically —
-  not as a follow-up PR after merge. The skills
-  live twice: `.agents/skills/openspec-*/` are the upstream-owned
+  `openspec-apply-change` → `openspec-archive-change`. **Archive
+  in the implementing PR when feasible** (sync the delta specs +
+  move the change dir to `changes/archive/`) so specs, code, and
+  history land atomically; otherwise archive immediately after
+  merge in a follow-up PR — never leave a merged change
+  unarchived, since unsynced deltas leave `specs/` stale. The
+  skills live twice: `.agents/skills/openspec-*/` are the
+  upstream-owned
   originals `openspec update` refreshes (keep verbatim);
   `.devin/skills/openspec-*/` are the Devin discovery copies with
   frontmatter stripped to `name:`/`description:`. After

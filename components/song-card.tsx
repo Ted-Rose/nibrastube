@@ -101,7 +101,12 @@ export function SongCard({
               {song.title}
             </h3>
             <div className="mt-2 flex items-center gap-2">
-              <p className="min-w-0 flex-1 truncate font-medium text-slate-500">
+              <p
+                className={cn(
+                  "min-w-0 flex-1 truncate font-medium",
+                  "text-slate-500"
+                )}
+              >
                 {song.videoTitle}
               </p>
               {/* Only reachable on owner surfaces ("Yours", "Your

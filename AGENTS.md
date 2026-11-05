@@ -758,7 +758,7 @@ extra fields silently break discovery.
 the source of truth for how the system behaves NOW —
 `action-api-contract`, `app-update`, `auth-session`,
 `channel-sync`, `kid-profile-settings` and `whitelist-content`
-(run `openspec spec list` for the current set); grow them as real
+(run `openspec list --specs` for the current set); grow them as real
 changes touch new areas.
 `openspec/changes/` holds proposed changes (`proposal.md`,
 `design.md`, `tasks.md` + delta specs that merge into `specs/` on

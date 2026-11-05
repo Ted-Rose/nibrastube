@@ -785,6 +785,12 @@ archive).
   frontmatter stripped to `name:`/`description:`. After
   `openspec update`, re-copy each SKILL.md into `.devin/skills/`
   and re-strip the frontmatter.
+- **Update specs in the same PR as the code.** Any change that
+  alters behavior covered by `openspec/specs/` MUST update the
+  affected spec in the same PR — whether it came through
+  `openspec changes` (that update is the archive) or not (edit
+  the spec directly). A spec that no longer matches shipped
+  behavior is a bug, not documentation drift.
 - Specs describe CURRENT behavior — write them by verifying claims
   against the code, not stale docs (code wins).
 - **`docs/plans/` is frozen for new feature plans** — new feature

@@ -84,7 +84,9 @@ the first-chapter drop applies.
 
 `songs.might_not_be_song` SHALL be a non-null boolean defaulting
 to false, written at insert and refreshed on conflict-update.
-Comment-source imports SHALL always write false.
+Parser output only defaults it — the parent MAY override it per
+row (see the toggle requirement). Comment-source imports
+default to false.
 
 #### Scenario: Re-import refreshes flags
 
@@ -117,6 +119,43 @@ still resolve flagged rows so the owner can preview them.
   shelf
 - **THEN** their flagged rows appear, marked "maybe not a
   song", and the owner-only delete affordance still works
+
+### Requirement: The flag is parent-editable per row
+
+Every song row in the import card SHALL offer a
+song/not-a-song toggle. In the preview, toggle choices SHALL
+ship with the import and override the parser's flag per start
+offset — on every row, regardless of source; the re-parse SHALL
+still own titles and timestamps. In the imported list, toggling
+SHALL update `might_not_be_song` immediately via an owner-gated
+action (`importedBy === session.user.id`, same guard shape as
+deleteSong); rows owned by another parent SHALL show a static
+marker instead of the toggle.
+
+#### Scenario: Parent unflags a post-sermon song
+
+- **WHEN** the preview flags `Lai skan Alleluja` and the parent
+  toggles it to "song" before importing
+- **THEN** the row is written with `might_not_be_song = false`
+  and appears on shared catalog surfaces
+
+#### Scenario: Parent flags a comment-imported row
+
+- **WHEN** a comment-source preview is shown and the parent
+  toggles a row to "not a song"
+- **THEN** the import writes that row flagged despite
+  `parseTracklist` leaving the flag unset
+
+#### Scenario: Post-import retag
+
+- **WHEN** the importer toggles a row in the imported list
+- **THEN** `might_not_be_song` updates in place and shared
+  surfaces reflect it on next load
+
+#### Scenario: Non-owner sees no toggle
+
+- **WHEN** an imported row belongs to another parent
+- **THEN** the list shows the flag marker without a toggle
 
 ### Requirement: Preview before write, per source
 

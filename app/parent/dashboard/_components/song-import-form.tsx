@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { SongFlagToggle } from "./song-flag-toggle";
 
 // The commenter handle is a stored preference (users.song_commenter_
 // handle), saved once via its own action — it isn't re-asked per import
@@ -36,7 +37,19 @@ export function SongImportForm({
   const [editingHandle, setEditingHandle] = useState<string | null>(null);
   const showEditor = !handle || editingHandle === handle;
 
+  // Per-row song/not-a-song overrides, keyed to the previewed video so
+  // a new preview can't inherit another video's toggles. Effective
+  // flag = override ?? the parser's flag. Serialized into the import
+  // form as `flags`; importSongs applies them on the re-parse.
+  const [flagEdits, setFlagEdits] = useState<{
+    videoId: string;
+    map: Record<number, boolean>;
+  } | null>(null);
+
   const ready = preview && "songs" in preview ? preview : null;
+  const flagMap = ready && flagEdits?.videoId === ready.video.id
+    ? flagEdits.map
+    : {};
   const saveError = saved && "error" in saved ? saved.error : null;
   const error =
     (preview && "error" in preview && preview.error) ||
@@ -134,23 +147,31 @@ export function SongImportForm({
             </p>
           </div>
           <ul className="max-h-48 space-y-1 overflow-y-auto text-xs">
-            {ready.songs.map((song) => (
-              <li key={song.startSeconds}>
-                <span className="tabular-nums text-muted-foreground">
-                  {formatDuration(song.startSeconds)}
-                  {" – "}
-                  {song.endSeconds !== null
-                    ? formatDuration(song.endSeconds)
-                    : "end"}
-                </span>{" "}
-                {song.title}
-                {song.mightNotBeSong && (
-                  <span className="italic text-muted-foreground">
-                    {" — maybe not a song"}
-                  </span>
-                )}
-              </li>
-            ))}
+            {ready.songs.map((song) => {
+              const flagged =
+                flagMap[song.startSeconds] ?? song.mightNotBeSong ?? false;
+              return (
+                <li key={song.startSeconds} className="flex items-center">
+                  <span className="tabular-nums text-muted-foreground">
+                    {formatDuration(song.startSeconds)}
+                    {" – "}
+                    {song.endSeconds !== null
+                      ? formatDuration(song.endSeconds)
+                      : "end"}
+                  </span>{" "}
+                  <span className="min-w-0 truncate">{song.title}</span>
+                  <SongFlagToggle
+                    flagged={flagged}
+                    onToggle={(next) =>
+                      setFlagEdits({
+                        videoId: ready.video.id,
+                        map: { ...flagMap, [song.startSeconds]: next },
+                      })
+                    }
+                  />
+                </li>
+              );
+            })}
           </ul>
           <p className="text-[11px] text-muted-foreground">
             {ready.source === "description"
@@ -160,6 +181,11 @@ export function SongImportForm({
           <form action={importAction}>
             <input type="hidden" name="videoId" value={ready.video.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
+            <input
+              type="hidden"
+              name="flags"
+              value={JSON.stringify(flagMap)}
+            />
             <SubmitButton
               size="touch"
               pendingLabel="Importing…"

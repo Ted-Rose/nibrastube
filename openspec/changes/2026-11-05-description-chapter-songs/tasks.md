@@ -54,23 +54,38 @@
 - [x] 5.2 `song-import-card.tsx`: imported list marks flagged
       rows; card description mentions chapters
 
-## 6. Verification
+## 6. Parent-editable flag toggles
 
-- [x] 6.1 `scripts/test-song-parser.ts`: checks for chapter
+- [x] 6.1 `app/actions/songs.ts`: `importSongs` accepts a JSON
+      `flags` map (startSeconds → mightNotBeSong) overriding the
+      parser's flags per row; new owner-gated `setSongFlag`
+      action (same guard shape as `deleteSong`)
+- [x] 6.2 New `song-flag-toggle.tsx`: presentational
+      `SongFlagToggle` pill + `SongFlagToggleAction` writing
+      through the action
+- [x] 6.3 `song-import-form.tsx`: per-row toggle on every
+      preview row; overrides keyed to the previewed video,
+      serialized as `flags` into the import form
+- [x] 6.4 `song-import-card.tsx`: per-row toggle on imported
+      rows the viewer owns; others keep the static marker
+
+## 7. Verification
+
+- [x] 7.1 `scripts/test-song-parser.ts`: checks for chapter
       gating (no leading 0:00 → reject), first-chapter drop,
       sermon cut flagging, no-marker case, and that comment
       behavior is unchanged
-- [x] 6.2 `npm run typecheck` + `npm run lint` clean
-- [x] 6.3 `awk 'length > 79'` on every touched file — no
+- [x] 7.2 `npm run typecheck` + `npm run lint` clean
+- [x] 7.3 `awk 'length > 79'` on every touched file — no
       violations
-- [x] 6.4 Re-run the live check against `qCrIiXtv14g`: 16 songs
+- [x] 7.4 Re-run the live check against `qCrIiXtv14g`: 16 songs
       (17 chapters − intro), flagged set = `Sprediķis:…` +
       everything after it
-- [ ] 6.5 `/songs` spot-check — BLOCKED on `npm run db:migrate`
-      (user hand-off; the column must exist in the DB first):
-      flagged rows absent from catalog, compilations count, and
-      "Newly added"; present + badged on "Yours"/"Your imports";
-      `?song=<flagged-id>` still plays
+- [ ] 7.5 `/songs` spot-check (migration applied; manual UI
+      pass): flagged rows absent from catalog, compilations
+      count, and "Newly added"; present + badged on
+      "Yours"/"Your imports"; `?song=<flagged-id>` still plays;
+      toggles flip rows in preview AND post-import
 
 ## Workflow follow-up
 

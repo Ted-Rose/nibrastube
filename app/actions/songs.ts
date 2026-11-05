@@ -63,11 +63,40 @@ const previewSchema = z.object({
 const importSchema = z.object({
   videoId: z.string(),
   returnTo: z.string().optional(),
+  // JSON map of startSeconds -> mightNotBeSong from the preview's
+  // per-row toggles; absent = keep the parser's flags.
+  flags: z.string().optional(),
 });
 
 const deleteSchema = z.object({
   songId: z.uuid(),
 });
+
+const flagSchema = z.object({
+  songId: z.uuid(),
+  mightNotBeSong: z.boolean(),
+});
+
+// The preview form ships the parent's toggle choices as JSON. Junk
+// just falls back to the parser's flags — a malformed blob can't
+// change what gets imported, only how it's marked.
+function parseFlagOverrides(
+  raw: string | undefined
+): Record<number, boolean> {
+  if (!raw) return {};
+  try {
+    const out: Record<number, boolean> = {};
+    for (const [k, v] of Object.entries(JSON.parse(raw))) {
+      const start = Number(k);
+      if (Number.isInteger(start) && typeof v === "boolean") {
+        out[start] = v;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 
 // The commenter handle is a stored preference — it never round-trips
@@ -356,6 +385,7 @@ export async function importSongs(
   const parsed = importSchema.safeParse({
     videoId: formData.get("videoId"),
     returnTo: formData.get("returnTo") ?? undefined,
+    flags: formData.get("flags") ?? undefined,
   });
   if (!parsed.success) return { error: "Missing import details." };
 
@@ -367,6 +397,10 @@ export async function importSongs(
 
   const result = await runSongImport(videoId, handle, true);
   if ("error" in result) return result;
+
+  // The re-parse is authoritative for the song set; the parent's
+  // per-row toggles only decide mightNotBeSong per start offset.
+  const flagOverrides = parseFlagOverrides(parsed.data.flags);
 
   const newStarts = result.songs.map((s) => s.startSeconds);
   await db
@@ -389,9 +423,11 @@ export async function importSongs(
         endSeconds: s.endSeconds,
         sourceCommentId: result.sourceCommentId,
         sourceHandle: result.sourceHandle,
-        // Comment imports never carry the flag (parseTracklist leaves
-        // it unset); chapter imports flag the sermon cut onward.
-        mightNotBeSong: s.mightNotBeSong ?? false,
+        // The parent's preview toggle wins; otherwise the parser's
+        // flag (chapter imports mark the sermon cut onward, comment
+        // imports default to false).
+        mightNotBeSong:
+          flagOverrides[s.startSeconds] ?? s.mightNotBeSong ?? false,
         importedBy: user.id,
       }))
     )
@@ -444,4 +480,34 @@ export async function deleteSong(songId: string) {
   await db.delete(songs).where(eq(songs.id, song.id));
   revalidatePath("/songs");
   return { deleted: true };
+}
+
+// Owner-only flag toggle — same gate shape as deleteSong: a row the
+// session user didn't import can't be re-marked. Used by the import
+// card's post-import toggles (and any future owner surface).
+export async function setSongFlag(
+  songId: string,
+  mightNotBeSong: boolean
+): Promise<{ updated: true } | { error: string }> {
+  const user = parentSession(await getSession());
+  if (!user) return { error: "Not signed in." };
+  await requireParentUnlocked();
+
+  const parsed = flagSchema.safeParse({ songId, mightNotBeSong });
+  if (!parsed.success) return { error: "Missing song details." };
+
+  const song = await db.query.songs.findFirst({
+    where: eq(songs.id, parsed.data.songId),
+  });
+  if (!song || song.importedBy !== user.id) {
+    return { error: "Couldn't update that song." };
+  }
+
+  await db
+    .update(songs)
+    .set({ mightNotBeSong: parsed.data.mightNotBeSong })
+    .where(eq(songs.id, song.id));
+  revalidatePath("/songs");
+  revalidatePath("/parent/dashboard");
+  return { updated: true };
 }

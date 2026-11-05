@@ -51,6 +51,12 @@ Tavs Vārds" both post-date the sermon on the reference video).
 - The preview/imported lists show the source ("Chapters from
   description" vs "Tracklist by @handle") and mark flagged rows
   so the parent sees which entries are suspect before writing.
+- Every song row gets a song/not-a-song toggle the parent can
+  flip: in the preview the choices serialize into the import
+  (overriding the parser's flags per start offset), and in the
+  imported list a new owner-gated `setSongFlag` action re-marks
+  existing rows — this is also the "unflag" path for wrongly
+  flagged real songs.
 - No schema migration complexity: one nullable-free boolean with
   a default; `npm run db:generate` produces the migration,
   `npm run db:migrate` is a user hand-off.

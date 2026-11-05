@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { songs, users } from "@/lib/db/schema";
 import { formatDuration } from "@/lib/format";
 import { SongImportForm } from "./song-import-form";
+import { SongFlagToggleAction } from "./song-flag-toggle";
 import {
   Card,
   CardContent,
@@ -67,7 +68,7 @@ export async function SongImportCard({
             </p>
             <ul className="max-h-48 space-y-1 overflow-y-auto text-xs">
               {importedSongs.map((song) => (
-                <li key={song.id}>
+                <li key={song.id} className="flex items-center">
                   <span className="tabular-nums text-muted-foreground">
                     {formatDuration(song.startSeconds)}
                     {" – "}
@@ -75,11 +76,20 @@ export async function SongImportCard({
                       ? formatDuration(song.endSeconds)
                       : "end"}
                   </span>{" "}
-                  {song.title}
-                  {song.mightNotBeSong && (
-                    <span className="italic text-muted-foreground">
-                      {" — maybe not a song"}
-                    </span>
+                  <span className="min-w-0 truncate">{song.title}</span>
+                  {/* Owner-gated like deleteSong: another parent's
+                      rows keep the static marker instead. */}
+                  {song.importedBy === userId ? (
+                    <SongFlagToggleAction
+                      songId={song.id}
+                      flagged={song.mightNotBeSong}
+                    />
+                  ) : (
+                    song.mightNotBeSong && (
+                      <span className="italic text-muted-foreground">
+                        {" — maybe not a song"}
+                      </span>
+                    )
                   )}
                 </li>
               ))}

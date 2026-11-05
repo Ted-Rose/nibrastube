@@ -35,9 +35,6 @@ yet (`SongImportVideo` lacks the field).
 
 **Non-Goals:**
 
-- Unflagging UI — a flagged row that turns out to be a real
-  song can't be promoted back into the shared catalog yet; a
-  "mark as song" action on the owner views is a follow-up.
 - A configurable sermon marker — hardcoded prefix list for now;
   a `users.songSermonMarker`-style preference is over-engineering
   until a second language/channel needs it.
@@ -107,6 +104,18 @@ yet (`SongImportVideo` lacks the field).
   steers it into a list or queue. Alternative (filter `getSong`
   too, fail closed) — rejected: makes flagged rows unplayable
   for the one person who can judge them.
+- **The flag is parent-editable, not parser-final.** Preview
+  rows carry a song/not-a-song pill toggle whose choices ship as
+  a JSON `startSeconds -> mightNotBeSong` map; `importSongs`
+  still re-runs the pipeline (the parse stays authoritative for
+  titles/timestamps) and applies toggles per start offset, so a
+  parent can unflag a post-sermon song OR flag a comment-row —
+  the toggle is offered on every row, not just chapter rows.
+  Post-import, the same toggle on the imported list calls a new
+  `setSongFlag` action gated exactly like `deleteSong`
+  (`importedBy === session.user.id`). The preview's local
+  override map is keyed to the previewed video id so a second
+  preview can't inherit stale toggles.
 
 ## Data Flow
 

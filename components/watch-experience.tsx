@@ -119,7 +119,7 @@ export function WatchExperience({
   const swipeNavRef = useRef<{
     next: () => void;
     prev: () => void;
-    skip: () => void;
+    skip: (code?: number) => void;
   } | null>(null);
   // Whether this watch page was entered from a feed link — consumed on
   // mount (see the effect below), read by the Back button.
@@ -235,12 +235,12 @@ export function WatchExperience({
           swipeNavRef.current?.next();
         }
       },
-      onError: () => {
+      onError: (event) => {
         // Embedding disabled / region-locked / deleted — skip to
         // the next pick instead of stalling on YouTube's error
         // screen. advancingRef stays latched across the skip
         // chain until a playable video's PLAYING releases it.
-        swipeNavRef.current?.skip();
+        swipeNavRef.current?.skip(event.data);
       },
     }),
     [flush, prefetchExits]
@@ -450,10 +450,31 @@ export function WatchExperience({
     // releases advancingRef. Mark it skipped (statusAt ranks it with
     // watched), free the guard and move on — but stop instead of
     // spinning once every queue entry has failed.
-    const skipAndAdvance = () => {
+    const skipAndAdvance = (code?: number) => {
       const cur = stablePlaylist[indexRef.current];
       if (!cur) return;
       skippedRef.current.add(cur.id);
+      // A permanent failure (100 removed/private, 101
+      // embed-disabled, 150 age-gate) is a platform verdict — flag
+      // the video so suitableVideo hides it on every surface. Only
+      // the player's onError carries a code: the watchdog's stall
+      // skip calls this bare, since a stall is usually the
+      // network's fault. Flag the id the embed actually loaded —
+      // a rogue "More videos" suggestion that errored would
+      // otherwise mark an approved video dead (the server 403s it
+      // harmlessly, since it was never whitelisted).
+      if (code === 100 || code === 101 || code === 150) {
+        const p = playerRef.current;
+        fetch("/api/video-errors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileId,
+            videoId: (p ? loadedVideoId(p) : undefined) ?? cur.id,
+            code,
+          }),
+        }).catch(() => {});
+      }
       advancingRef.current = false;
       if (skippedRef.current.size >= stablePlaylist.length) return;
       advance();

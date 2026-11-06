@@ -125,12 +125,10 @@ still resolve flagged rows so the owner can preview them.
 Every song row in the import card SHALL offer a
 song/not-a-song toggle. In the preview, toggle choices SHALL
 ship with the import and override the parser's flag per start
-offset — on every row, regardless of source; the re-parse SHALL
-still own titles and timestamps. In the imported list, toggling
-SHALL update `might_not_be_song` immediately via an owner-gated
-action (`importedBy === session.user.id`, same guard shape as
-deleteSong); rows owned by another parent SHALL show a static
-marker instead of the toggle.
+offset; the re-parse SHALL still own titles and timestamps. In
+the imported list, toggling SHALL update `might_not_be_song`
+immediately via an owner-gated action (same guard shape as
+deleteSong); non-owner rows SHALL show a static marker.
 
 #### Scenario: Parent unflags a post-sermon song
 

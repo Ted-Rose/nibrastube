@@ -660,7 +660,8 @@ export const FOR_YOU_PAGE_SIZE = 60;
 // interest. Only videos the kid hasn't finished rank at all —
 // completed watch_progress rows are filtered out in WHERE, so every
 // recommendation is not-entirely-watched (in-progress counts).
-// Scoring (see docs/kids-recommendations-plan.md):
+// Scoring (the canonical write-up lives in
+// docs/recommendation-algorithm.md — keep them in sync):
 //   channel_affinity = Σ per watch_history row on that channel:
 //     3 if watched_on ≥ today−7, 2 if ≥ today−30, else 1
 //   affinity_score = affinity (0 when the channel was never watched)

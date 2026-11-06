@@ -52,9 +52,9 @@ Single repo, but still think before branching:
   cookie, missing guard, proxy redirect) usually belong in
   `proxy.ts`, `lib/auth.ts`, or a server action — read AGENTS.md's
   "Business rules & invariants" first.
-- `docs/plans/*-plan.md` may describe a planned feature that already
-  covers the issue — check status headers so you don't duplicate a
-  planned WP.
+- The frozen legacy `docs/plans/*-plan.md` files may describe a
+  planned feature that already covers the issue — check status
+  headers so you don't duplicate a planned WP.
 
 ## 3. Branch from updated `main` in a worktree
 

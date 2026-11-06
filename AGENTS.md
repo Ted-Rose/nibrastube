@@ -9,8 +9,9 @@ docs:
   and the dev server on port 3100.
 - `prd.md` is the product spec — unchecked boxes are roadmap, not
   bugs.
-- `docs/plans/*-plan.md` each carry a status header — check it before
-  treating a plan as pending work.
+- `docs/plans/*-plan.md` are frozen legacy docs — each carries a
+  status header; check it before treating a plan as pending work.
+  Nothing new is added there (see "OpenSpec" / rule 11).
 
 ## What this is
 
@@ -270,9 +271,9 @@ openspec/                       Spec-driven planning: specs/ = current
                                 (see "OpenSpec")
 .agents/skills/                 OpenSpec-generated workflow skills —
                                 upstream-owned, keep verbatim
-docs/plans/                     Implementation plans with status
-                                headers — frozen for new work (see
-                                "OpenSpec"), deleted once fully
+docs/plans/                     Frozen legacy implementation plans —
+                                historical only, nothing new is added
+                                (see "OpenSpec"); deleted once fully
                                 implemented (see Conventions)
 .devin/skills/                  Agent skills (see "Agent config
                                 layout")
@@ -722,10 +723,10 @@ Workflow rules (workspace-wide conventions — follow them all):
 3. **Commit on feature branches only, never `main`.** Stage only
    files changed this session, by path — never `git add -A`,
    `git add .` or `git commit -a`; run `git status` first; leave the
-   user's dirty files alone; never commit plan/scratch markdown
-   (plan files live in `docs/plans/` — see rule 11 — but only commit
-   them for planning work, or briefly inside the implementing PR per
-   rule 11's commit-then-delete flow).
+   user's dirty files alone; never commit plan/scratch markdown —
+   `docs/plans/` is frozen (rule 11), so the only plan file that
+   may be committed is a legacy one briefly inside its implementing
+   PR per rule 11's commit-then-delete flow.
 4. **Dangerous commands — never run these:**
    - `npm run db:migrate` against `DATABASE_URL` (the pooled
      endpoint) — PgBouncer transaction pooling breaks migrate's
@@ -766,9 +767,12 @@ Workflow rules (workspace-wide conventions — follow them all):
     contract doc for future sessions) after functionality changes,
     and delete any `docs/plans/*-plan.md` the change fully implements
     (see rule 11).
-11. **Plans live in `docs/plans/`** — *frozen for new feature work:
-    new plans go through `openspec changes` (see "OpenSpec").*
-    Existing `<feature>-plan.md` files keep their status header:
+11. **`docs/plans/` is frozen — legacy files only.** Never create
+    new plan/design/investigation markdown, there or anywhere else —
+    all new planning goes through `openspec changes` (see
+    "OpenSpec"): `openspec-propose` for changes, `openspec-explore`
+    or a change's `design.md`/`tasks.md` for investigations. The
+    surviving `<feature>-plan.md` files keep their status header:
     `implemented` / `partial` / `in progress` / `not implemented` /
     `reverted`. **A fully implemented plan is deleted, not archived**
     — a done plan only garbages the directory. In the implementing
@@ -795,8 +799,9 @@ Workflow rules (workspace-wide conventions — follow them all):
   `CLAUDE.md` just `@`-imports it.
 - `.devin/skills/fix-good-first-issue/` — pick up a "good first
   issue", fix it, open a draft PR, watch checks.
-- `.devin/skills/implement-plan/` — execute a `docs/plans/*-plan.md`
-  file with implementer → reviewer → fixer subagents.
+- `.devin/skills/implement-plan/` — execute a legacy
+  `docs/plans/*-plan.md` file with implementer → reviewer → fixer
+  subagents (no new plan files — see "OpenSpec").
 - `.devin/skills/vercel-react-best-practices/` — vendored React/Next
   performance rules (SKILL.md index + per-rule files).
 - `.devin/skills/openspec-*/` — OpenSpec workflow skills: copies of
@@ -851,9 +856,13 @@ archive).
   behavior is a bug, not documentation drift.
 - Specs describe CURRENT behavior — write them by verifying claims
   against the code, not stale docs (code wins).
-- **`docs/plans/` is frozen for new feature plans** — new feature
-  work goes through `openspec changes`. Existing `docs/plans/*`
-  files stay as history; rule 11 still governs their lifecycle.
+- **`docs/plans/` is fully frozen** — nothing new is added there.
+  New feature work goes through `openspec changes`
+  (`openspec-propose`); investigations and design explorations use
+  `openspec-explore` or live inside a change's
+  `design.md`/`tasks.md` — never a new `*-plan.md` anywhere in the
+  repo. Existing `docs/plans/*` files stay as history; rule 11
+  still governs their lifecycle.
 
 ## Known gaps & sharp edges (do NOT "fix" without asking)
 

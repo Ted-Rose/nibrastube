@@ -66,6 +66,14 @@ export const videos = pgTable("videos", {
   // contentRating.ytRating === ytAgeRestricted
   ageRestricted: boolean("age_restricted"),
   embeddable: boolean("embeddable"), // can play in the IFrame embed
+  // Player-observed permanent failure (IFrame onError 100/101/150):
+  // runtime-verified unplayable, hidden via suitableVideo. Unlike
+  // ageRestricted/embeddable these are NOT API-sourced — videos:refresh
+  // never touches them, so a block sticks until an admin heals it.
+  playbackBlocked: boolean("playback_blocked").default(false).notNull(),
+  // age-gated | embed-disabled | unavailable
+  blockedReason: text("blocked_reason"),
+  blockedAt: timestamp("blocked_at", { withTimezone: true }),
   privacyStatus: text("privacy_status"), // public | unlisted | private
   hasCaptions: boolean("has_captions"),
   definition: text("definition"), // hd | sd

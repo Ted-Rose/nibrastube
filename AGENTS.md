@@ -104,6 +104,11 @@ app/
                                 Suspense
     _components/                Route-private view code: per-view
                                 server components, KIDS_VIEWS table
+    settings/                   Kid-facing profile settings — name +
+                                preset-emoji avatar picker
+                                (avatar-picker.tsx) + native-only
+                                "Check for updates" row
+                                (update-check-row.tsx)
   songs/                        Public song catalog — no sign-in
                                 required; session only adds the
                                 "Yours" tab, "Your imports" shelf,
@@ -121,6 +126,8 @@ app/
   api/sync-channels/            Daily channel sync trigger (GET+POST)
   api/watch-progress/           POST upsert for resume position
   api/video-reactions/          POST like/dislike per profile+video
+  api/video-errors/             POST IFrame onError 100/101/150 →
+                                videos.playback_blocked flag
   api/impressions/              POST batched "shown but ignored"
                                 feed impressions (silent writes)
   global-error.tsx              Root-layout crash boundary — reports
@@ -192,7 +199,11 @@ components/
                                 trailing click swallowed
 lib/
   app-update.ts                 Hourly-throttled update.json poll →
-                                typed UpdateCheck union; never throws
+                                typed UpdateCheck union; never
+                                throws; {force} bypasses the
+                                throttle for manual checks;
+                                debug-* versionName builds skip
+                                auto checks
   auth.ts                       JWT encrypt/decrypt,
                                 login/loginKid/logout, getSession,
                                 isKidSession/parentSession helpers
@@ -203,6 +214,9 @@ lib/
                                 `nt:feed:<profile>:<query>`): order +
                                 depth + scroll restore, row merge
                                 helpers, nt:watchFrom marker
+  kid-avatars.ts                KID_AVATARS preset-emoji allow-list —
+                                shared by the settings picker and
+                                updateKidAvatar validation
   profiles.ts                   assertCanManageProfile,
                                 getManageableProfiles
   kids-feed.ts                  Kids feed params/URL builder + row
@@ -249,8 +263,14 @@ instrumentation-client.ts       Sentry browser init (DSN-gated,
 capacitor-www/                  Placeholder webDir for `cap sync`
                                 (SSR app has no static export; APK
                                 loads remote URL)
+openspec/                       Spec-driven planning: specs/ = current
+                                behavior, changes/ = proposed changes
+                                (see "OpenSpec")
+.agents/skills/                 OpenSpec-generated workflow skills —
+                                upstream-owned, keep verbatim
 docs/plans/                     Implementation plans with status
-                                headers — deleted once fully
+                                headers — frozen for new work (see
+                                "OpenSpec"), deleted once fully
                                 implemented (see Conventions)
 .devin/skills/                  Agent skills (see "Agent config
                                 layout")
@@ -310,13 +330,25 @@ docs/plans/                     Implementation plans with status
     pinned it. Enforced at query time via the shared
     `suitableVideo` WHERE fragment (`lib/video-suitability.ts`,
     `age_restricted IS DISTINCT FROM true` — NULL flags count as
-    suitable) on every display/write surface: all
+    suitable — `AND playback_blocked = false`) on every
+    display/write surface: all
     `lib/kids-feed.ts` queries (which also cover the watch page),
     `lib/songs-feed.ts`, `searchYouTube` hydration, and the
     `/api/watch-progress` + `/api/video-reactions` whitelist
     checks. There is no ingest drop — a pin on a restricted video
     is an inert row, labeled "Blocked" in the dashboard's
     Approved Videos list so it isn't silently invisible.
+    `playback_blocked` is the runtime-observed sibling: the
+    players POST a permanent IFrame onError code (100/101/150) to
+    `/api/video-errors`, which sets the flag + `blocked_reason` /
+    `blocked_at` on the global `videos` row. Unlike
+    `age_restricted`/`embeddable` it is NOT API-sourced —
+    `videos:refresh` never clears it, and a rogue "More videos"
+    suggestion's id is refused by the whitelist check (403) or a
+    missing-row 404. Players POST the embed's actually-loaded id
+    (`loadedVideoId(playerRef.current)`) — required on the
+    dashboard preview, which has no snapback guard: an erroring
+    rogue suggestion must not flag the previewed video.
   - `made_for_kids=true` (the only under-13 signal) is filtered
     **on unvetted surfaces only** — YouTube search hydration and
     the public `/songs` catalog/imports. Parent-approved content
@@ -426,7 +458,10 @@ docs/plans/                     Implementation plans with status
 - **Kids portal chrome:** the feed page has no footer — the parent
   gate is the lock icon in `KidsHeader` (`KidsFooterGate` with
   `variant="icon"`); the `/kids` picker keeps the labelled "footer"
-  variant. The PIN modal and its verifying spinner portal to
+  variant. The header avatar links to `/kids/<id>/settings` (gear
+  badge — kid self-service avatar picker; same link for kid
+  sessions, locked devices and parents), not the `/kids` picker.
+  The PIN modal and its verifying spinner portal to
   `document.body` — rendered inline inside the header, its
   backdrop-filter and collapse transform would clip the fixed
   overlay.
@@ -547,9 +582,11 @@ deployed at a public HTTPS URL (set `CAPACITOR_SERVER_URL` locally /
 `APP_URL` repo variable in CI). `.github/workflows/android-release.yml`
 builds a debug APK on the `android` branch / dispatch, a signed
 release APK on `v*` tags (attached to that tag's release), and —
-on every push to `main` — a signed APK + `update.json` published on
-the rolling `continuous` prerelease (installed APKs poll the manifest
-and self-update via `AppUpdateBanner`; the `releases/latest` URL
+on every push to `main` — a signed APK + `update.json` gated by an
+emulator install test, then published on the rolling `continuous`
+prerelease as `nibrastube-<run>.apk` (versioned, never re-uploaded)
++ fixed `nibrastube.apk` (installed APKs poll the manifest and
+self-update via `AppUpdateBanner`; the `releases/latest` URL
 stays on `v*` milestones). Do not push `v*` tags or commits to
 `android` casually; each push spends CI and signed releases go
 straight to GitHub Releases. Capacitor plugins: `@capacitor/app`,
@@ -664,9 +701,10 @@ Workflow rules (workspace-wide conventions — follow them all):
    Verify: `awk 'length > 79 {print FILENAME":"NR}' <file>`. Fix
    violations you introduce plus long lines in files already being
    modified. Exempt: Prettier's `printWidth: 80` may emit 80-char
-   lines in TS/TSX (formatter output — don't hand-tune it), and the
-   vendored upstream docs under
-   `.devin/skills/vercel-react-best-practices/` stay verbatim.
+   lines in TS/TSX (formatter output — don't hand-tune it), and
+   vendored upstream skill files under `.agents/skills/` and
+   `.devin/skills/` (`openspec-*`, `vercel-react-best-practices/`)
+   stay verbatim.
    Historical `docs/plans/*` files carry pre-existing long lines
    (tables/code blocks) — don't re-wrap them unless rewriting the
    section anyway.
@@ -719,8 +757,9 @@ Workflow rules (workspace-wide conventions — follow them all):
     contract doc for future sessions) after functionality changes,
     and delete any `docs/plans/*-plan.md` the change fully implements
     (see rule 11).
-11. **Plans live in `docs/plans/`** as `<feature>-plan.md`
-    (multi-file plans get a subdirectory), each with a status header:
+11. **Plans live in `docs/plans/`** — *frozen for new feature work:
+    new plans go through `openspec changes` (see "OpenSpec").*
+    Existing `<feature>-plan.md` files keep their status header:
     `implemented` / `partial` / `in progress` / `not implemented` /
     `reverted`. **A fully implemented plan is deleted, not archived**
     — a done plan only garbages the directory. In the implementing
@@ -751,12 +790,61 @@ Workflow rules (workspace-wide conventions — follow them all):
   file with implementer → reviewer → fixer subagents.
 - `.devin/skills/vercel-react-best-practices/` — vendored React/Next
   performance rules (SKILL.md index + per-rule files).
+- `.devin/skills/openspec-*/` — OpenSpec workflow skills: copies of
+  `.agents/skills/openspec-*/` with frontmatter stripped to
+  `name:`/`description:` (see "OpenSpec").
 - `.devin/workflows/create-pr.md` — PR body via `--body-file`.
 - `.devin/config.local.json` — permission allowlist, user-local and
   untracked (gitignored).
 
 Skill frontmatter must be plain `name:` + `description:` only —
 extra fields silently break discovery.
+
+## OpenSpec
+
+`openspec/` at the repo root is the spec-driven planning layer (npm
+`@fission-ai/openspec`). `openspec/specs/` holds capability specs —
+the source of truth for how the system behaves NOW —
+`action-api-contract`, `app-update`, `auth-session`,
+`channel-sync`, `kid-profile-settings` and `whitelist-content`
+(run `openspec list --specs` for the current set); grow them as real
+changes touch new areas.
+`openspec/changes/` holds proposed changes (`proposal.md`,
+`design.md`, `tasks.md` + delta specs that merge into `specs/` on
+archive).
+
+- **Run `openspec` commands from the repo root.** The CLI is a
+  global npm install under `/opt/homebrew/bin` — prepend it to PATH
+  in non-interactive shells (see "Known gaps").
+- **Always run `openspec validate --all --strict` after
+  touching `openspec/`** — proposing, spec edits, sync,
+  archive. It must pass before committing; strict mode catches
+  >500-char requirement bodies and spec/delta drift.
+- Workflow: `openspec-propose` → implement via
+  `openspec-apply-change` → `openspec-archive-change`. **Archive
+  in the implementing PR when feasible** (sync the delta specs +
+  move the change dir to `changes/archive/`) so specs, code, and
+  history land atomically; otherwise archive immediately after
+  merge in a follow-up PR — never leave a merged change
+  unarchived, since unsynced deltas leave `specs/` stale. The
+  skills live twice: `.agents/skills/openspec-*/` are the
+  upstream-owned
+  originals `openspec update` refreshes (keep verbatim);
+  `.devin/skills/openspec-*/` are the Devin discovery copies with
+  frontmatter stripped to `name:`/`description:`. After
+  `openspec update`, re-copy each SKILL.md into `.devin/skills/`
+  and re-strip the frontmatter.
+- **Update specs in the same PR as the code.** Any change that
+  alters behavior covered by `openspec/specs/` MUST update the
+  affected spec in the same PR — whether it came through
+  `openspec changes` (that update is the archive) or not (edit
+  the spec directly). A spec that no longer matches shipped
+  behavior is a bug, not documentation drift.
+- Specs describe CURRENT behavior — write them by verifying claims
+  against the code, not stale docs (code wins).
+- **`docs/plans/` is frozen for new feature plans** — new feature
+  work goes through `openspec changes`. Existing `docs/plans/*`
+  files stay as history; rule 11 still governs their lifecycle.
 
 ## Known gaps & sharp edges (do NOT "fix" without asking)
 

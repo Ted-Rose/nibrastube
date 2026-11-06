@@ -1,6 +1,6 @@
 {
-  "id": "3015f436-87b7-43d7-9dcc-4f0699bfeddb",
-  "prevId": "70fc9610-931e-4d8b-bb11-446fb6e71f99",
+  "id": "556abe13-9a21-4a1a-aafd-d05079718569",
+  "prevId": "6e6f0aec-c8c7-4692-8fed-3b0c5bdaec0d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -817,92 +817,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.video_impressions": {
-      "name": "video_impressions",
-      "schema": "",
-      "columns": {
-        "profile_id": {
-          "name": "profile_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "video_id": {
-          "name": "video_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seen_days": {
-          "name": "seen_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "first_seen_at": {
-          "name": "first_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_seen_on": {
-          "name": "last_seen_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "video_impressions_profile_id_profiles_id_fk": {
-          "name": "video_impressions_profile_id_profiles_id_fk",
-          "tableFrom": "video_impressions",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "profile_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "video_impressions_video_id_videos_id_fk": {
-          "name": "video_impressions_video_id_videos_id_fk",
-          "tableFrom": "video_impressions",
-          "tableTo": "videos",
-          "columnsFrom": [
-            "video_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "video_impressions_profile_id_video_id_pk": {
-          "name": "video_impressions_profile_id_video_id_pk",
-          "columns": [
-            "profile_id",
-            "video_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.video_reactions": {
       "name": "video_reactions",
       "schema": "",
@@ -1073,6 +987,25 @@
         "embeddable": {
           "name": "embeddable",
           "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "playback_blocked": {
+          "name": "playback_blocked",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "blocked_reason": {
+          "name": "blocked_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blocked_at": {
+          "name": "blocked_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

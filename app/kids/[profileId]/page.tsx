@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
-import { MusicNotes, UserSwitch } from "@phosphor-icons/react/dist/ssr";
+import { Gear, MusicNotes } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import PusherListener from "@/components/pusher-listener";
 import WatchFromTracker from "@/components/watch-from-tracker";
@@ -17,6 +17,7 @@ import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { VideoGridSkeleton } from "@/components/video-grid-skeleton";
 import { getSession, isKidSession } from "@/lib/auth";
 import { canViewProfile } from "@/lib/profiles";
+import { cn } from "@/lib/utils";
 import { cookies } from "next/headers";
 import {
   kidsPortalUrl,
@@ -103,7 +104,11 @@ export default async function KidsPortalPage({
           <>
             <Link
               href={`/kids/${profileId}`}
-              className="hidden shrink-0 rounded-lg px-1 py-2 text-xl font-black text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40 md:block"
+              className={cn(
+                "hidden shrink-0 rounded-lg px-1 py-2 text-xl font-black",
+                "text-slate-900 focus-visible:outline-none md:block",
+                "focus-visible:ring-4 focus-visible:ring-primary/40"
+              )}
             >
               <LinkPendingSpinner
                 size={20}
@@ -122,48 +127,63 @@ export default async function KidsPortalPage({
             <Link
               href="/songs"
               aria-label="Song catalog"
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+              className={cn(
+                "inline-flex size-11 shrink-0 items-center justify-center",
+                "rounded-full text-slate-400 transition-colors",
+                "hover:text-primary focus-visible:outline-none",
+                "focus-visible:ring-4 focus-visible:ring-primary/40"
+              )}
             >
               <MusicNotes size={24} weight="bold" />
             </Link>
-            {isKidSession(session) ? (
-              // A kid session can't switch profiles — proxy bounces
-              // /kids back to their own feed — so the identity renders
-              // as a plain badge, not a dead link.
-              <div className="flex shrink-0 items-center gap-3">
-                <span className="hidden text-xl font-black text-slate-700 sm:block">
-                  {profile.name}
-                </span>
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border-4 border-primary bg-white text-2xl shadow-sm sm:h-14 sm:w-14 sm:text-3xl">
-                  {profile.avatar}
+            {/* One avatar affordance for every viewer kind — kid
+                session, locked device, or parent — opens this
+                profile's settings page (kid self-service avatar
+                picker). The /kids picker stays behind the parent
+                gate. */}
+            <Link
+              href={`/kids/${profileId}/settings`}
+              aria-label="Profile settings"
+              className={cn(
+                "group flex shrink-0 items-center gap-3 rounded-2xl",
+                "transition-opacity hover:opacity-80",
+                "focus-visible:outline-none focus-visible:ring-4",
+                "focus-visible:ring-primary/40"
+              )}
+            >
+              <span
+                className={cn(
+                  "hidden text-xl font-black",
+                  "text-slate-700 sm:block"
+                )}
+              >
+                {profile.name}
+              </span>
+              <div className="relative">
+                <div
+                  className={cn(
+                    "flex h-11 w-11 items-center justify-center",
+                    "rounded-2xl border-4 border-primary bg-white",
+                    "text-2xl shadow-sm sm:h-14 sm:w-14 sm:text-3xl"
+                  )}
+                >
+                  {profile.avatar || "👶"}
+                </div>
+                <div
+                  className={cn(
+                    "absolute -bottom-1 -right-1 flex h-6 w-6",
+                    "items-center justify-center rounded-full",
+                    "bg-primary text-white shadow-sm"
+                  )}
+                >
+                  <LinkPendingSpinner
+                    size={14}
+                    weight="bold"
+                    fallback={<Gear size={14} weight="bold" />}
+                  />
                 </div>
               </div>
-            ) : (
-              <Link
-                href="/kids"
-                aria-label="Switch profile"
-                // /kids is auth-conditional: proxy.ts 307-redirects it
-                // to /login on locked kid devices. A prefetched redirect
-                // pollutes the router's segment cache and can replay on
-                // later navigations — always resolve it fresh on click.
-                prefetch={false}
-                className="group flex shrink-0 items-center gap-3 rounded-2xl transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
-              >
-                 <span className="text-xl font-black text-slate-700 hidden sm:block">{profile.name}</span>
-                 <div className="relative">
-                   <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-white border-4 border-primary shadow-sm flex items-center justify-center text-2xl sm:text-3xl">
-                      {profile.avatar}
-                   </div>
-                   <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-sm">
-                     <LinkPendingSpinner
-                       size={14}
-                       weight="bold"
-                       fallback={<UserSwitch size={14} weight="bold" />}
-                     />
-                   </div>
-                 </div>
-              </Link>
-            )}
+            </Link>
             {/* Kid sessions can never pass the PIN gate (verifyParentPin
                 bounces them), so they get a Log out control instead of
                 the dead lock icon — e.g. two kids sharing one tablet. */}

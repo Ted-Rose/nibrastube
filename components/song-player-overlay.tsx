@@ -58,7 +58,7 @@ export function SongPlayerOverlay({
   const advancingRef = useRef(false);
   // finishSong lives inside the effect (it closes over goTo/close);
   // this ref surfaces it to the player events created above.
-  const finishRef = useRef<(() => void) | null>(null);
+  const finishRef = useRef<((code?: number) => void) | null>(null);
 
   const events = useMemo<PlayerEvents>(
     () => ({
@@ -70,12 +70,12 @@ export function SongPlayerOverlay({
           finishRef.current?.();
         }
       },
-      onError: () => {
+      onError: (event) => {
         // A dead video never emits the PLAYING that releases
         // advancingRef — release it here so finishSong can skip
         // to the next song (or close at queue end).
         advancingRef.current = false;
-        finishRef.current?.();
+        finishRef.current?.(event.data);
       },
     }),
     []
@@ -136,7 +136,27 @@ export function SongPlayerOverlay({
 
     // The segment (or whole video, for open-ended songs) finished —
     // play the next queue entry, or exit when the queue is done.
-    const finishSong = () => {
+    const finishSong = (code?: number) => {
+      // Only the player's onError carries a code; ENDED and the
+      // end-poll call this bare. A permanent failure (100/101/150)
+      // flags the video so suitableVideo hides it on every surface.
+      // cur.id is the song uuid — flag the YouTube videoId, and the
+      // one the embed actually loaded at that: a rogue suggested
+      // video's id just 403s harmlessly server-side (or 404s where
+      // no whitelist check applies).
+      if (code === 100 || code === 101 || code === 150) {
+        const p = playerRef.current;
+        const videoId =
+          (p ? loadedVideoId(p) : undefined) ??
+          queue[indexRef.current]?.videoId;
+        if (videoId) {
+          fetch("/api/video-errors", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ videoId, code }),
+          }).catch(() => {});
+        }
+      }
       if (advancingRef.current) return;
       advancingRef.current = true;
       if (indexRef.current + 1 < queue.length) {

@@ -1,0 +1,1 @@
+ALTER TABLE "songs" ADD COLUMN "might_not_be_song" boolean DEFAULT false NOT NULL;

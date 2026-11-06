@@ -230,8 +230,10 @@ lib/
                                 as TS2717)
   youtube.ts                    YouTube Data API wrappers +
                                 ISO-8601 duration parse
-  song-timestamps.ts            Pure parser for timestamped
-                                tracklist comments → ParsedSong[]
+  song-timestamps.ts            Pure parsers → ParsedSong[]:
+                                parseTracklist (comments),
+                                parseChapters (description fallback,
+                                SERMON_MARKERS cut)
   channel-sync.ts               backfillChannel / pollChannel /
                                 syncAllChannels
   pusher.ts                     pusherServer + getPusherClient
@@ -291,9 +293,10 @@ docs/plans/                     Implementation plans with status
 - `channels` — global YouTube channel cache, PK = `UC...` ID, stores
   `uploadsPlaylistId`
 - `songs` — global registry of songs parsed from timestamped comments
-  on compilation videos (title + `videoId` + `startSeconds`/`endSeconds`;
-  `endSeconds` NULL = play to video end). NOT whitelist-tied — shared
-  by everyone
+  or description chapters on compilation videos (title + `videoId` +
+  `startSeconds`/`endSeconds`; `endSeconds` NULL = play to video end;
+  `mightNotBeSong` hides post-sermon guesses from shared catalog
+  surfaces). NOT whitelist-tied — shared by everyone
 - `whitelisted_videos` — (profileId, videoId) pins; `viaChannelId`
   NULL = manual pin, set = added by channel sync
 - `whitelisted_channels` — (profileId, channelId) approvals with
@@ -403,11 +406,17 @@ docs/plans/                     Implementation plans with status
   `syncAllChannels` and abort mid-flight via the approval re-check,
   and approving a paused channel skips the backfill.
 - **Song imports:** parents paste a compilation-video URL in the
-  dashboard; `app/actions/songs.ts` fetches the video's comments,
-  finds the one by `users.songCommenterHandle`, and parses its
-  timestamped tracklist (`lib/song-timestamps.ts`) into `songs` rows.
-  Re-import identity = `sourceCommentId`; (videoId, startSeconds) is
-  unique.
+  dashboard; `app/actions/songs.ts` tries the video's comments first —
+  the one by `users.songCommenterHandle` parses into `songs` rows via
+  `lib/song-timestamps.ts`. When the comment path yields nothing (no
+  saved handle, no comment by it, nothing parses), it falls back to
+  `parseChapters` on the video's own description: the first chapter
+  must start at 0:00, chapter[0] (intro) drops, and the first
+  `SERMON_MARKERS`-prefixed chapter onward imports flagged
+  `mightNotBeSong` — hidden from every shared `/songs` surface,
+  badged on the importer's own views. Re-import identity =
+  `sourceCommentId` ("description" sentinel for chapter imports);
+  (videoId, startSeconds) is unique.
 - **Kids feed memory:** leaving a feed for the watch page and
   returning restores the feed's order, mounted window depth and
   scroll position from a sessionStorage snapshot (`lib/feed-memory.ts`,

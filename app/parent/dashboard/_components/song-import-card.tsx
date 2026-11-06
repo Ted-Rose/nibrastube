@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { songs, users } from "@/lib/db/schema";
 import { formatDuration } from "@/lib/format";
 import { SongImportForm } from "./song-import-form";
+import { SongFlagToggleAction } from "./song-flag-toggle";
 import {
   Card,
   CardContent,
@@ -45,7 +46,8 @@ export async function SongImportCard({
           <MusicNotes size={20} className="mr-2 text-primary" /> Import Songs
         </CardTitle>
         <CardDescription>
-          Turn a commenter&apos;s timestamped tracklist into songs.
+          Turn a commenter&apos;s timestamped tracklist — or the
+          video&apos;s own description chapters — into songs.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -58,12 +60,15 @@ export async function SongImportCard({
             <p className="pb-2 text-xs text-muted-foreground">
               {importedSongs.length} song
               {importedSongs.length === 1 ? "" : "s"}
-              {importedSongs[0].sourceHandle &&
-                ` from @${importedSongs[0].sourceHandle}`}
+              {importedSongs[0].sourceHandle
+                ? ` from @${importedSongs[0].sourceHandle}`
+                : importedSongs[0].sourceCommentId === "description"
+                  ? " from description chapters"
+                  : ""}
             </p>
             <ul className="max-h-48 space-y-1 overflow-y-auto text-xs">
               {importedSongs.map((song) => (
-                <li key={song.id}>
+                <li key={song.id} className="flex items-center">
                   <span className="tabular-nums text-muted-foreground">
                     {formatDuration(song.startSeconds)}
                     {" – "}
@@ -71,7 +76,21 @@ export async function SongImportCard({
                       ? formatDuration(song.endSeconds)
                       : "end"}
                   </span>{" "}
-                  {song.title}
+                  <span className="min-w-0 truncate">{song.title}</span>
+                  {/* Owner-gated like deleteSong: another parent's
+                      rows keep the static marker instead. */}
+                  {song.importedBy === userId ? (
+                    <SongFlagToggleAction
+                      songId={song.id}
+                      flagged={song.mightNotBeSong}
+                    />
+                  ) : (
+                    song.mightNotBeSong && (
+                      <span className="italic text-muted-foreground">
+                        {" — maybe not a song"}
+                      </span>
+                    )
+                  )}
                 </li>
               ))}
             </ul>

@@ -45,9 +45,19 @@ export function SongCard({
       <Link
         href={href}
         scroll={false}
-        className="group block rounded-[32px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+        className={cn(
+          "group block rounded-[32px] focus-visible:outline-none",
+          "focus-visible:ring-4 focus-visible:ring-primary/40"
+        )}
       >
-        <Card className="overflow-hidden border-0 shadow-lg rounded-[32px] bg-white transition-transform duration-300 motion-safe:group-hover:-translate-y-2 motion-safe:active:scale-[0.98]">
+        <Card
+          className={cn(
+            "overflow-hidden border-0 shadow-lg rounded-[32px] bg-white",
+            "transition-transform duration-300",
+            "motion-safe:group-hover:-translate-y-2",
+            "motion-safe:active:scale-[0.98]"
+          )}
+        >
           <div className="relative aspect-video">
             <img
               src={song.thumbnail}
@@ -67,7 +77,8 @@ export function SongCard({
             >
               <div
                 className={cn(
-                  "flex items-center justify-center rounded-full bg-primary shadow-lg",
+                  "flex items-center justify-center rounded-full",
+                  "bg-primary shadow-lg",
                   compact ? "h-12 w-12" : "h-16 w-16"
                 )}
               >
@@ -90,10 +101,32 @@ export function SongCard({
               {song.title}
             </h3>
             <div className="mt-2 flex items-center gap-2">
-              <p className="min-w-0 flex-1 truncate font-medium text-slate-500">
+              <p
+                className={cn(
+                  "min-w-0 flex-1 truncate font-medium",
+                  "text-slate-500"
+                )}
+              >
                 {song.videoTitle}
               </p>
-              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold tabular-nums text-slate-600">
+              {/* Only reachable on owner surfaces ("Yours", "Your
+                  imports") — shared queries filter flagged rows out. */}
+              {song.mightNotBeSong && (
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full bg-amber-100 px-2 py-0.5",
+                    "text-xs font-bold text-amber-700"
+                  )}
+                >
+                  maybe not a song
+                </span>
+              )}
+              <span
+                className={cn(
+                  "shrink-0 rounded-full bg-slate-100 px-2 py-0.5",
+                  "text-xs font-bold tabular-nums text-slate-600"
+                )}
+              >
                 {range}
               </span>
             </div>

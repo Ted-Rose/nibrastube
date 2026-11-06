@@ -22,6 +22,7 @@ import {
 } from "@/lib/youtube";
 import {
   normalizeHandle,
+  parseChapters,
   parseTracklist,
   type ParsedSong,
 } from "@/lib/song-timestamps";
@@ -32,14 +33,23 @@ export interface SongImportVideo {
   title: string;
   thumbnail: string;
   durationSeconds: number | null;
+  // The uploader's description text — the chapters fallback parses
+  // it when the comment path yields no tracklist.
+  description: string | null;
 }
 
 export type SongImportState =
   | {
-      video: SongImportVideo;
-      handle: string;
+      // Serialized to the client, so `description` is deliberately
+      // dropped — the card renders only id/title/thumbnail and the
+      // uploader's full text is several KB.
+      video: Omit<SongImportVideo, "description">;
+      // The handle whose comment produced the tracklist; null on a
+      // description-chapters import.
+      handle: string | null;
       songs: ParsedSong[];
       sourceCommentId: string;
+      source: "comment" | "description";
     }
   | { error: string }
   | null;
@@ -53,11 +63,40 @@ const previewSchema = z.object({
 const importSchema = z.object({
   videoId: z.string(),
   returnTo: z.string().optional(),
+  // JSON map of startSeconds -> mightNotBeSong from the preview's
+  // per-row toggles; absent = keep the parser's flags.
+  flags: z.string().optional(),
 });
 
 const deleteSchema = z.object({
   songId: z.uuid(),
 });
+
+const flagSchema = z.object({
+  songId: z.uuid(),
+  mightNotBeSong: z.boolean(),
+});
+
+// The preview form ships the parent's toggle choices as JSON. Junk
+// just falls back to the parser's flags — a malformed blob can't
+// change what gets imported, only how it's marked.
+function parseFlagOverrides(
+  raw: string | undefined
+): Record<number, boolean> {
+  if (!raw) return {};
+  try {
+    const out: Record<number, boolean> = {};
+    for (const [k, v] of Object.entries(JSON.parse(raw))) {
+      const start = Number(k);
+      if (Number.isInteger(start) && typeof v === "boolean") {
+        out[start] = v;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 
 // The commenter handle is a stored preference — it never round-trips
@@ -92,6 +131,7 @@ async function getOrFetchVideo(
       title: existing.title,
       thumbnail: existing.thumbnail,
       durationSeconds: existing.durationSeconds,
+      description: existing.description,
     };
   }
 
@@ -123,6 +163,7 @@ async function getOrFetchVideo(
     title: details.title,
     thumbnail: details.thumbnail,
     durationSeconds: details.durationSeconds,
+    description: details.description,
   };
 }
 
@@ -130,15 +171,28 @@ type PipelineResult =
   | {
       video: SongImportVideo;
       songs: ParsedSong[];
+      // YT comment id, or the "description" sentinel on chapter
+      // imports — importSongs' stale-row delete keys on it either way.
       sourceCommentId: string;
+      // The commenter handle on comment imports; null on chapter
+      // imports (the text is the uploader's own description).
+      sourceHandle: string | null;
+      source: "comment" | "description";
     }
   | { error: string };
 
-// Shared preview/import pipeline: video details (for duration + title)
-// → handle → comments → author's tracklists → the longest parse.
+// Shared preview/import pipeline: video details (for duration +
+// title + description) → stored handle → comments → author's
+// tracklists → the longest parse. A stored handle's tracklist is
+// authoritative; when the comment path yields zero songs — no saved
+// handle, no comment by the handle, or none of their comments parse —
+// the fallback parses the video's own description chapters, which the
+// videos.list call already fetched (zero extra quota). Config and
+// fetch failures (unresolvable handle, comments API error) still
+// short-circuit — they're not a per-video "no songs" outcome.
 async function runSongImport(
   videoId: string,
-  handle: string,
+  handle: string | null,
   persist: boolean
 ): Promise<PipelineResult> {
   const details = await getOrFetchVideo(videoId, persist);
@@ -146,69 +200,92 @@ async function runSongImport(
     return { error: "Couldn't load that video (removed or private?)." };
   }
 
-  const channelId = await resolveChannelHandle(handle);
-  if (!channelId) {
-    return {
-      error: `No YouTube channel for @${handle} — check the spelling.`,
-    };
-  }
+  // Why the comment path found nothing — folds into the error when
+  // the chapters fallback also misses.
+  let commentMiss = "no song commenter handle saved";
 
-  let comments: VideoComment[];
-  try {
-    comments = await listVideoComments(videoId);
-  } catch (err) {
-    if (axios.isAxiosError(err)) {
+  if (handle) {
+    const channelId = await resolveChannelHandle(handle);
+    if (!channelId) {
       return {
-        error:
-          "Couldn't load comments for that video (disabled or removed?).",
+        error: `No YouTube channel for @${handle} — check the spelling.`,
       };
     }
-    throw err;
-  }
 
-  const authorComments = comments.filter(
-    (c) =>
-      c.authorChannelId === channelId ||
-      // Fallback for comments that predate channel IDs surfacing.
-      c.authorDisplayName.toLowerCase() === `@${handle}`
-  );
-  if (authorComments.length === 0) {
-    return {
-      error: `No comments by @${handle} on that video (scanned ${comments.length} comments).`,
-    };
-  }
+    let comments: VideoComment[];
+    try {
+      comments = await listVideoComments(videoId);
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        return {
+          error:
+            "Couldn't load comments for that video (disabled or removed?).",
+        };
+      }
+      throw err;
+    }
 
-  // The comment with the most parsed lines wins; ties go to the
-  // earliest so an edited repost doesn't beat the original.
-  let best: { comment: VideoComment; songs: ParsedSong[] } | null = null;
-  for (const comment of authorComments) {
-    const parsed = parseTracklist(comment.text, details.durationSeconds);
-    if (parsed.length === 0) continue;
-    if (
-      !best ||
-      parsed.length > best.songs.length ||
-      (parsed.length === best.songs.length &&
-        (comment.publishedAt ?? "") < (best.comment.publishedAt ?? ""))
-    ) {
-      best = { comment, songs: parsed };
+    const authorComments = comments.filter(
+      (c) =>
+        c.authorChannelId === channelId ||
+        // Fallback for comments that predate channel IDs surfacing.
+        c.authorDisplayName.toLowerCase() === `@${handle}`
+    );
+
+    if (authorComments.length === 0) {
+      commentMiss = `no comments by @${handle} (scanned ${comments.length})`;
+    } else {
+      // The comment with the most parsed lines wins; ties go to the
+      // earliest so an edited repost doesn't beat the original.
+      let best: { comment: VideoComment; songs: ParsedSong[] } | null =
+        null;
+      for (const comment of authorComments) {
+        const parsed = parseTracklist(
+          comment.text,
+          details.durationSeconds
+        );
+        if (parsed.length === 0) continue;
+        if (
+          !best ||
+          parsed.length > best.songs.length ||
+          (parsed.length === best.songs.length &&
+            (comment.publishedAt ?? "") < (best.comment.publishedAt ?? ""))
+        ) {
+          best = { comment, songs: parsed };
+        }
+      }
+      if (best) {
+        return {
+          video: details,
+          songs: best.songs,
+          sourceCommentId: best.comment.id,
+          sourceHandle: handle,
+          source: "comment",
+        };
+      }
+      commentMiss = `no timestamped tracklist in @${handle}'s comments`;
     }
   }
 
-  if (!best) {
+  // Fallback: the uploader's own description chapters.
+  const chapters = parseChapters(
+    details.description ?? "",
+    details.durationSeconds
+  );
+  if (chapters.length === 0) {
     return {
-      error: `Found ${authorComments.length} comment${authorComments.length === 1 ? "" : "s"} by @${handle} but no timestamped tracklist.`,
+      error:
+        `No songs found — ${commentMiss}, ` +
+        "and no chapters in the video description.",
     };
   }
 
   return {
-    video: {
-      id: details.id,
-      title: details.title,
-      thumbnail: details.thumbnail,
-      durationSeconds: details.durationSeconds,
-    },
-    songs: best.songs,
-    sourceCommentId: best.comment.id,
+    video: details,
+    songs: chapters,
+    sourceCommentId: "description",
+    sourceHandle: null,
+    source: "description",
   };
 }
 
@@ -253,7 +330,9 @@ export async function saveSongCommenterHandle(
 
 // Dry run behind the "Find songs" button: parses everything but writes
 // nothing, so a drifting comment format can't write garbage. Uses the
-// stored commenter handle. Costs ~3-8 YouTube quota units.
+// stored commenter handle when there is one; without it the pipeline
+// goes straight to the description-chapters fallback. Costs ~3-8
+// YouTube quota units on the comment path, ~1 on chapters only.
 export async function previewSongImport(
   _prevState: SongImportState,
   formData: FormData
@@ -268,9 +347,6 @@ export async function previewSongImport(
   if (!parsed.success) return { error: "Enter a YouTube link." };
 
   const handle = await getSongCommenterHandle(user.id);
-  if (!handle) {
-    return { error: "Save a song commenter handle first." };
-  }
 
   const videoId = parseYouTubeVideoId(parsed.data.url);
   if (!videoId) {
@@ -279,14 +355,25 @@ export async function previewSongImport(
 
   const result = await runSongImport(videoId, handle, false);
   if ("error" in result) return result;
-  return { ...result, handle };
+  // Shape explicitly — spreading PipelineResult would also ship
+  // sourceHandle and the multi-KB video.description to the client.
+  const { id, title, thumbnail, durationSeconds } = result.video;
+  return {
+    video: { id, title, thumbnail, durationSeconds },
+    handle: result.sourceHandle,
+    songs: result.songs,
+    sourceCommentId: result.sourceCommentId,
+    source: result.source,
+  };
 }
 
 // Confirm: reruns the same pipeline deterministically against the
-// stored handle, writes the videos row if still missing, then replaces
-// this comment's stale rows and upserts the new set — an edited comment
-// cleanly replaces its own output without clobbering another
-// commenter's rows.
+// stored handle (or straight to chapters when none is saved), writes
+// the videos row if still missing, then replaces the source's stale
+// rows and upserts the new set — keyed on (videoId, sourceCommentId),
+// where the "description" sentinel gives chapter imports the same
+// replace-own-output semantics an edited comment gets without
+// clobbering another source's rows.
 export async function importSongs(
   _prevState: SongImportState,
   formData: FormData
@@ -298,17 +385,22 @@ export async function importSongs(
   const parsed = importSchema.safeParse({
     videoId: formData.get("videoId"),
     returnTo: formData.get("returnTo") ?? undefined,
+    flags: formData.get("flags") ?? undefined,
   });
   if (!parsed.success) return { error: "Missing import details." };
 
   const handle = await getSongCommenterHandle(user.id);
   const videoId = parseYouTubeVideoId(parsed.data.videoId);
-  if (!handle || !videoId) {
+  if (!videoId) {
     return { error: "Missing import details." };
   }
 
   const result = await runSongImport(videoId, handle, true);
   if ("error" in result) return result;
+
+  // The re-parse is authoritative for the song set; the parent's
+  // per-row toggles only decide mightNotBeSong per start offset.
+  const flagOverrides = parseFlagOverrides(parsed.data.flags);
 
   const newStarts = result.songs.map((s) => s.startSeconds);
   await db
@@ -330,7 +422,12 @@ export async function importSongs(
         startSeconds: s.startSeconds,
         endSeconds: s.endSeconds,
         sourceCommentId: result.sourceCommentId,
-        sourceHandle: handle,
+        sourceHandle: result.sourceHandle,
+        // The parent's preview toggle wins; otherwise the parser's
+        // flag (chapter imports mark the sermon cut onward, comment
+        // imports default to false).
+        mightNotBeSong:
+          flagOverrides[s.startSeconds] ?? s.mightNotBeSong ?? false,
         importedBy: user.id,
       }))
     )
@@ -341,6 +438,7 @@ export async function importSongs(
         endSeconds: sql`excluded.end_seconds`,
         sourceCommentId: sql`excluded.source_comment_id`,
         sourceHandle: sql`excluded.source_handle`,
+        mightNotBeSong: sql`excluded.might_not_be_song`,
         importedBy: sql`excluded.imported_by`,
       },
     });
@@ -382,4 +480,34 @@ export async function deleteSong(songId: string) {
   await db.delete(songs).where(eq(songs.id, song.id));
   revalidatePath("/songs");
   return { deleted: true };
+}
+
+// Owner-only flag toggle — same gate shape as deleteSong: a row the
+// session user didn't import can't be re-marked. Used by the import
+// card's post-import toggles (and any future owner surface).
+export async function setSongFlag(
+  songId: string,
+  mightNotBeSong: boolean
+): Promise<{ updated: true } | { error: string }> {
+  const user = parentSession(await getSession());
+  if (!user) return { error: "Not signed in." };
+  await requireParentUnlocked();
+
+  const parsed = flagSchema.safeParse({ songId, mightNotBeSong });
+  if (!parsed.success) return { error: "Missing song details." };
+
+  const song = await db.query.songs.findFirst({
+    where: eq(songs.id, parsed.data.songId),
+  });
+  if (!song || song.importedBy !== user.id) {
+    return { error: "Couldn't update that song." };
+  }
+
+  await db
+    .update(songs)
+    .set({ mightNotBeSong: parsed.data.mightNotBeSong })
+    .where(eq(songs.id, song.id));
+  revalidatePath("/songs");
+  revalidatePath("/parent/dashboard");
+  return { updated: true };
 }

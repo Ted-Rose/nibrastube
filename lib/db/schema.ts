@@ -122,9 +122,13 @@ export const songs = pgTable(
     // null = "play to the end of the video" — the comment gave a bare
     // start and there is no next song to bound it.
     endSeconds: integer("end_seconds"),
-    // YT comment id — re-import identity
+    // YT comment id — re-import identity ("description" for chapter
+    // imports)
     sourceCommentId: text("source_comment_id"),
     sourceHandle: text("source_handle"), // normalized handle, no "@"
+    // Post-sermon description-chapter imports: probably not songs,
+    // hidden from shared catalog surfaces, visible to the importer.
+    mightNotBeSong: boolean("might_not_be_song").default(false).notNull(),
     importedBy: uuid("imported_by").references(() => users.id, {
       onDelete: "set null",
     }),

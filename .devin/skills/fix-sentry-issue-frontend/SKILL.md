@@ -78,8 +78,9 @@ query to hunt dev/preview events unless the user asks.
   cookie, missing guard, proxy redirect) usually belong in
   `proxy.ts`, `lib/auth.ts`, or a server action — read
   `AGENTS.md`'s invariants first.
-- `docs/plans/*-plan.md` may already cover the issue — check
-  status headers so you don't duplicate a planned WP.
+- The frozen legacy `docs/plans/*-plan.md` files may already cover
+  the issue — check status headers so you don't duplicate a
+  planned WP.
 
 ## 4. Branch and fix — in a worktree
 

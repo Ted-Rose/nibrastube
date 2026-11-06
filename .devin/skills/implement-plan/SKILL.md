@@ -1,17 +1,21 @@
 ---
 name: implement-plan
-description: Implement a docs/plans/*-plan.md file end-to-end with
-  subagents — an implementer agent cuts a feature branch and opens a
-  draft PR, then fresh reviewer agents review it and fixer agents
-  iterate until clean. Invoke when the user asks to implement/execute
-  a plan file using agents.
+description: Implement a legacy docs/plans/*-plan.md file end-to-end
+  with subagents — an implementer agent cuts a feature branch and
+  opens a draft PR, then fresh reviewer agents review it and fixer
+  agents iterate until clean. Invoke when the user asks to
+  implement/execute a plan file using agents.
 ---
 
 # Implement a Plan File with Subagents
 
 Orchestrate a multi-agent implementation of a plan file (e.g.
-`docs/plans/kid-login-plan.md`). Single repo: `nibrastube`, GitHub
-target = the fork `Ted-Rose/nibrastube`.
+`docs/plans/db-connections-plan.md`). Single repo: `nibrastube`,
+GitHub target = the fork `Ted-Rose/nibrastube`.
+
+NOTE: `docs/plans/` is frozen (AGENTS.md rule 11) — this skill only
+executes pre-existing legacy plan files. New planning goes through
+`openspec changes`; never create a `*-plan.md` to feed this skill.
 
 Subagents are stateless: front-load every prompt with the plan path,
 the worktree path, the branch name, the conventions file to read, and

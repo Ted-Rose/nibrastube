@@ -45,6 +45,12 @@ export interface FeedSnapshot {
   // Paged grids (loadMore set — For You, Shorts) store the full rows:
   // pages 2+ cannot be refetched for free. null on non-paged grids.
   rows: FeedRow[] | null;
+  // Paged grids only: server time (ms) the saved order was ranked at
+  // — restored so loadMore keeps ranking impressions "as of" it. A
+  // paged snapshot without it (pre-epoch format) is rejected, so the
+  // feed falls back to a fresh server page instead of paging a stale
+  // order against a mismatched epoch.
+  epoch?: number;
   // History tab only: watchedOn keys of the expanded day sections.
   expandedDays?: string[];
 }
@@ -92,7 +98,10 @@ function isSnapshot(value: unknown): value is FeedSnapshot {
     Array.isArray(snap.orderIds) &&
     snap.orderIds.every((id) => typeof id === "string") &&
     (snap.rows === null ||
-      (Array.isArray(snap.rows) && snap.rows.every(isFeedRow))) &&
+      (Array.isArray(snap.rows) &&
+        snap.rows.every(isFeedRow) &&
+        Number.isFinite(snap.epoch))) &&
+    (snap.epoch === undefined || Number.isFinite(snap.epoch)) &&
     (snap.expandedDays === undefined ||
       (Array.isArray(snap.expandedDays) &&
         snap.expandedDays.every((day) => typeof day === "string")))

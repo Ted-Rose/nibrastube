@@ -142,15 +142,16 @@ export async function addToPlaylist(
   });
   if (!approved) throw new Error("Video is not approved for this profile");
 
-  // A pin on a restricted video is inert — it can never play — so it
-  // has no place in a playlist either (unreachable via the kids UI,
-  // but a crafted action call could otherwise add one).
+  // A pin on a restricted or playback-blocked video is inert — it can
+  // never play — so it has no place in a playlist either (unreachable
+  // via the kids UI, but a crafted action call could otherwise add
+  // one).
   const video = await db.query.videos.findFirst({
     where: eq(videos.id, videoId),
-    columns: { ageRestricted: true },
+    columns: { ageRestricted: true, playbackBlocked: true },
   });
-  if (video?.ageRestricted === true) {
-    throw new Error("Video is age-restricted");
+  if (video?.ageRestricted === true || video?.playbackBlocked === true) {
+    throw new Error("Video can't be played");
   }
 
   const [{ total, maxPosition }] = await db

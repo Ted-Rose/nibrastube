@@ -1,6 +1,6 @@
 {
-  "id": "f440bcb0-9aac-4ea7-b511-dd33a27c2f0c",
-  "prevId": "57feeb20-9856-4df1-b0b0-eb4905013aa9",
+  "id": "556abe13-9a21-4a1a-aafd-d05079718569",
+  "prevId": "6e6f0aec-c8c7-4692-8fed-3b0c5bdaec0d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -680,13 +680,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "might_not_be_song": {
-          "name": "might_not_be_song",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "imported_by": {
           "name": "imported_by",
           "type": "uuid",
@@ -994,6 +987,25 @@
         "embeddable": {
           "name": "embeddable",
           "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "playback_blocked": {
+          "name": "playback_blocked",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "blocked_reason": {
+          "name": "blocked_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blocked_at": {
+          "name": "blocked_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

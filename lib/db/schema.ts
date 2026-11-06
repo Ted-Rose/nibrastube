@@ -66,6 +66,14 @@ export const videos = pgTable("videos", {
   // contentRating.ytRating === ytAgeRestricted
   ageRestricted: boolean("age_restricted"),
   embeddable: boolean("embeddable"), // can play in the IFrame embed
+  // Player-observed permanent failure (IFrame onError 100/101/150):
+  // runtime-verified unplayable, hidden via suitableVideo. Unlike
+  // ageRestricted/embeddable these are NOT API-sourced — videos:refresh
+  // never touches them, so a block sticks until an admin heals it.
+  playbackBlocked: boolean("playback_blocked").default(false).notNull(),
+  // age-gated | embed-disabled | unavailable
+  blockedReason: text("blocked_reason"),
+  blockedAt: timestamp("blocked_at", { withTimezone: true }),
   privacyStatus: text("privacy_status"), // public | unlisted | private
   hasCaptions: boolean("has_captions"),
   definition: text("definition"), // hd | sd
@@ -253,6 +261,37 @@ export const videoReactions = pgTable(
     reactedAt: timestamp("reacted_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.profileId, table.videoId] }),
+  })
+);
+
+// "Shown but ignored" feed impressions per (profile, video): a grid
+// card ≥50% visible for ≥1s (tapped or not — the ranking masks the
+// penalty once the video has watch progress). A weak negative ranking
+// signal (lib/kids-feed.ts `impressionPenalty`); written silently by
+// /api/impressions, pruned there after ~45 days without a sighting.
+export const videoImpressions = pgTable(
+  "video_impressions",
+  {
+    profileId: uuid("profile_id")
+      .references(() => profiles.id, { onDelete: "cascade" })
+      .notNull(),
+    videoId: text("video_id")
+      .references(() => videos.id, { onDelete: "cascade" })
+      .notNull(),
+    // Days this card was shown ≥1s (masked once watched) — the upsert
+    // increments it at most once per kid-local day.
+    seenDays: integer("seen_days").default(1).notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull(), // server-now of the last accepted write
+    // Kid-local YYYY-MM-DD of that write — the per-day dedup key
+    // (same client-controlled trust posture as watch_history.day).
+    lastSeenOn: date("last_seen_on", { mode: "string" }).notNull(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.profileId, table.videoId] }),

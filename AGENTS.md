@@ -271,6 +271,10 @@ openspec/                       Spec-driven planning: specs/ = current
                                 (see "OpenSpec")
 .agents/skills/                 OpenSpec-generated workflow skills —
                                 upstream-owned, keep verbatim
+docs/recommendation-algorithm.md
+                                Living doc for the kids ranking
+                                formula — MUST stay in sync with
+                                lib/kids-feed.ts (rule 10)
 docs/plans/                     Frozen legacy implementation plans —
                                 historical only, nothing new is added
                                 (see "OpenSpec"); deleted once fully
@@ -766,7 +770,11 @@ Workflow rules (workspace-wide conventions — follow them all):
 10. **Keep docs in sync:** update this file (AGENTS.md is the repo's
     contract doc for future sessions) after functionality changes,
     and delete any `docs/plans/*-plan.md` the change fully implements
-    (see rule 11).
+    (see rule 11). `docs/recommendation-algorithm.md` is a living
+    doc, not a plan — never delete it; update it in the same change
+    that touches the For-You ranking (`getRecommendedVideos`), the
+    statusRank sort, autoplay (`lib/autoplay.ts`), feed-memory
+    snapshots, or any new ranking signal.
 11. **`docs/plans/` is frozen — legacy files only.** Never create
     new plan/design/investigation markdown, there or anywhere else —
     all new planning goes through `openspec changes` (see

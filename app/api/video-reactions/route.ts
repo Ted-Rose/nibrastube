@@ -80,14 +80,14 @@ export async function POST(request: NextRequest) {
       });
   }
 
+  // Reactions drive Liked-tab membership and statusRank — bust the
+  // profile's cached feed rows BEFORE the ping so a client's
+  // router.refresh() can't re-read the stale cache entry.
+  invalidateProfileFeed(profileId);
   const { pusherServer } = await import("@/lib/pusher");
   await pusherServer.trigger(`profile-${profileId}`, "video-reacted", {
     videoId,
   });
-
-  // Reactions drive Liked-tab membership and statusRank — bust the
-  // profile's cached feed rows before the next read.
-  invalidateProfileFeed(profileId);
   revalidatePath(`/kids/${profileId}`);
 
   return NextResponse.json({ ok: true });

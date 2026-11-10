@@ -191,12 +191,14 @@ export async function unapproveChannel(profileId: string, channelId: string) {
       )
     );
 
+  // Bust the feed tag BEFORE the ping so a client's router.refresh()
+  // can't re-read the stale cache entry.
+  invalidateProfileFeed(profileId);
   const { pusherServer } = await import("@/lib/pusher");
   await pusherServer.trigger(`profile-${profileId}`, "video-unpinned", {
     channelId,
   });
 
-  invalidateProfileFeed(profileId);
   revalidatePath(`/parent/dashboard`);
   revalidatePath(`/kids/${profileId}`);
 }

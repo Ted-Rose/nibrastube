@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getSession, isKidSession, parentSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { videos, whitelistedVideos } from "@/lib/db/schema";
-import { invalidateProfileFeed } from "@/lib/feed-cache";
+import { invalidateProfilesWhitelisting } from "@/lib/feed-cache";
 import { assertCanManageProfile } from "@/lib/profiles";
 
 // Player-observed permanent IFrame failures → a global block flag on
@@ -94,12 +94,9 @@ export async function POST(request: NextRequest) {
 
   // suitableVideo hides the flagged video everywhere, so the data
   // cache must not keep serving it: bust the feed tag of every profile
-  // whitelisting it (the flag is global, not per-profile).
-  const affected = await db
-    .select({ profileId: whitelistedVideos.profileId })
-    .from(whitelistedVideos)
-    .where(eq(whitelistedVideos.videoId, videoId));
-  for (const row of affected) invalidateProfileFeed(row.profileId);
+  // whitelisting it (the flag is global, not per-profile) BEFORE the
+  // ping below — router.refresh() must never re-read the stale entry.
+  const affected = await invalidateProfilesWhitelisting([videoId]);
 
   // The card just disappeared from affected feeds — ping each device
   // so router.refresh() doesn't wait out the staleTimes window.
@@ -107,9 +104,9 @@ export async function POST(request: NextRequest) {
   // matters to the client as "refresh now".
   if (affected.length) {
     const { pusherServer } = await import("@/lib/pusher");
-    for (const row of affected) {
+    for (const profileId of affected) {
       await pusherServer.trigger(
-        `profile-${row.profileId}`,
+        `profile-${profileId}`,
         "video-unpinned",
         { videoId }
       );

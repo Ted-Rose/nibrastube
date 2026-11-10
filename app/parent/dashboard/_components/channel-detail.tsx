@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { after } from "next/server";
 import {
   Check,
   Users,
@@ -18,6 +19,7 @@ import {
   type DashboardVideo,
 } from "@/lib/youtube";
 import { upsertVideoRows } from "@/lib/video-cache";
+import { invalidateProfilesWhitelisting } from "@/lib/feed-cache";
 import { approveChannel } from "@/app/actions/channels";
 import { loadChannelUploads } from "@/app/actions/channel-videos";
 import { BackLink } from "@/components/back-link";
@@ -136,6 +138,11 @@ export async function ChannelDetail({
         return v ? [v] : [];
       });
       await upsertVideoRows(hydrated);
+      // The upsert rewrites SHARED videos rows — bust the feed tag of
+      // every whitelisting profile. Scheduled via after(): this is a
+      // Server Component render, where revalidateTag throws.
+      const hydratedIds = hydrated.map((v) => v.id);
+      after(() => invalidateProfilesWhitelisting(hydratedIds));
       uploads = hydrated.map(toDashboardVideo);
       nextPageToken = page.nextPageToken ?? null;
     } catch {

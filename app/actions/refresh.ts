@@ -60,6 +60,11 @@ export async function refreshStaleVideos(
       removed = missing.length;
     }
 
+    // Deleted videos unpin via FK cascade and refreshed rows carry
+    // new shared metadata — bust each affected profile's feed tag
+    // BEFORE the ping so router.refresh() can't re-read stale cache.
+    for (const row of affected) invalidateProfileFeed(row.profileId);
+
     if (affected.length) {
       // Pins disappeared or metadata flipped — every affected kid
       // device needs a feed refresh, not just the acting profile's.
@@ -72,10 +77,6 @@ export async function refreshStaleVideos(
         );
       }
     }
-
-    // Deleted videos unpin via FK cascade and refreshed rows carry
-    // new shared metadata — bust each affected profile's feed tag.
-    for (const row of affected) invalidateProfileFeed(row.profileId);
   }
 
   // The acting profile always gets busted (it may hold no pins).

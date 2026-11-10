@@ -472,7 +472,7 @@ export async function getKidsVideos(
     channelId: keyParam(params.channelId),
     sort: params.sort,
     dir: params.dir,
-    type: params.type,
+    type: params.type === "all" ? undefined : params.type,
     minLen: keyParam(params.minLen),
     maxLen: keyParam(params.maxLen),
   };
@@ -613,7 +613,7 @@ async function newForYouRows(
     .limit(limit);
 }
 
-// Recently pinned whitelisted videos the kid hasn't finished or �'d —
+// Recently pinned whitelisted videos the kid hasn't finished or 👎'd —
 // the home "New for you" shelf. The completed/disliked checks are
 // null-safe because progress and reactions are left joins. Ordered by
 // pin day then publish date: a channel backfill pins hundreds of rows
@@ -638,7 +638,7 @@ export async function getNewForYou(
   const canonical = {
     limit,
     days,
-    type,
+    type: type === "all" ? undefined : type,
     minLen: keyParam(minLen),
     maxLen: keyParam(maxLen),
   };
@@ -728,7 +728,7 @@ export async function getLikedVideos(
   const canonical = {
     q: keyParam(q),
     limit,
-    type,
+    type: type === "all" ? undefined : type,
     minLen: keyParam(minLen),
     maxLen: keyParam(maxLen),
   };
@@ -1180,7 +1180,7 @@ export async function getKidsChannels(
 ): Promise<KidsChannel[]> {
   const canonical = {
     q: keyParam(q),
-    type,
+    type: type === "all" ? undefined : type,
     minLen: keyParam(minLen),
     maxLen: keyParam(maxLen),
   };
@@ -1348,7 +1348,7 @@ export async function getPlaylistVideos(
 
   const canonical = {
     q: keyParam(q),
-    type,
+    type: type === "all" ? undefined : type,
     minLen: keyParam(minLen),
     maxLen: keyParam(maxLen),
   };

@@ -1,4 +1,7 @@
+import { inArray } from "drizzle-orm";
 import { revalidateTag } from "next/cache";
+import { db } from "@/lib/db";
+import { whitelistedVideos } from "@/lib/db/schema";
 
 // Shared constants for the kids feed data cache (lib/kids-feed.ts).
 // One tag per profile covers every cached feed read: whitelisted-video
@@ -23,4 +26,21 @@ export const feedCacheTag = (profileId: string) => `feed:${profileId}`;
 // (whitelist-safety invariant).
 export function invalidateProfileFeed(profileId: string) {
   revalidateTag(feedCacheTag(profileId), { expire: 0 });
+}
+
+// `videos` is a SHARED table — an upsert/overwrite/delete lands on
+// every profile whitelisting the id, not just the acting one. Select
+// the distinct whitelisting profileIds and hard-expire each feed tag.
+// Returns the affected profileIds for callers that also fan out a
+// Pusher ping to the same set. Empty input is a no-op.
+export async function invalidateProfilesWhitelisting(
+  videoIds: string[]
+): Promise<string[]> {
+  if (videoIds.length === 0) return [];
+  const affected = await db
+    .selectDistinct({ profileId: whitelistedVideos.profileId })
+    .from(whitelistedVideos)
+    .where(inArray(whitelistedVideos.videoId, videoIds));
+  for (const row of affected) invalidateProfileFeed(row.profileId);
+  return affected.map((r) => r.profileId);
 }

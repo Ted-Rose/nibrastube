@@ -17,6 +17,7 @@ import {
   type DashboardVideo,
 } from "@/lib/youtube";
 import { upsertVideoRows } from "@/lib/video-cache";
+import { invalidateProfilesWhitelisting } from "@/lib/feed-cache";
 
 export interface ChannelUploadsPage {
   items: DashboardVideo[];
@@ -73,6 +74,10 @@ export async function loadChannelUploads(
   // Warm the videos cache so a subsequent pinVideo skips its own
   // videos.list fetch.
   await upsertVideoRows(hydrated);
+  // The upsert rewrites SHARED videos rows (e.g. an ageRestricted flip
+  // hides via suitableVideo) — bust the feed tag of every profile
+  // whitelisting any hydrated id, not just the vetting profile's.
+  await invalidateProfilesWhitelisting(hydrated.map((v) => v.id));
 
   const pinned = hydrated.length
     ? await db

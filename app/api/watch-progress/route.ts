@@ -11,7 +11,7 @@ import {
   whitelistedVideos,
 } from "@/lib/db/schema";
 import { assertCanManageProfile } from "@/lib/profiles";
-import { invalidateProfileFeed } from "@/lib/feed-cache";
+import { invalidateProfilesWhitelisting } from "@/lib/feed-cache";
 import { suitableVideo } from "@/lib/video-suitability";
 
 const bodySchema = z.object({
@@ -87,11 +87,7 @@ export async function POST(request: NextRequest) {
       )
       .returning({ id: videos.id });
     if (repaired.length) {
-      const affected = await db
-        .select({ profileId: whitelistedVideos.profileId })
-        .from(whitelistedVideos)
-        .where(eq(whitelistedVideos.videoId, body.videoId));
-      for (const row of affected) invalidateProfileFeed(row.profileId);
+      await invalidateProfilesWhitelisting([body.videoId]);
     }
   }
 

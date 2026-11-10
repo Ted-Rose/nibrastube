@@ -99,10 +99,11 @@ app/
                                 grid (token-keyed infinite scroll),
                                 song-import-form
   parent/profiles/              Manage kids + send invites
-  kids/                         "Who's watching?" profile picker
+  kids/                         "Who's watching?" profile picker;
+                                layout adds YouTube preconnect hints
   kids/[profileId]/             Kids portal — 5 feed tabs, sticky
                                 header, debounced search; streams via
-                                Suspense
+                                Suspense; mounts YouTubeWarmup
     _components/                Route-private view code: per-view
                                 server components, KIDS_VIEWS table
     settings/                   Kid-facing profile settings — name +
@@ -198,6 +199,12 @@ components/
                                 (shelf rows, filter chip rows); window
                                 delegation, snap off while dragging,
                                 trailing click swallowed
+  prefetch-link.tsx             Client Link that router.prefetch()es
+                                its href on pointer-down — feed video
+                                cards' watch links
+  yt-warmup.tsx                 Mounts on the kids feed and calls
+                                ensureYouTubeAPI once, so the IFrame
+                                API is loaded before the first tap
 lib/
   app-update.ts                 Hourly-throttled update.json poll →
                                 typed UpdateCheck union; never
@@ -208,6 +215,11 @@ lib/
   auth.ts                       JWT encrypt/decrypt,
                                 login/loginKid/logout, getSession,
                                 isKidSession/parentSession helpers
+  feed-cache.ts                 Kids feed data-cache constants:
+                                feed:<profileId> tag + 600s TTL +
+                                invalidateProfileFeed() (hard-expire
+                                revalidateTag — every feed-content
+                                mutation MUST call it)
   feed-impressions.ts           Grid-card impression observer
                                 (≥50% visible ≥1s) + per-profile
                                 queue flushed to /api/impressions
@@ -221,7 +233,10 @@ lib/
   profiles.ts                   assertCanManageProfile,
                                 getManageableProfiles
   kids-feed.ts                  Kids feed params/URL builder + row
-                                queries
+                                queries — whitelist-driven reads are
+                                unstable_cache'd per (profileId,
+                                params); watch_progress is a live
+                                overlay merged per request
   songs-feed.ts                 /songs catalog params/URL builder +
                                 queries
   yt-player.ts                  Shared YouTube IFrame-API types + the
@@ -437,7 +452,24 @@ docs/plans/                     Frozen legacy implementation plans —
   `router.push(portalUrl)`.
 - **Real-time:** after any whitelist change, trigger Pusher on
   channel `profile-<profileId>` with `video-pinned`/`video-unpinned`;
-  `PusherListener` calls `router.refresh()`. Import `pusherServer`
+  `PusherListener` calls `router.refresh()`.
+- **Feed data cache:** kids feed/watch-queue reads are served from
+  `unstable_cache` — 10-min TTL, tag `feed:<profileId>`
+  (`lib/feed-cache.ts`, spec `feed-data-cache`). `watch_progress` is a
+  live per-request overlay merged in code — never cached — and
+  `getRecommendedVideos`, `getContinueWatching`/`getWatchHistory` row
+  sets (beacon-write-driven), auth and `/parent/*` reads are never
+  wrapped either. Any mutation that changes what a profile's feed or
+  watch queue may contain MUST call `invalidateProfileFeed(profileId)`
+  beside its `revalidatePath` — pin/unpin, channel
+  approve/un-approve, playlist writes, reactions, profile edits,
+  playback-block flags, video deletes, and sync inserts (the
+  `triggerPinned` chokepoint). `revalidatePath` alone does NOT bust
+  `unstable_cache` entries — a missing tag call leaves removed
+  content servable for the TTL (whitelist-safety regression).
+  Client-side, `experimental.staleTimes.dynamic = 300` in
+  next.config reuses visited RSC payloads for 5 min;
+  `router.refresh()` always bypasses it. Import `pusherServer`
   dynamically inside actions.
 - **Watch progress:** client flushes on pause/end/pagehide
   (sendBeacon) and every ~10s while playing; server upserts guarded

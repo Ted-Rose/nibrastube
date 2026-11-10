@@ -56,6 +56,15 @@ Every other tab is a mechanical sort over the same whitelist —
   `getContinueWatching` (`watchedAt` desc) / `getNewForYou`
   (pin-day then `publishedAt` desc).
 
+These reads go through the per-profile feed data cache
+(`unstable_cache`, ~10 min TTL, tag `feed:<profileId>`) — except
+`getContinueWatching`/`getWatchHistory`, whose row sets are
+beacon-write-driven. Watch progress is split out of the cached rows
+and merged live per request, so the `sort=status` tiering and the
+impression penalty in `getKidsVideos` reflect progress/impressions
+as of cache-write time; every content mutation hard-expires the tag
+(`invalidateProfileFeed`), which bounds the drift.
+
 ## Signals
 
 Which tables feed which term:

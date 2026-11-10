@@ -10,6 +10,7 @@ import {
   whitelistedVideos,
 } from "@/lib/db/schema";
 import { getUploadsPage, getVideosBatch } from "@/lib/youtube";
+import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { upsertVideoRows } from "@/lib/video-cache";
 import {
   captureInternalException,
@@ -112,11 +113,15 @@ async function upsertVideosAndWhitelist(
   return toInsert.length;
 }
 
+// Single chokepoint for "sync added pins" — backfill and poll both
+// call it only when added > 0. New whitelist rows must bust the
+// profile's cached feed or they stay invisible for the cache TTL.
 async function triggerPinned(profileId: string, channelId: string) {
   const { pusherServer } = await import("@/lib/pusher");
   await pusherServer.trigger(`profile-${profileId}`, "video-pinned", {
     channelId,
   });
+  invalidateProfileFeed(profileId);
 }
 
 /**

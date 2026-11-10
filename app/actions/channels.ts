@@ -20,6 +20,7 @@ import {
 } from "@/lib/profiles";
 import { channelRowValues, getChannelDetails } from "@/lib/youtube";
 import { backfillChannel } from "@/lib/channel-sync";
+import { invalidateProfileFeed } from "@/lib/feed-cache";
 
 export async function approveChannel(profileId: string, channelId: string) {
   const session = await getSession();
@@ -90,6 +91,9 @@ export async function approveChannel(profileId: string, channelId: string) {
     }
   });
 
+  // The approved-channel tile appears on the kids Channels tab now;
+  // backfill's own inserts invalidate again as videos land.
+  invalidateProfileFeed(profileId);
   revalidatePath(`/parent/dashboard`);
 }
 
@@ -192,6 +196,7 @@ export async function unapproveChannel(profileId: string, channelId: string) {
     channelId,
   });
 
+  invalidateProfileFeed(profileId);
   revalidatePath(`/parent/dashboard`);
   revalidatePath(`/kids/${profileId}`);
 }

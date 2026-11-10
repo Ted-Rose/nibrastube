@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { videos, whitelistedVideos } from "@/lib/db/schema";
 import { getSession, requireParentUnlocked } from "@/lib/auth";
+import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { assertCanManageProfile } from "@/lib/profiles";
 import { refreshVideoIds } from "@/lib/video-cache";
 
@@ -15,7 +16,10 @@ import { refreshVideoIds } from "@/lib/video-cache";
 // Videos YouTube no longer returns (deleted/private/non-embeddable)
 // can't play in the kid embed, so they're deleted — the FK cascade
 // unpins them everywhere.
-export async function refreshStaleVideos(profileId: string, formData: FormData) {
+export async function refreshStaleVideos(
+  profileId: string,
+  formData: FormData
+) {
   const session = await getSession();
   if (!session) return;
   await requireParentUnlocked();
@@ -47,6 +51,8 @@ export async function refreshStaleVideos(profileId: string, formData: FormData) 
     }
   }
 
+  // Deleted videos unpin via FK cascade — bust the cached feed rows.
+  invalidateProfileFeed(profileId);
   revalidatePath("/parent/dashboard");
   revalidatePath(`/kids/${profileId}`);
 

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getSession, isKidSession, parentSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { videos, whitelistedVideos } from "@/lib/db/schema";
+import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { assertCanManageProfile } from "@/lib/profiles";
 
 // Player-observed permanent IFrame failures → a global block flag on
@@ -90,6 +91,16 @@ export async function POST(request: NextRequest) {
   // from a no-whitelist surface) — nothing to flag.
   if (updated.length === 0)
     return NextResponse.json({ ok: false }, { status: 404 });
+
+  // suitableVideo hides the flagged video everywhere, so the data
+  // cache must not keep serving it: bust the feed tag of every profile
+  // whitelisting it (the flag is global, not per-profile). No pusher —
+  // silent like the impressions flush, just with cache correctness.
+  const affected = await db
+    .select({ profileId: whitelistedVideos.profileId })
+    .from(whitelistedVideos)
+    .where(eq(whitelistedVideos.videoId, videoId));
+  for (const row of affected) invalidateProfileFeed(row.profileId);
 
   // No pusher, no revalidatePath — the flag is global and the next
   // render of any surface picks it up via suitableVideo.

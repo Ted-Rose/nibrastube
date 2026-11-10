@@ -11,6 +11,7 @@ import {
   whitelistedVideos,
 } from "@/lib/db/schema";
 import { assertCanEditKidData } from "@/lib/profiles";
+import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { suitableVideo } from "@/lib/video-suitability";
 
 const MAX_PLAYLISTS = 50;
@@ -33,9 +34,12 @@ async function getOwnedPlaylist(profileId: string, playlistId: string) {
   return playlist;
 }
 
+// Every playlist write funnels here — playlist tiles, contents and the
+// ⋮ save dialog are all cached under the profile's feed tag.
 async function notifyPlaylistChanged(profileId: string) {
   const { pusherServer } = await import("@/lib/pusher");
   await pusherServer.trigger(`profile-${profileId}`, "playlist-changed", {});
+  invalidateProfileFeed(profileId);
   revalidatePath(`/kids/${profileId}`);
 }
 

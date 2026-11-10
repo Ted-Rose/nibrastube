@@ -17,6 +17,7 @@ import {
 } from "@/lib/youtube";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { invalidateProfileFeed } from "@/lib/feed-cache";
 
 export async function pinVideo(profileId: string, videoId: string) {
   const session = await getSession();
@@ -91,8 +92,11 @@ export async function pinVideo(profileId: string, videoId: string) {
 
   // 4. Trigger Real-time sync
   const { pusherServer } = await import("@/lib/pusher");
-  await pusherServer.trigger(`profile-${profileId}`, "video-pinned", { videoId });
+  await pusherServer.trigger(`profile-${profileId}`, "video-pinned", {
+    videoId,
+  });
 
+  invalidateProfileFeed(profileId);
   revalidatePath(`/parent/dashboard`);
   revalidatePath(`/kids/${profileId}`);
 }
@@ -138,6 +142,7 @@ export async function unpinVideo(profileId: string, videoId: string) {
     videoId,
   });
 
+  invalidateProfileFeed(profileId);
   revalidatePath(`/parent/dashboard`);
   revalidatePath(`/kids/${profileId}`);
 }

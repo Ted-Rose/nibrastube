@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getSession, isKidSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { videoReactions, videos, whitelistedVideos } from "@/lib/db/schema";
+import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { assertCanManageProfile } from "@/lib/profiles";
 import { suitableVideo } from "@/lib/video-suitability";
 
@@ -84,6 +85,9 @@ export async function POST(request: NextRequest) {
     videoId,
   });
 
+  // Reactions drive Liked-tab membership and statusRank — bust the
+  // profile's cached feed rows before the next read.
+  invalidateProfileFeed(profileId);
   revalidatePath(`/kids/${profileId}`);
 
   return NextResponse.json({ ok: true });

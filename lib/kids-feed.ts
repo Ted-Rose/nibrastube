@@ -358,6 +358,13 @@ function cachedFeedRows<Args extends unknown[], R>(
   });
 }
 
+// Cache-key canonicalization: null, "" and 0 must key like an absent
+// param (undefined serializes the same as a missing key in
+// JSON.stringify), or equivalent filters mint duplicate entries.
+// `||` over `??` is deliberate — a 0 length bound is unbounded.
+const keyParam = <T>(v: T | null | undefined): T | undefined =>
+  v || undefined;
+
 // JS mirror of the statusRank CASE below — same tiers, so autoplay picks
 // match what the sort=status grid shows.
 export function watchStatus(
@@ -461,13 +468,13 @@ export async function getKidsVideos(
   params: KidsVideosParams
 ) {
   const canonical = {
-    q: params.q,
-    channelId: params.channelId,
+    q: keyParam(params.q),
+    channelId: keyParam(params.channelId),
     sort: params.sort,
     dir: params.dir,
     type: params.type,
-    minLen: params.minLen,
-    maxLen: params.maxLen,
+    minLen: keyParam(params.minLen),
+    maxLen: keyParam(params.maxLen),
   };
   const cached = cachedFeedRows(
     () => kidsVideoRows(profileId, canonical),
@@ -628,7 +635,13 @@ export async function getNewForYou(
     maxLen?: number | null;
   } = {}
 ) {
-  const canonical = { limit, days, type, minLen, maxLen };
+  const canonical = {
+    limit,
+    days,
+    type,
+    minLen: keyParam(minLen),
+    maxLen: keyParam(maxLen),
+  };
   const cached = cachedFeedRows(
     () => newForYouRows(profileId, canonical),
     ["new-for-you", profileId, JSON.stringify(canonical)],
@@ -712,7 +725,13 @@ export async function getLikedVideos(
     maxLen?: number | null;
   } = {}
 ) {
-  const canonical = { q, limit, type, minLen, maxLen };
+  const canonical = {
+    q: keyParam(q),
+    limit,
+    type,
+    minLen: keyParam(minLen),
+    maxLen: keyParam(maxLen),
+  };
   const cached = cachedFeedRows(
     () => likedVideoRows(profileId, canonical),
     ["liked-videos", profileId, JSON.stringify(canonical)],
@@ -1159,7 +1178,12 @@ export async function getKidsChannels(
     maxLen?: number | null;
   } = {}
 ): Promise<KidsChannel[]> {
-  const canonical = { q, type, minLen, maxLen };
+  const canonical = {
+    q: keyParam(q),
+    type,
+    minLen: keyParam(minLen),
+    maxLen: keyParam(maxLen),
+  };
   const cached = cachedFeedRows(
     () => kidsChannelRows(profileId, canonical),
     ["kids-channels", profileId, JSON.stringify(canonical)],
@@ -1322,7 +1346,12 @@ export async function getPlaylistVideos(
   });
   if (!playlist) return [];
 
-  const canonical = { q, type, minLen, maxLen };
+  const canonical = {
+    q: keyParam(q),
+    type,
+    minLen: keyParam(minLen),
+    maxLen: keyParam(maxLen),
+  };
   const cached = cachedFeedRows(
     () => playlistVideoRows(profileId, playlistId, canonical),
     [

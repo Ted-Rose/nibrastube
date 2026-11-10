@@ -84,7 +84,9 @@ into cached feed rows per request, never served from the cache.
 The client router SHALL retain visited route payloads for a few
 minutes so back-and-forth navigation and tab/sort switches do
 not trigger a server fetch. An explicit refresh (Pusher event,
-mutation) SHALL always bypass this cache.
+mutation) SHALL always bypass this cache. When a Pusher event is
+missed, the router cache MAY defer the refresh until its window
+expires.
 
 #### Scenario: Tab switch within the window is instant
 

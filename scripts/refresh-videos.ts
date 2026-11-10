@@ -150,6 +150,9 @@ async function main() {
     return;
   }
 
+  // This CLI runs outside Next.js — it cannot call revalidateTag, so
+  // any cached feed entries holding these rows self-heal only when
+  // the FEED_REVALIDATE_SECONDS TTL expires (~10 min).
   console.log(
     `Fetching metadata (${Math.ceil(targets.length / 50)} videos.list ` +
       `call(s))…`

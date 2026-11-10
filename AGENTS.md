@@ -464,7 +464,12 @@ docs/plans/                     Frozen legacy implementation plans —
   beside its `revalidatePath` — pin/unpin, channel
   approve/un-approve, playlist writes, reactions, profile edits,
   playback-block flags, video deletes, and sync inserts (the
-  `triggerPinned` chokepoint). `revalidatePath` alone does NOT bust
+  `triggerPinned` chokepoint). Writes to the SHARED `videos` table
+  (refresh deletes that FK-cascade pins, sync metadata upserts, the
+  watch-progress duration repair, pin/song-import self-heal
+  overwrites) land on every profile whitelisting the id — those
+  paths select the whitelisting profileIds and bust each tag, not
+  just the acting profile's. `revalidatePath` alone does NOT bust
   `unstable_cache` entries — a missing tag call leaves removed
   content servable for the TTL (whitelist-safety regression).
   Client-side, `experimental.staleTimes.dynamic = 300` in

@@ -1,7 +1,7 @@
 # Kids recommendation algorithm
 
 How the "For You" ranking works today. One SQL query —
-`getRecommendedVideos` in `lib/kids-feed.ts` (~lines 722-899) —
+`getRecommendedVideos` in `lib/kids-feed.ts` (~lines 880-1058) —
 reorders the profile's `whitelisted_videos` by predicted interest.
 The whitelist is absolute: the ranking never adds content, it only
 sorts what a parent already approved. All signals come from tables
@@ -296,7 +296,7 @@ does not corrupt it.
 ## Changing the algorithm
 
 The whole formula lives in `getRecommendedVideos`
-(`lib/kids-feed.ts`, ~lines 722-899). Constants:
+(`lib/kids-feed.ts`, ~lines 880-1058). Constants:
 
 | Knob | Value | Effect |
 |---|---|---|
@@ -305,7 +305,7 @@ The whole formula lives in `getRecommendedVideos`
 | In-progress flat | +8 | "continue watching" boost |
 | Channel like / video like | +5 / +4 | explicit approval |
 | Channel dislike | -20 | channel suppression (not exclusion) |
-| Impression penalty | min(12, 4·ln(1+d)) · 0.5^(since/14) | scroll-past downrank |
+| Impression penalty | min(12, 4·ln(1+d))·0.5^(since/14) | scroll-past downrank |
 | `MAX_EPOCH_AGE_MS` | 24 h | oldest accepted feed epoch for loadMore |
 | `seenDays` cap | 30 | per-(profile, video) impression counter ceiling |
 | Popularity half-life | 60 rows | depth where discovery takes over |

@@ -45,6 +45,14 @@ export async function pinVideo(profileId: string, videoId: string) {
     } else {
       const { id, ...updates } = videoRowValues(details);
       await db.update(videos).set(updates).where(eq(videos.id, id));
+      // `videos` is global — the self-heal overwrite lands on every
+      // profile pinning this video, not just the acting one (its tag
+      // is busted again after the pin below; idempotent).
+      const affected = await db
+        .select({ profileId: whitelistedVideos.profileId })
+        .from(whitelistedVideos)
+        .where(eq(whitelistedVideos.videoId, id));
+      for (const row of affected) invalidateProfileFeed(row.profileId);
     }
   }
 

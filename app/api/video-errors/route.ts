@@ -94,15 +94,29 @@ export async function POST(request: NextRequest) {
 
   // suitableVideo hides the flagged video everywhere, so the data
   // cache must not keep serving it: bust the feed tag of every profile
-  // whitelisting it (the flag is global, not per-profile). No pusher —
-  // silent like the impressions flush, just with cache correctness.
+  // whitelisting it (the flag is global, not per-profile).
   const affected = await db
     .select({ profileId: whitelistedVideos.profileId })
     .from(whitelistedVideos)
     .where(eq(whitelistedVideos.videoId, videoId));
   for (const row of affected) invalidateProfileFeed(row.profileId);
 
-  // No pusher, no revalidatePath — the flag is global and the next
-  // render of any surface picks it up via suitableVideo.
+  // The card just disappeared from affected feeds — ping each device
+  // so router.refresh() doesn't wait out the staleTimes window.
+  // Reuses "video-unpinned" (a listener-bound name); the payload only
+  // matters to the client as "refresh now".
+  if (affected.length) {
+    const { pusherServer } = await import("@/lib/pusher");
+    for (const row of affected) {
+      await pusherServer.trigger(
+        `profile-${row.profileId}`,
+        "video-unpinned",
+        { videoId }
+      );
+    }
+  }
+
+  // No revalidatePath — the flag is global and the next render of any
+  // surface picks it up via suitableVideo.
   return NextResponse.json({ ok: true });
 }

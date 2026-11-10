@@ -38,20 +38,47 @@ export async function refreshStaleVideos(
 
   let removed = 0;
   if (stale.length) {
-    const { missing } = await refreshVideoIds(stale.map((r) => r.id));
+    const { refreshed, missing } = await refreshVideoIds(
+      stale.map((r) => r.id)
+    );
+
+    // `videos` is a GLOBAL table — the deletes below cascade-unpin for
+    // EVERY whitelisting profile and the upserts rewrite shared
+    // metadata (e.g. ageRestricted flips hide via suitableVideo), so
+    // collect every affected profile before the deletes take the
+    // whitelist rows with them.
+    const affectedIds = [...missing, ...refreshed];
+    const affected = affectedIds.length
+      ? await db
+          .selectDistinct({ profileId: whitelistedVideos.profileId })
+          .from(whitelistedVideos)
+          .where(inArray(whitelistedVideos.videoId, affectedIds))
+      : [];
+
     if (missing.length) {
       await db.delete(videos).where(inArray(videos.id, missing));
       removed = missing.length;
-
-      // Pins disappeared — kids' devices need a feed refresh.
-      const { pusherServer } = await import("@/lib/pusher");
-      await pusherServer.trigger(`profile-${profileId}`, "video-unpinned", {
-        removed,
-      });
     }
+
+    if (affected.length) {
+      // Pins disappeared or metadata flipped — every affected kid
+      // device needs a feed refresh, not just the acting profile's.
+      const { pusherServer } = await import("@/lib/pusher");
+      for (const row of affected) {
+        await pusherServer.trigger(
+          `profile-${row.profileId}`,
+          "video-unpinned",
+          { removed }
+        );
+      }
+    }
+
+    // Deleted videos unpin via FK cascade and refreshed rows carry
+    // new shared metadata — bust each affected profile's feed tag.
+    for (const row of affected) invalidateProfileFeed(row.profileId);
   }
 
-  // Deleted videos unpin via FK cascade — bust the cached feed rows.
+  // The acting profile always gets busted (it may hold no pins).
   invalidateProfileFeed(profileId);
   revalidatePath("/parent/dashboard");
   revalidatePath(`/kids/${profileId}`);

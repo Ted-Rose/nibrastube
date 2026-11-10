@@ -18,7 +18,9 @@ export function PrefetchLink({
     <Link
       href={href}
       onPointerDown={(e) => {
-        router.prefetch(href.toString());
+        // href may be a UrlObject — router.prefetch wants a string.
+        const url = typeof href === "string" ? href : href.pathname;
+        if (url) router.prefetch(url);
         onPointerDown?.(e);
       }}
       {...props}

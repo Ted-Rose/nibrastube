@@ -88,6 +88,22 @@ async function upsertVideosAndWhitelist(
 
   await upsertVideoRows(details);
 
+  // `videos` rows are global: a metadata flip (e.g. ageRestricted →
+  // true hides the row via suitableVideo) lands on every profile that
+  // whitelists the id, not just the one being synced. triggerPinned
+  // below only covers this profile and only when new pins were added,
+  // so bust the feed tag of every other whitelisting profile here.
+  const affected = await db
+    .selectDistinct({ profileId: whitelistedVideos.profileId })
+    .from(whitelistedVideos)
+    .where(
+      inArray(
+        whitelistedVideos.videoId,
+        details.map((v) => v.id)
+      )
+    );
+  for (const row of affected) invalidateProfileFeed(row.profileId);
+
   const excluded = await getExcludedVideoIds(
     profileId,
     details.map((v) => v.id)

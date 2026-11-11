@@ -103,7 +103,7 @@ Do not disturb the main checkout's working tree:
       git push -u origin fix/issue-<N>-<short-slug>
 
 - Create the PR as a DRAFT targeting the fork's `main`. Follow
-  `.devin/workflows/create-pr.md`: write the body to a temp file and
+  `.devin/skills/create-pr/`: write the body to a temp file and
   use `--body-file` (never inline `--body`):
 
       gh pr create --repo Ted-Rose/nibrastube --draft \

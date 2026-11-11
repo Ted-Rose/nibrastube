@@ -16,8 +16,11 @@ ARG NEXT_PUBLIC_PUSHER_CLUSTER
 ENV NEXT_PUBLIC_PUSHER_KEY=$NEXT_PUBLIC_PUSHER_KEY \
     NEXT_PUBLIC_PUSHER_CLUSTER=$NEXT_PUBLIC_PUSHER_CLUSTER \
     NEXT_TELEMETRY_DISABLED=1 \
+    # Standalone output only exists for this image (next.config.mjs).
+    DOCKER_BUILD=1 \
     # Dummy values so module-level clients can construct during prerender
-    PUSHER_APP_ID=build PUSHER_KEY=build PUSHER_SECRET=build PUSHER_CLUSTER=eu \
+    PUSHER_APP_ID=build PUSHER_KEY=build PUSHER_SECRET=build \
+    PUSHER_CLUSTER=eu \
     DATABASE_URL=postgresql://build:build@localhost:5432/build
 
 RUN npm run build

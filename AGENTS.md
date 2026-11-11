@@ -42,7 +42,11 @@ instances, scales to zero — see `docs/deploy-gcp-cloud-run.md`).
 Both build the same `main` against the same Neon DB. On a Vercel
 outage, point traffic at the `*.run.app` URL and flip GitHub var
 `APP_URL` to move the APK over — do NOT change `APP_URL` in normal
-operation.
+operation. `vercel.json` pins functions to `fra1` (the Neon DB is in
+eu-central-1) and registers a daily `0 4 * * *` cron on
+`/api/sync-channels`. `output: "standalone"` in `next.config.mjs` is
+gated on `DOCKER_BUILD=1` (set in the Dockerfile) so it only applies
+to the Cloud Run image.
 
 Remotes: `origin` = my fork (`Ted-Rose/nibrastube`), `upstream` =
 source (`shamimhcp1/nibrastube`). **ALL GitHub operations (issues,
@@ -132,7 +136,9 @@ app/
                                 For-You + Shorts infinite-scroll
                                 paging, search + channel-videos —
                                 dashboard vetting paging)
-  api/sync-channels/            Daily channel sync trigger (GET+POST)
+  api/sync-channels/            Daily channel sync trigger (GET+POST;
+                                Vercel cron or once/day client ping,
+                                dedup'd by daily_syncs)
   api/watch-progress/           POST upsert for resume position
   api/video-reactions/          POST like/dislike per profile+video
   api/video-errors/             POST IFrame onError 100/101/150 →
@@ -405,9 +411,10 @@ docs/plans/                     Frozen legacy implementation plans —
   passwords can be 4 chars vs parents' 6.
 - **Channel sync:** approving a channel backfills its uploads
   playlist in the background (`after()`), resumable via
-  `backfillPageToken`. Daily sync (`/api/sync-channels`, pinged
-  once/day by clients) polls newest uploads until it hits a known
-  videoId. Manual unpin of a synced video → tombstone; un-approving a
+  `backfillPageToken`. Daily sync (`/api/sync-channels`, fired by
+  the Vercel cron at 04:00 UTC or a once/day client ping) polls
+  newest uploads until it hits a known videoId. Manual unpin of a
+  synced video → tombstone; un-approving a
   channel removes its `viaChannelId` pins and clears its tombstones.
   YouTube quota errors abort the run early. `channel_sync_exclusions`
   are keyed by profile owner; paused channels are filtered in
@@ -706,6 +713,10 @@ Repo-local style:
   `SENTRY_PROJECT=nibrastube-app` enable sourcemap upload and
   release creation (skipped silently when unset), and EU-region
   uploads also need `SENTRY_URL=https://de.sentry.io` or they 401.
+  `CRON_SECRET` (Vercel dashboard env var) is sent as a bearer token
+  on cron calls to `/api/sync-channels`; unset = every call is a
+  client ping. `DOCKER_BUILD=1` is set by the Dockerfile only — it
+  switches `output` to `standalone` for the Cloud Run image.
 - Long-lived work is usually done in **git worktrees** under the
   sibling dir `nibrastube-wt/<name>` (`git worktree add
   ../nibrastube-wt/<name> -b <branch> origin/main`) — the main

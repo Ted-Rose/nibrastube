@@ -2,6 +2,7 @@
 // docker-entrypoint.sh) so process.env is populated before any app module
 // is imported. Skips blank lines, comments, and vars already set in the
 // real environment (explicit env vars win over file contents).
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = require("node:fs");
 
 const envPath = process.env.ENV_FILE_PATH || "/tmp/.env.runtime";

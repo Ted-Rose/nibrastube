@@ -11,6 +11,8 @@ export const pusherServer = new PusherServer({
 
 export const getPusherClient = () => {
   return new PusherClient(process.env.NEXT_PUBLIC_PUSHER_KEY || "34c7db220ff83d26d348", {
-    cluster: process.env.PUSHER_CLUSTER || "ap2",
+    // Client bundle can only see NEXT_PUBLIC_* vars — PUSHER_CLUSTER is
+    // server-only and always resolves to undefined here.
+    cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER || "eu",
   });
 };

@@ -1,0 +1,28 @@
+# One-off / manual image build with NEXT_PUBLIC_* build args inlined
+# (the GitHub Actions workflow builds with plain `docker build`; this file
+# exists so `gcloud builds submit` can do the same without a local daemon):
+#
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --project <PROJECT_ID> \
+#     --substitutions=_IMAGE=<REGION>-docker.pkg.dev/<PROJECT_ID>/nibrastube/nibrastube:latest,\
+#_NEXT_PUBLIC_PUSHER_KEY=...,_NEXT_PUBLIC_PUSHER_CLUSTER=eu
+#
+# .env must NOT be uploaded: it is excluded by .dockerignore for the docker
+# build context and by .gitignore for the gcloud source upload.
+substitutions:
+  _IMAGE: europe-west1-docker.pkg.dev/nibrastube-app/nibrastube/nibrastube:latest
+  _NEXT_PUBLIC_PUSHER_KEY: ""
+  _NEXT_PUBLIC_PUSHER_CLUSTER: ""
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --platform=linux/amd64
+      - --build-arg=NEXT_PUBLIC_PUSHER_KEY=${_NEXT_PUBLIC_PUSHER_KEY}
+      - --build-arg=NEXT_PUBLIC_PUSHER_CLUSTER=${_NEXT_PUBLIC_PUSHER_CLUSTER}
+      - --tag=${_IMAGE}
+      - .
+images:
+  - "${_IMAGE}"
+options:
+  machineType: E2_HIGHCPU_8

@@ -1,0 +1,73 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/nibrastube/nibrastube
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Docker auth
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg NEXT_PUBLIC_PUSHER_KEY="${{ secrets.NEXT_PUBLIC_PUSHER_KEY }}" \
+            --build-arg NEXT_PUBLIC_PUSHER_CLUSTER="${{ vars.NEXT_PUBLIC_PUSHER_CLUSTER }}" \
+            --tag "$IMAGE:$GITHUB_SHA" \
+            --tag "$IMAGE:latest" \
+            .
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker push "$IMAGE:latest"
+
+      - name: Deploy to Cloud Run
+        env:
+          # Whole dotenv payload — becomes the single ENV_FILE env var on the
+          # service; docker-entrypoint.sh materializes it at container start.
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          { echo "ENV_FILE: |"; printf '%s' "$ENV_FILE" | sed 's/^/  /'; } > env.yaml
+          gcloud run deploy nibrastube \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ vars.GCP_REGION }}" \
+            --image="$IMAGE:$GITHUB_SHA" \
+            --allow-unauthenticated --min-instances=0 --max-instances=1 \
+            --memory=512Mi --cpu=1 --concurrency=80 \
+            --env-vars-file=env.yaml
+          rm -f env.yaml
+
+      - name: Delete old images (keep newest 2)
+        continue-on-error: true
+        run: |
+          digests=$(gcloud artifacts docker images list "$IMAGE" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --sort-by='~UPDATE_TIME' --format='value(digest)' --quiet)
+          count=0
+          for digest in $digests; do
+            count=$((count + 1))
+            if [ "$count" -gt 2 ]; then
+              gcloud artifacts docker images delete "$IMAGE@$digest" \
+                --project="${{ vars.GCP_PROJECT_ID }}" \
+                --delete-tags --quiet || true
+            fi
+          done

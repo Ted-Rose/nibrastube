@@ -34,8 +34,10 @@ RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --chmod=0755 docker-entrypoint.sh ./docker-entrypoint.sh
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
 COPY docker-load-env.cjs ./docker-load-env.cjs
+# Cloud Build's docker builder has no BuildKit (no COPY --chmod).
+RUN chmod 0755 docker-entrypoint.sh
 
 USER nextjs
 EXPOSE 8080

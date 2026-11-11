@@ -277,7 +277,6 @@ docs/plans/                     Frozen legacy implementation plans —
                                 implemented (see Conventions)
 .devin/skills/                  Agent skills (see "Agent config
                                 layout")
-.devin/workflows/               Workflow docs (create-pr.md)
 ```
 
 ## Data model (`lib/db/schema.ts`)
@@ -705,93 +704,105 @@ Repo-local style:
   checkout often holds the user's uncommitted work; do NOT switch
   branches in it.
 
-Workflow rules (workspace-wide conventions — follow them all):
+Universal rules — follow exactly:
 
-1. **Max 79 chars per line, every file type** (code, md, config).
-   Verify: `awk 'length > 79 {print FILENAME":"NR}' <file>`. Fix
-   violations you introduce plus long lines in files already being
-   modified. Exempt: Prettier's `printWidth: 80` may emit 80-char
-   lines in TS/TSX (formatter output — don't hand-tune it), and
-   vendored upstream skill files under `.agents/skills/` and
-   `.devin/skills/` (`openspec-*`, `vercel-react-best-practices/`)
-   stay verbatim.
-   Historical `docs/plans/*` files carry pre-existing long lines
-   (tables/code blocks) — don't re-wrap them unless rewriting the
-   section anyway.
+1. **Max 79 chars per line, every file type.** Verify:
+   `awk 'length > 79 {print FILENAME":"NR}' <file>`. Fix
+   violations you introduce plus long lines in files already
+   being modified. Exempt: formatter output (e.g. Prettier at
+   printWidth 80 may emit 80-char lines) and vendored upstream
+   skill files under `.agents/skills/` and `.devin/skills/`
+   (`openspec-*`, `vercel-react-best-practices/`) — refresh
+   tools own them.
 2. **Commit format** `Type: Capitalized message` —
    `Feat:`/`Fix:`/`Docs:`/`Refactor:`/`Test:`/`Chore:`.
-3. **Commit on feature branches only, never `main`.** Stage only
-   files changed this session, by path — never `git add -A`,
-   `git add .` or `git commit -a`; run `git status` first; leave the
-   user's dirty files alone; never commit plan/scratch markdown —
-   `docs/plans/` is frozen (rule 11), so the only plan file that
-   may be committed is a legacy one briefly inside its implementing
-   PR per rule 11's commit-then-delete flow.
-4. **Dangerous commands — never run these:**
-   - `npm run db:migrate` against `DATABASE_URL` (the pooled
-     endpoint) — PgBouncer transaction pooling breaks migrate's
-     session behavior; `drizzle.config.ts` already prefers
-     `DATABASE_URL_UNPOOLED`, so the plain command is correct.
-     Generating migration files (`npm run db:generate`) is always
-     safe.
-   - `npx drizzle-kit push` — bypasses migration files; README's
-     mention is stale.
-   - `npm run videos:refresh -- --prune` — deletes rows; dry-run
-     first.
-   - Pushing `v*` tags or commits to the `android` branch — triggers
-     signed release builds.
-   - `git push --force`, deleting branches, rewriting history.
-   - Anything writing to the production Neon DB beyond the
-     sanctioned migrate — if a task genuinely needs it, write the
-     change and tell the user the command to run.
-5. **Scoped verification** — no test suite exists; verify with
-   `npm run typecheck` + `npm run lint` (+ `npm run build` for
-   infra-level changes) and a manual run. When touching the song
-   parser, run `npx tsx scripts/test-song-parser.ts`.
-6. **PR bodies go to a temp file** + `gh pr create --body-file`,
-   never inline `--body`; delete the temp file after. See
-   `.devin/workflows/create-pr.md`.
+3. **Commit on feature branches only, never `main`.**
+   Name branches `<type>/<slug>` with the commit types
+   (`feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `chore/`).
+   Stage only files changed this session, by path — never
+   `git add -A`, `git add .` or `git commit -a`; confirm the
+   staged set with `git status` first; leave the user's own
+   dirty files alone; never commit plan/scratch markdown.
+4. **Dangerous commands — never run** the destructive/deploy
+   commands listed under "Repo-specific rules" below; write
+   the change and tell the user the command to run instead.
+5. **Scoped verification** — run only the tests/checks for
+   what you changed, not the whole suite.
+6. **PR bodies go to a temp file** + `gh pr create
+   --body-file`, never inline `--body`; delete the temp file
+   after. See `.devin/skills/create-pr/`.
 7. **Every PR body includes a UI verification / QC section** —
-   concrete steps (which pages to open, which buttons to click,
-   expected result) exercising the change end-to-end through the UI.
-   Omit only when the change is genuinely unreachable from the UI —
-   then give an equivalent (curl command, script, log line).
-8. **`origin` is the user's fork** — all GitHub operations target
-   `Ted-Rose/nibrastube`; never upstream unless asked.
-9. **No secrets in code.** Secrets live in `.env` (gitignored) and in
-   GitHub secrets/vars (`ANDROID_KEYSTORE_BASE64`, `KEY_ALIAS`,
-   `KEYSTORE_PASSWORD`, `KEY_PASSWORD`, `APP_URL` var) for release
-   signing. Never print or commit `.env` values or keystores
-   (`*.p12`/`*.keystore`/`*.jks` are gitignored).
-10. **Keep docs in sync:** update this file (AGENTS.md is the repo's
-    contract doc for future sessions) after functionality changes,
-    and delete any `docs/plans/*-plan.md` the change fully implements
-    (see rule 11).
-11. **`docs/plans/` is frozen — legacy files only.** Never create
-    new plan/design/investigation markdown, there or anywhere else —
-    all new planning goes through `openspec changes` (see
-    "OpenSpec"): `openspec-propose` for changes, `openspec-explore`
-    or a change's `design.md`/`tasks.md` for investigations. The
-    surviving `<feature>-plan.md` files keep their status header:
-    `implemented` / `partial` / `in progress` / `not implemented` /
-    `reverted`. **A fully implemented plan is deleted, not archived**
-    — a done plan only garbages the directory. In the implementing
-    PR, commit the plan file first (reviewers need the context), then
-    delete it in a follow-up commit on the same branch before merge
-    so the done plan never lands in `main`. Only `partial` /
-    `in progress` / `reverted` plans stay, with the header updated.
-12. **Test login for UI verification:** parent account
-    `tester@example.com` / `password`, parent PIN `0000`. Use it when
-    asked to log in and exercise the UI; if it fails where you're
-    testing, ask the user rather than hunting for credentials.
-13. **This file is self-updating.** When you hit local-setup,
-    infrastructure, or missing-tooling friction — a CLI that isn't
-    installed, a non-obvious way to run the project locally, a
-    required version or local path — don't grind through many failing
-    alternatives. Missing tool → tell the user what to install.
-    Working flow or local quirk discovered → write it into this
-    AGENTS.md and commit the doc update alongside the work that
-    discovered it.
+   concrete steps (pages, clicks, expected result) exercising
+   the change end-to-end through the UI. Omit only when
+   genuinely unreachable from the UI — then give an
+   equivalent (curl command, log line, file to inspect).
+8. **GitHub remote targeting**: when `origin` is the user's
+   fork (an `upstream` remote exists), ALL GitHub operations
+   — issues, PRs, comments, releases — target the fork via
+   `--repo <owner>/<fork>`; never upstream unless asked.
+   Otherwise `origin` is the target.
+9. **No secrets in code.** Secrets live in gitignored local
+   files / env vars / GCP Secret Manager. Never create new
+   Secret Manager secrets — append KEY=VALUE lines to the
+   shared `env-file` secret (each extra secret adds cost).
+10. **Update docs after functionality changes** — this file
+    and the repo's other contract docs (README /
+    DEVELOPER_GUIDE / docs/*) — in the same change.
+11. **`docs/plans/` is frozen** — existing files stay as
+    history with their status headers (implemented / partial /
+    in progress / not implemented / reverted); nothing new is
+    added there or anywhere else — all new planning goes
+    through OpenSpec (`openspec-propose` for changes,
+    `openspec-explore`/change artifacts for investigations).
+12. **This file is self-updating.** Missing tool → tell the
+    user what to install instead of grinding through failing
+    alternatives. Discovered flow/local quirk → write it into
+    the relevant AGENTS.md and commit that doc update
+    alongside the work that discovered it.
+
+### Repo-specific rules
+
+- **Dangerous commands — never run**:
+  - `npm run db:migrate` against `DATABASE_URL` (the pooled
+    endpoint) — PgBouncer transaction pooling breaks migrate's
+    session behavior; `drizzle.config.ts` already prefers
+    `DATABASE_URL_UNPOOLED`, so the plain command is correct.
+    Generating migration files (`npm run db:generate`) is
+    always safe.
+  - `npx drizzle-kit push` — bypasses migration files; README's
+    mention is stale.
+  - `npm run videos:refresh -- --prune` — deletes rows; dry-run
+    first.
+  - Pushing `v*` tags or commits to the `android` branch —
+    triggers signed release builds.
+  - `git push --force`, deleting branches, rewriting history.
+  - Anything writing to the production Neon DB beyond the
+    sanctioned migrate — if a task genuinely needs it, write
+    the change and tell the user the command to run.
+- **Branch prefixes**: `feature/` for new functionality (not
+  `feat/`), `fix/` for bug fixes, `chore/` for
+  maintenance/tooling, `docs/` for documentation, `refactor/`
+  for restructuring (e.g. `feature/kids-profile-switcher`,
+  `fix/dark-mode-titles`).
+- **Remote/deploy layout**: `origin` = the user's fork
+  (`Ted-Rose/nibrastube`); `upstream` = `shamimhcp1/nibrastube`.
+  Squash-merge only (`.github/settings.yml`); `main` is
+  protected — no force pushes or deletions, enforced for
+  admins.
+- **No test suite** — scoped verification = `npm run typecheck`
+  + `npm run lint` (+ `npm run build` for infra-level changes)
+  and a manual run; `npx tsx scripts/test-song-parser.ts` when
+  touching the song parser.
+- **Test login for UI verification**: parent account
+  `tester@example.com` / `password`, parent PIN `0000`. If it
+  fails where you're testing, ask the user rather than hunting
+  for credentials.
+- **Implemented plans are deleted, not archived**: in the
+  implementing PR, commit the `docs/plans/*-plan.md` file first
+  (reviewers need the context), then delete it in a follow-up
+  commit on the same branch before merge so the done plan never
+  lands in `main`. Only `partial` / `in progress` / `reverted`
+  plans stay, with the header updated.
 
 ## Agent config layout
 
@@ -807,7 +818,7 @@ Workflow rules (workspace-wide conventions — follow them all):
 - `.devin/skills/openspec-*/` — OpenSpec workflow skills: copies of
   `.agents/skills/openspec-*/` with frontmatter stripped to
   `name:`/`description:` (see "OpenSpec").
-- `.devin/workflows/create-pr.md` — PR body via `--body-file`.
+- `.devin/skills/create-pr/` — PR body via `--body-file`.
 - `.devin/config.local.json` — permission allowlist, user-local and
   untracked (gitignored).
 
@@ -828,8 +839,9 @@ changes touch new areas.
 archive).
 
 - **Run `openspec` commands from the repo root.** The CLI is a
-  global npm install under `/opt/homebrew/bin` — prepend it to PATH
-  in non-interactive shells (see "Known gaps").
+  global npm install under `/opt/homebrew/bin` — not on
+  agent-shell PATH (see the machine-environment notes in
+  `~/.config/devin/AGENTS.md`).
 - **Always run `openspec validate --all --strict` after
   touching `openspec/`** — proposing, spec edits, sync,
   archive. It must pass before committing; strict mode catches
@@ -874,8 +886,9 @@ archive).
 - `capacitor-www/` is an intentional placeholder — the app is SSR and
   has no static export; the APK loads the remote URL. Don't try to
   make `next build` produce an export.
-- Dev machine sits behind a TLS-intercepting proxy (Netskope).
-  Node-side calls (axios → YouTube) need `NODE_EXTRA_CA_CERTS` (set
+- The dev machine's TLS-intercepting proxy (see the global
+  machine-environment notes) breaks Node-side calls (axios →
+  YouTube) without `NODE_EXTRA_CA_CERTS` (set
   in `~/.zshrc`); Turbopack ignores that var — `.env` carries
   `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1` so
   `next/font`'s Google Fonts downloads validate. Without it every
@@ -914,9 +927,8 @@ archive).
   advisory locks) don't survive between statements. The app uses
   none of them, which is why `drizzle-kit migrate`/`pg_dump` must go
   through `DATABASE_URL_UNPOOLED`.
-- `npm`/`gh` may be missing from PATH in non-interactive shells
-  (`npm: command not found`); prepend
-  `export PATH="/opt/homebrew/bin:$PATH"`.
+- `npm`/`gh` are not on agent-shell PATH — see the global
+  machine-environment notes for the required PATH prefix.
 
 ## Testing
 
@@ -929,6 +941,6 @@ No test suite exists. Verify with:
    song timestamp parser (`lib/song-timestamps.ts` +
    `parseYouTubeVideoId`); run it when touching song-import code.
 4. Manual run on `http://localhost:3100` for UI changes — log in with
-   the test account (Conventions rule 12) and walk the flow end to
+   the test account (Repo-specific rules) and walk the flow end to
    end; that's also what every PR's UI-verification section should
    describe.

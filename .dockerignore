@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.github
+.env
+.env.*
+*.pem
+docs
+scripts
+Dockerfile
+.dockerignore
+cleanup-policy.json

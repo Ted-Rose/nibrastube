@@ -13,6 +13,15 @@ push to main
 Cloud Run ──TLS──> Neon Postgres (pooled DATABASE_URL)
 ```
 
+## Role: backup deployment
+
+**Vercel (`redzi.vercel.app`) is the primary production deploy.** The
+Cloud Run service is a standby for Vercel outages — same `main`
+branch, same Neon DB, deployed in parallel by
+`.github/workflows/deploy.yml`. On a Vercel outage, point users at
+the `*.run.app` URL and flip GitHub var `APP_URL` to move the
+Capacitor APK over. In normal operation `APP_URL` stays on Vercel.
+
 ## Runtime config: one ENV_FILE var
 
 The whole `.env` is shipped as a **single env var** `ENV_FILE` (a GitHub

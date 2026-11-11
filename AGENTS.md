@@ -34,7 +34,15 @@ kids can only watch approved content.
 Deploy targets: the Next.js app at a public HTTPS URL (the Capacitor
 APK just loads `server.url`, so a deploy is required for the Android
 app to work) and a signed Android APK built by GitHub Actions (see
-"Android APK").
+"Android APK"). Two web deploys exist: **Vercel is primary**
+(`redzi.vercel.app` — also the APK's `APP_URL` target) and **GCP
+Cloud Run is a standby/backup** for Vercel outages (`nibrastube`
+service, project `nibrastube-app`, `europe-west1`, min 0 / max 1
+instances, scales to zero — see `docs/deploy-gcp-cloud-run.md`).
+Both build the same `main` against the same Neon DB. On a Vercel
+outage, point traffic at the `*.run.app` URL and flip GitHub var
+`APP_URL` to move the APK over — do NOT change `APP_URL` in normal
+operation.
 
 Remotes: `origin` = my fork (`Ted-Rose/nibrastube`), `upstream` =
 source (`shamimhcp1/nibrastube`). **ALL GitHub operations (issues,

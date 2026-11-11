@@ -68,7 +68,7 @@ agents writing the same worktree concurrently. Prompt template:
        commit plan/scratch md). Format: `Type: Capitalized msg`.
        Push: git push -u origin feature/<slug>
     6. Open a DRAFT PR on the fork following
-       .devin/workflows/create-pr.md — write the body to
+       .devin/skills/create-pr/ — write the body to
        pr-body.md, use --body-file, rm it after. Body must include
        a UI-verification section (pages/clicks/expected result)
        and --repo Ted-Rose/nibrastube.

@@ -789,6 +789,12 @@ Universal rules — follow exactly:
   Squash-merge only (`.github/settings.yml`); `main` is
   protected — no force pushes or deletions, enforced for
   admins.
+- **GitHub secrets/vars** (no GCP Secret Manager here): CI
+  secrets `ANDROID_KEYSTORE_BASE64`, `KEY_ALIAS`,
+  `KEYSTORE_PASSWORD`, `KEY_PASSWORD` and the `APP_URL` repo
+  variable back Android signing/deploys — never print or
+  commit keystore material; `*.p12`/`*.keystore`/`*.jks` are
+  gitignored.
 - **No test suite** — scoped verification = `npm run typecheck`
   + `npm run lint` (+ `npm run build` for infra-level changes)
   and a manual run; `npx tsx scripts/test-song-parser.ts` when

@@ -135,8 +135,8 @@ Spawn a FRESH reviewer subagent on the PR diff
 useful it reports, push, then spawn another fresh reviewer —
 repeat until a round finds nothing meaningful. Keep the
 worktree until the loop is clean AND checks are green, then
-remove it (`git worktree remove` + `git branch -D`, per
-AGENTS.md).
+remove it (`git worktree remove --force` + `git branch -D`,
+per AGENTS.md).
 
 Then report to the user: the issue number/title fixed, the PR
 URL, and the final check status.

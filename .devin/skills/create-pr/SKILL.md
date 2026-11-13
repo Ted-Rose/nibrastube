@@ -12,8 +12,8 @@ description: >
 
 1. Prereqs: on a feature branch (never `main` — if commits
    landed on `main`, recover in a worktree: `git branch
-   <type>/<slug>`, verify `git status` shows only your own
-   changes (stash anything else), `git fetch origin`,
+   <type>/<slug>`, stash any uncommitted work
+   (`git stash -u`), `git fetch origin`,
    `git reset --hard origin/main`, then
    `git worktree add ../nibrastube-wt/<slug> <type>/<slug>`). `gh` installed
    and authed; if missing, tell the user

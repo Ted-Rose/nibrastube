@@ -661,8 +661,9 @@ npx tsx scripts/test-song-parser.ts   # ad-hoc checks for the song
 ```
 
 DB schema changes: edit `lib/db/schema.ts`, then `npm run
-db:generate` (commit the generated `drizzle/` files), `npm run
-db:migrate` to apply.
+db:generate` (commit the generated `drizzle/` files); applying
+via `npm run db:migrate` is user-run only — agents hand the
+command off (see "Dangerous commands").
 
 ## Android APK
 

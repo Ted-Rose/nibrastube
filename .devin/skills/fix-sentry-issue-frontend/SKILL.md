@@ -92,6 +92,7 @@ NOT switch branches in it:
       -b fix/sentry-<issue_short_id> origin/main
     cd ../nibrastube-wt/sentry-<id>
     npm install   # worktrees don't share node_modules
+    cp ../nibrastube/.env .env   # nor .env
 
 - Read `AGENTS.md`; 79-char lines in every file type.
 - `export PATH="/opt/homebrew/bin:$PATH"` on every exec call —
@@ -133,7 +134,9 @@ NOT switch branches in it:
   continue). Then run the reviewer loop: spawn a fresh
   reviewer subagent on the diff, fix useful findings, push,
   repeat until a round finds nothing meaningful. Remove the
-  worktree once the loop is clean and checks are green.
+  worktree once the loop is clean and checks are green
+  (`git worktree remove --force` + `git branch -D`, per
+  AGENTS.md).
 
 ## 6. Resolve — only after merge
 

@@ -50,7 +50,8 @@ agents writing the same worktree concurrently. Prompt template:
          cd <repo>; git fetch origin
          git worktree add ../nibrastube-wt/<slug> \
            -b feature/<slug> origin/main
-         cd ../nibrastube-wt/<slug> && npm install
+         cd ../nibrastube-wt/<slug> && npm install &&
+         cp ../nibrastube/.env .env
     2. Read AGENTS.md first — it defines the whitelist/auth
        invariants, commands, and sharp edges. Every line <= 79
        chars in every file type.

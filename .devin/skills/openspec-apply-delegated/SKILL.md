@@ -43,7 +43,7 @@ stays small and survives `openspec update`.
    `git fetch origin` then `git worktree add
    ../nibrastube-wt/<change-name> -b
    feature/<change-name> origin/main` — the implementer
-   works inside it (`npm install` there too).
+   works inside it (`npm install` + copy `.env` there too).
 
 ## Phase 2 — implementer agent
 

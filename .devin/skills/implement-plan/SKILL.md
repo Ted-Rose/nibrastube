@@ -2,7 +2,7 @@
 name: implement-plan
 description: Implement a legacy docs/plans/*-plan.md file end-to-end
   with subagents — an implementer agent cuts a feature branch and
-  opens a draft PR, then fresh reviewer agents review it and fixer
+  opens a PR, then fresh reviewer agents review it and fixer
   agents iterate until clean. Invoke when the user asks to
   implement/execute a plan file using agents.
 ---
@@ -67,13 +67,14 @@ agents writing the same worktree concurrently. Prompt template:
     5. Commit only files you edited (never git add -A, never
        commit plan/scratch md). Format: `Type: Capitalized msg`.
        Push: git push -u origin feature/<slug>
-    6. Open a DRAFT PR on the fork following
-       .devin/skills/create-pr/ — write the body to
-       pr-body.md, use --body-file, rm it after. Body must include
+    6. Open a PR (ready for review — never a draft) on the
+       fork following .devin/skills/create-pr/ — write the
+       body to pr-body.md, use --body-file, rm it after. Body must include
        a UI-verification section (pages/clicks/expected result)
        and --repo Ted-Rose/nibrastube.
     7. gh pr checks <N> --repo Ted-Rose/nibrastube --watch; fix
-       failures until green, then gh pr ready.
+       failures until green. The PR is opened ready for
+       review — never a draft.
     Return: PR URL, worktree path, files changed, verification
     results, anything you could not do.
 

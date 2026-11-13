@@ -2,8 +2,8 @@
 name: fix-good-first-issue
 description: Pick an open GitHub issue labeled "good first issue" in
   Ted-Rose/nibrastube, fix it on a new branch cut from updated main,
-  open a draft PR, wait for checks, fix any failures, and mark the PR
-  ready for review. Invoke when the user asks to fix a
+  open a PR, wait for checks, fix any failures, and run a
+  reviewer loop until clean. Invoke when the user asks to fix a
   good-first-issue / pick up an issue.
 ---
 
@@ -92,7 +92,7 @@ Do not disturb the main checkout's working tree:
 - If the change alters behavior, update `AGENTS.md` (conventions
   rule 10).
 
-## 5. Commit, push, and open a draft PR
+## 5. Commit, push, and open a PR
 
 - Stage only files you edited — never `git add -A` / `git add .`.
   Never commit plan/scratch markdown.
@@ -102,11 +102,12 @@ Do not disturb the main checkout's working tree:
 
       git push -u origin fix/issue-<N>-<short-slug>
 
-- Create the PR as a DRAFT targeting the fork's `main`. Follow
-  `.devin/skills/create-pr/`: write the body to a temp file and
-  use `--body-file` (never inline `--body`):
+- Create the PR ready for review (never a draft) targeting the
+  fork's `main`. Follow `.devin/skills/create-pr/`: write the
+  body to a temp file and use `--body-file` (never inline
+  `--body`):
 
-      gh pr create --repo Ted-Rose/nibrastube --draft \
+      gh pr create --repo Ted-Rose/nibrastube \
         --title "Type: Capitalized message" \
         --base main --head fix/issue-<N>-<short-slug> \
         --body-file pr-body.md
@@ -126,9 +127,15 @@ Do not disturb the main checkout's working tree:
   pending or failing. (The repo may report no checks — note that and
   continue.)
 
-## 7. Mark ready for review and report
+## 7. Reviewer loop, then report
 
-    gh pr ready <PR-number> --repo Ted-Rose/nibrastube
+Spawn a FRESH reviewer subagent on the PR diff
+(`gh pr diff <N> --repo Ted-Rose/nibrastube`). Fix everything
+useful it reports, push, then spawn another fresh reviewer —
+repeat until a round finds nothing meaningful. Keep the
+worktree until the loop is clean AND checks are green, then
+remove it (`git worktree remove` + `git branch -D`, per
+AGENTS.md).
 
-Then report to the user: the issue number/title fixed, the PR URL,
-the worktree path, and the final check status.
+Then report to the user: the issue number/title fixed, the PR
+URL, and the final check status.

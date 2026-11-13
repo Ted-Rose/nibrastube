@@ -181,6 +181,8 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
       returnQuery={kidsFeedQuery(feed)}
       sequential={sequential}
       swipeEnabled={profile.swipeEnabled}
+      autoplayOnOpen={profile.autoplayOnOpen}
+      autoplayOnNext={profile.autoplayOnNext}
     />
   );
 }

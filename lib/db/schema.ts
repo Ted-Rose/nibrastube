@@ -39,6 +39,12 @@ export const profiles = pgTable("profiles", {
   passwordHash: text("password_hash"),
   // kid may swipe to switch videos on the watch page
   swipeEnabled: boolean("swipe_enabled").default(false).notNull(),
+  // per-kid autoplay: the watch page's first video starts by itself
+  // on open / the next video starts by itself at end-of-video. Both
+  // default off — only plays started by a tap on the player's own
+  // button count toward YouTube watch history.
+  autoplayOnOpen: boolean("autoplay_on_open").default(false).notNull(),
+  autoplayOnNext: boolean("autoplay_on_next").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

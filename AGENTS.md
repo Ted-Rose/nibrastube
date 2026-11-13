@@ -153,8 +153,12 @@ components/
                                 input, label)
   watch-experience.tsx          YouTube IFrame player: auto-advance,
                                 resume, rogue-video snapback,
-                                progress beacons; Back pops history
-                                when the nt:watchFrom marker is set
+                                progress beacons; per-kid
+                                autoplayOnOpen/autoplayOnNext gate
+                                play-on-open / ENDED advance (cue =
+                                load paused; user-initiated nav always
+                                plays); Back pops history when the
+                                nt:watchFrom marker is set
   watch-from-tracker.tsx        Capture-phase document listener that
                                 sets nt:watchFrom on any /watch/ link
                                 tap — feed→watch entry marker
@@ -328,7 +332,11 @@ docs/reviews/                   Committed Oct 2026 code audit —
   imported as songs
 - `profiles` — kids, owned by `parentId`; avatars are emoji strings;
   optional `username` (unique, shares the login-identifier namespace
-  with `users.email`) + `passwordHash` enable kid login
+  with `users.email`) + `passwordHash` enable kid login;
+  `swipeEnabled` + `autoplayOnOpen`/`autoplayOnNext` are per-kid
+  watch-page prefs toggled on `/parent/profiles` — autoplay off keeps
+  plays eligible for YouTube watch history (only plays started by a
+  tap on the player's own button count)
 - `videos` — global YouTube video cache, PK = YouTube video ID;
   `isShort` marks Shorts (derived at fetch time: ≤60 s or `#shorts`
   in title/description/tags — the API exposes no flag)

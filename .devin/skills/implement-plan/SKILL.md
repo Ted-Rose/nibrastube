@@ -73,8 +73,7 @@ agents writing the same worktree concurrently. Prompt template:
        a UI-verification section (pages/clicks/expected result)
        and --repo Ted-Rose/nibrastube.
     7. gh pr checks <N> --repo Ted-Rose/nibrastube --watch; fix
-       failures until green. The PR is opened ready for
-       review — never a draft.
+       failures until green.
     Return: PR URL, worktree path, files changed, verification
     results, anything you could not do.
 
@@ -136,8 +135,12 @@ If the reviewer reported blocker/should-fix findings:
   only when the outcome is `partial` / `in progress` / `reverted`,
   with its status header updated accordingly.
 
+Once a review round is clean AND the PR's checks are green, remove
+the worktree immediately — `git worktree remove <path>` +
+`git branch -D <type>/<slug>` per AGENTS.md; don't wait for merge.
+
 ## Final report
 
-PR URL, review rounds needed, findings fixed per round, the worktree
-path, and any outstanding items (e.g. a migration command the user
-must run).
+PR URL, review rounds needed, findings fixed per round, confirmation
+the worktree was removed, and any outstanding items (e.g. a
+migration command the user must run).

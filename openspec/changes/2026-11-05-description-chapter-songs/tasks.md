@@ -89,7 +89,8 @@
 
 ## Workflow follow-up
 
-- Open a draft PR against `Ted-Rose/nibrastube` with UI
+- Open a ready-for-review PR against `Ted-Rose/nibrastube`
+  with UI
   verification steps (import the reference video through the
   dashboard card, confirm flagged rows in preview and in the
   imported list).

@@ -153,5 +153,5 @@ an issue without asking the user.
   "@sentry/nextjs"` under plain tsx/ESM loses the named exports
   (CJS interop) — write `.cts` + `require()` or use
   `@sentry/node`.
-- Report at the end: issue handled, PR URL, worktree path, and
-  Sentry resolution status.
+- Report at the end: issue handled, PR URL, worktree removed
+  (yes/no), and Sentry resolution status.

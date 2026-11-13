@@ -66,7 +66,8 @@ Do not disturb the main checkout's working tree:
     cd ../nibrastube-wt/issue-<N>
     npm install   # worktrees don't share node_modules
 
-(If the worktree dir already exists, `cd` into it and reuse it.)
+(If the worktree dir already exists, remove it first — follow-up
+work always gets a fresh worktree, per AGENTS.md.)
 
 ## 4. Fix the issue
 
@@ -123,8 +124,8 @@ Do not disturb the main checkout's working tree:
 
 - When the watch ends, inspect results. If any check fails, get logs
   (`gh run view --log-failed`), fix, commit, push, watch again.
-- Repeat until every check passes. Do not mark ready while checks are
-  pending or failing. (The repo may report no checks — note that and
+- Repeat until every check passes — the worktree stays up until
+  they do. (The repo may report no checks — note that and
   continue.)
 
 ## 7. Reviewer loop, then report

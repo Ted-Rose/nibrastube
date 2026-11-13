@@ -38,8 +38,8 @@ stays small and survives `openspec update`.
      through to every openspec command here and inside the
      subagent prompt.
 
-3. Branch: `feat/<change-name>` unless the user says otherwise.
-   Never `main`.
+3. Branch: `feature/<change-name>` unless the user says
+   otherwise. Never `main`.
 
 ## Phase 2 — implementer agent
 
@@ -55,8 +55,8 @@ stays small and survives `openspec update`.
      sourcePath/line → rerun instructions to confirm progress)
    - the repo rules that bite: max 79 chars/line (vendored
      `openspec-*/` files exempt), `Type: Capitalized` commits,
-     feature branch only, never `manage.py migrate`, scoped
-     tests only (`manage.py test <app>`, single Vitest file),
+     feature branch only, no test suite — verify with
+     `npm run typecheck && npm run lint`,
      and `openspec validate --all --strict` must pass before
      pushing
    - PR conventions: push the branch, body via temp file +

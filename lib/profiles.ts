@@ -113,6 +113,6 @@ export async function getManageableProfiles(userId: string) {
         : eq(profiles.parentId, userId),
     // Stable order — UPDATEs move rows in Postgres heap order, so an
     // unordered list reshuffles the /kids picker and sidebar cards.
-    orderBy: (p, { asc }) => [asc(p.createdAt)],
+    orderBy: (p, { desc }) => [desc(p.createdAt)],
   });
 }

@@ -27,7 +27,7 @@ export default async function ProfilesPage() {
   // (and which kid a toggle belongs to) on every revalidation.
   const kidProfiles = await db.query.profiles.findMany({
     where: eq(profiles.parentId, user.id),
-    orderBy: (p, { asc }) => [asc(p.createdAt)],
+    orderBy: (p, { desc }) => [desc(p.createdAt)],
   });
 
   // Fetch all invites for these profiles
@@ -48,7 +48,7 @@ export default async function ProfilesPage() {
   const sharedProfiles = sharedWithMe.length > 0
     ? await db.query.profiles.findMany({
         where: inArray(profiles.id, sharedWithMe.map(s => s.profileId)),
-        orderBy: (p, { asc }) => [asc(p.createdAt)],
+        orderBy: (p, { desc }) => [desc(p.createdAt)],
       })
     : [];
 

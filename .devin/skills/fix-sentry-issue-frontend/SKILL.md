@@ -115,7 +115,7 @@ NOT switch branches in it:
   `git add .`). Never commit plan/scratch markdown.
 - Commit format `Type: Capitalized message` (usually `Fix:`).
 - `git push -u origin <branch>`, then a DRAFT PR targeting the
-  fork's `main` per `.devin/workflows/create-pr.md` — body via
+  fork's `main` per `.devin/skills/create-pr/` — body via
   `--body-file`, never inline `--body`:
 
       gh pr create --repo Ted-Rose/nibrastube --draft \

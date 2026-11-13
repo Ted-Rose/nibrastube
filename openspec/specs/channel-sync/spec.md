@@ -92,7 +92,9 @@ row keyed by the UTC date; success means the run is exclusive, a
 conflict means it already ran and answers
 `{ ok: true, alreadyDone: true }`. The actual sync SHALL run inside
 `after()` after the response, finally recording `finishedAt` and
-`channelsSynced`. Clients ping the route at most once per day.
+`channelsSynced`. The canonical trigger is the daily Vercel cron
+(`vercel.json`), identified by `Authorization: Bearer $CRON_SECRET`;
+browser pings run the same dedup'd flow.
 
 #### Scenario: First call of the day runs the sync
 

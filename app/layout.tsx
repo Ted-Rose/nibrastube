@@ -6,6 +6,8 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { PwaRegister } from "@/components/pwa-register"
 import { AppUpdateBanner } from "@/components/app-update-banner"
 import { DragScroll } from "@/components/drag-scroll"
+import { Analytics } from "@vercel/analytics/next"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 import { cn } from "@/lib/utils";
 
 const instrumentSans = Instrument_Sans({
@@ -61,6 +63,8 @@ export default function RootLayout({
         <PwaRegister />
         <AppUpdateBanner />
         <DragScroll />
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   )

@@ -35,6 +35,8 @@ jobs:
             --build-arg NEXT_PUBLIC_PUSHER_KEY="${{ secrets.NEXT_PUBLIC_PUSHER_KEY }}" \
             --build-arg NEXT_PUBLIC_PUSHER_CLUSTER="${{ vars.NEXT_PUBLIC_PUSHER_CLUSTER }}" \
             --build-arg NEXT_PUBLIC_SENTRY_DSN="${{ vars.NEXT_PUBLIC_SENTRY_DSN }}" \
+            --build-arg NEXT_PUBLIC_SENTRY_ENVIRONMENT="production" \
+            --build-arg NEXT_PUBLIC_SENTRY_RELEASE="$GITHUB_SHA" \
             --tag "$IMAGE:$GITHUB_SHA" \
             --tag "$IMAGE:latest" \
             .

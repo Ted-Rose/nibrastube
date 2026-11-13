@@ -358,6 +358,41 @@ function cachedFeedRows<Args extends unknown[], R>(
   });
 }
 
+// The data cache refuses entries over ~2MB, so an unbounded row set
+// (a channel backfill can pin >10k videos — the serialized rows top
+// 4MB) must be fetched + cached in chunks or every write fails with a
+// "items over 2MB" warning and every request re-runs the full query.
+// Each chunk is its own entry under the same tag; all chunks are read
+// in one pass so they revalidate together. The key carries offset+want
+// so a capped caller can't collide with a full read's chunk. fetchChunk
+// MUST order by a strict total order (final videos.id tiebreaker) —
+// offset paging over non-unique sort keys can dup/skip rows at chunk
+// boundaries. Residual: a write landing mid-read can shift one
+// boundary row — cosmetic, the next render fixes it.
+const FEED_ROW_CHUNK_SIZE = 1500;
+
+async function cachedChunkedFeedRows<R>(
+  profileId: string,
+  keyParts: string[],
+  fetchChunk: (limit: number, offset: number) => Promise<R[]>,
+  cap?: number
+): Promise<R[]> {
+  const all: R[] = [];
+  for (let offset = 0; cap === undefined || offset < cap; ) {
+    const want = Math.min(FEED_ROW_CHUNK_SIZE, (cap ?? Infinity) - offset);
+    const cached = cachedFeedRows(
+      () => fetchChunk(want, offset),
+      [...keyParts, `chunk:${offset}:${want}`],
+      profileId
+    );
+    const rows = await cached();
+    all.push(...rows);
+    if (rows.length < want) break;
+    offset += want;
+  }
+  return all;
+}
+
 // Cache-key canonicalization: null, "" and 0 must key like an absent
 // param (undefined serializes the same as a missing key in
 // JSON.stringify), or equivalent filters mint duplicate entries.
@@ -389,7 +424,14 @@ interface KidsVideosParams {
 // only. The watchProgress LEFT JOIN stays (statusRank and the
 // impressionPenalty watched-mask ORDER BY it), so ordering reflects
 // cache-write time; progress values are merged live by the caller.
-async function kidsVideoRows(profileId: string, params: KidsVideosParams) {
+// Paged via limit/offset for chunked caching — the trailing videos.id
+// ORDER BY keeps the order strict so chunks can't overlap.
+async function kidsVideoRows(
+  profileId: string,
+  params: KidsVideosParams,
+  limit: number,
+  offset: number
+) {
   const { q, channelId, sort, dir, type, minLen, maxLen } = params;
   // 0 = not watched, 1 = started/not finished, 2 = watched or disliked
   const statusRank = sql<number>`case
@@ -457,7 +499,9 @@ async function kidsVideoRows(profileId: string, params: KidsVideosParams) {
         channelId ? eq(videos.channelId, channelId) : undefined
       )
     )
-    .orderBy(...orderBy);
+    .orderBy(...orderBy, asc(videos.id))
+    .limit(limit)
+    .offset(offset);
 }
 
 // Whitelisted videos + watch progress for a profile, optionally filtered by
@@ -476,13 +520,13 @@ export async function getKidsVideos(
     minLen: keyParam(params.minLen),
     maxLen: keyParam(params.maxLen),
   };
-  const cached = cachedFeedRows(
-    () => kidsVideoRows(profileId, canonical),
-    ["kids-videos", profileId, JSON.stringify(canonical)],
-    profileId
-  );
   const [rows, progress] = await Promise.all([
-    cached(),
+    cachedChunkedFeedRows(
+      profileId,
+      ["kids-videos", profileId, JSON.stringify(canonical)],
+      (limit, offset) =>
+        kidsVideoRows(profileId, canonical, limit, offset)
+    ),
     getWatchProgressMap(profileId),
   ]);
   return mergeProgress(rows, progress);
@@ -665,7 +709,6 @@ async function likedVideoRows(
   profileId: string,
   {
     q,
-    limit,
     type,
     minLen,
     maxLen,
@@ -675,9 +718,11 @@ async function likedVideoRows(
     type?: KidsType;
     minLen?: number | null;
     maxLen?: number | null;
-  }
+  },
+  limit: number,
+  offset: number
 ) {
-  const query = db
+  return db
     .select({
       video: feedVideoCols,
       reaction: sql<VideoReaction>`${videoReactions.reaction}`,
@@ -701,8 +746,9 @@ async function likedVideoRows(
         q ? ilike(videos.title, `%${q}%`) : undefined
       )
     )
-    .orderBy(desc(videoReactions.reactedAt));
-  return limit === undefined ? query : query.limit(limit);
+    .orderBy(desc(videoReactions.reactedAt), asc(videos.id))
+    .limit(limit)
+    .offset(offset);
 }
 
 // Videos the kid tapped 👍 on, newest reaction first. Inner-joins
@@ -732,13 +778,13 @@ export async function getLikedVideos(
     minLen: keyParam(minLen),
     maxLen: keyParam(maxLen),
   };
-  const cached = cachedFeedRows(
-    () => likedVideoRows(profileId, canonical),
-    ["liked-videos", profileId, JSON.stringify(canonical)],
-    profileId
-  );
   const [rows, progress] = await Promise.all([
-    cached(),
+    cachedChunkedFeedRows(
+      profileId,
+      ["liked-videos", profileId, JSON.stringify(canonical)],
+      (l, o) => likedVideoRows(profileId, canonical, l, o),
+      limit
+    ),
     getWatchProgressMap(profileId),
   ]);
   return mergeProgress(rows, progress);
@@ -1278,7 +1324,9 @@ async function playlistVideoRows(
     type?: KidsType;
     minLen?: number | null;
     maxLen?: number | null;
-  }
+  },
+  limit: number,
+  offset: number
 ) {
   return db
     .select({
@@ -1311,8 +1359,16 @@ async function playlistVideoRows(
       )
     )
     // addedAt breaks same-position ties (concurrent adds racing on
-    // max(position)+1) so the kid-visible order is deterministic.
-    .orderBy(asc(playlistItems.position), asc(playlistItems.addedAt));
+    // max(position)+1) and videos.id makes the order strict, so the
+    // kid-visible order is deterministic and offset chunks can't
+    // overlap.
+    .orderBy(
+      asc(playlistItems.position),
+      asc(playlistItems.addedAt),
+      asc(videos.id)
+    )
+    .limit(limit)
+    .offset(offset);
 }
 
 // One playlist's videos in kid-defined order. Same { video, progress,
@@ -1352,18 +1408,17 @@ export async function getPlaylistVideos(
     minLen: keyParam(minLen),
     maxLen: keyParam(maxLen),
   };
-  const cached = cachedFeedRows(
-    () => playlistVideoRows(profileId, playlistId, canonical),
-    [
-      "playlist-videos",
-      profileId,
-      playlistId,
-      JSON.stringify(canonical),
-    ],
-    profileId
-  );
   const [rows, progress] = await Promise.all([
-    cached(),
+    cachedChunkedFeedRows(
+      profileId,
+      [
+        "playlist-videos",
+        profileId,
+        playlistId,
+        JSON.stringify(canonical),
+      ],
+      (l, o) => playlistVideoRows(profileId, playlistId, canonical, l, o)
+    ),
     getWatchProgressMap(profileId),
   ]);
   return mergeProgress(rows, progress);

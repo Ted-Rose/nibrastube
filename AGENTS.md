@@ -249,8 +249,12 @@ lib/
   kids-feed.ts                  Kids feed params/URL builder + row
                                 queries — whitelist-driven reads are
                                 unstable_cache'd per (profileId,
-                                params); watch_progress is a live
-                                overlay merged per request
+                                params), unbounded lists in 1500-row
+                                chunks (each entry must stay under
+                                the 2MB data-cache cap — chunk paging
+                                needs a strict total order, final
+                                videos.id tiebreaker); watch_progress
+                                is a live overlay merged per request
   songs-feed.ts                 /songs catalog params/URL builder +
                                 queries
   yt-player.ts                  Shared YouTube IFrame-API types + the
@@ -474,7 +478,12 @@ docs/reviews/                   Committed Oct 2026 code audit —
   `PusherListener` calls `router.refresh()`.
 - **Feed data cache:** kids feed/watch-queue reads are served from
   `unstable_cache` — 10-min TTL, tag `feed:<profileId>`
-  (`lib/feed-cache.ts`, spec `feed-data-cache`). `watch_progress` is a
+  (`lib/feed-cache.ts`, spec `feed-data-cache`). Unbounded lists
+  (videos/liked/playlist-videos) are read via
+  `cachedChunkedFeedRows` — 1500-row chunks, each chunk its own cache
+  entry, because a single monolithic entry blows the 2MB item cap
+  (the "Failed to set Next.js data cache … items over 2MB" log
+  warning) and is never stored. `watch_progress` is a
   live per-request overlay merged in code — never cached — and
   `getRecommendedVideos`, `getContinueWatching`/`getWatchHistory` row
   sets (beacon-write-driven), auth and `/parent/*` reads are never

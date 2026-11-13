@@ -109,8 +109,9 @@ If the reviewer reported blocker/should-fix findings:
 
 1. Launch one `subagent_general` fixer on the same branch in a
    FRESH worktree — a branch can live in only one worktree, so
-   remove the implementer's first (`git worktree remove
-   ../nibrastube-wt/<slug>`), then the fixer adds one on the
+   remove whichever worktree currently holds it (`git worktree
+   list` to find it; `git worktree remove --force
+   ../nibrastube-wt/<name>`), then the fixer adds one on the
    existing branch (`git worktree add ../nibrastube-wt/fix-<slug>
    feature/<slug>`). Prompt: the PR
    URL, the numbered findings verbatim, "fix, commit (`Fix: ...`),
@@ -139,7 +140,7 @@ If the reviewer reported blocker/should-fix findings:
   with its status header updated accordingly.
 
 Once a review round is clean AND the PR's checks are green, remove
-the worktree immediately — `git worktree remove <path>` +
+the worktree immediately — `git worktree remove --force <path>` +
 `git branch -D <type>/<slug>` per AGENTS.md; don't wait for merge.
 
 ## Final report

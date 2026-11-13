@@ -1,8 +1,9 @@
 ---
 name: openspec-apply-delegated
 description: >
-  Implement an OpenSpec change hands-off via subagents — an
-  implementer agent cuts a feature branch, works the task list,
+  Implement an OpenSpec change hands-off via subagents — the
+  orchestrator creates a worktree, an implementer agent works
+  the task list,
   and opens a PR ready for review; once checks are green a
   fresh reviewer agent reports severity-tagged findings and
   fixer agents
@@ -109,10 +110,10 @@ stays small and survives `openspec update`.
 8. On `[blocker]` or `[major]` findings, launch a fixer
    subagent (`subagent_general`) on the SAME branch to commit
    and push fixes. A branch can live in only one worktree —
-   if the implementer's worktree still holds it, remove that
-   worktree first (`git worktree remove
-   ../nibrastube-wt/<change-name>`), then the fixer adds a
-   fresh one on the existing branch (`git worktree add
+   remove whichever worktree currently holds it (`git worktree
+   list` to find it; `git worktree remove --force
+   ../nibrastube-wt/<name>`), then the fixer adds a fresh one
+   on the existing branch (`git worktree add
    ../nibrastube-wt/fix-<change-name> feature/<change-name>`).
    Then start a new round with a NEW reviewer.
    Repeat until `NO ISSUES` (or only `[minor]`/`[nit]`) — max
@@ -133,7 +134,7 @@ stays small and survives `openspec update`.
   fixer and reviewer must treat an unchecked task as incomplete
   work, not as a defect to review.
 - Once the loop is clean AND the PR's checks are green,
-  remove the worktree immediately (`git worktree remove
+  remove the worktree immediately (`git worktree remove --force
   ../nibrastube-wt/<name>` + `git branch -D
   feature/<change-name>` from the main checkout) — don't
   wait for merge; remove every worktree the run created.

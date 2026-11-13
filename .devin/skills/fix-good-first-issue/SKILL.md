@@ -65,6 +65,7 @@ Do not disturb the main checkout's working tree:
       -b fix/issue-<N>-<short-slug> origin/main
     cd ../nibrastube-wt/issue-<N>
     npm install   # worktrees don't share node_modules
+    cp ../nibrastube/.env .env   # nor .env
 
 (If the worktree dir already exists, remove it first — follow-up
 work always gets a fresh worktree, per AGENTS.md.)

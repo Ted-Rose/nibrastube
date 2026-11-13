@@ -798,7 +798,7 @@ Repo-local style:
   up IMMEDIATELY — don't wait for the merge (the PR lives on
   the remote branch; removing the local worktree/branch does not
   touch it, and the remote branch is deleted at merge time).
-  From the main checkout: `git worktree remove
+  From the main checkout: `git worktree remove --force
   ../nibrastube-wt/<name>` + `git branch -D <type>/<slug>`
   (`-D`, not `-d` — squash-merges leave the branch
   "unmerged"). Abandoned/rejected work gets the same cleanup,
@@ -872,12 +872,13 @@ Universal rules — follow exactly:
 ### Repo-specific rules
 
 - **Dangerous commands — never run**:
-  - `npm run db:migrate` against `DATABASE_URL` (the pooled
-    endpoint) — PgBouncer transaction pooling breaks migrate's
-    session behavior; `drizzle.config.ts` already prefers
-    `DATABASE_URL_UNPOOLED`, so the plain command is correct.
-    Generating migration files (`npm run db:generate`) is
-    always safe.
+  - `npm run db:migrate` — agents never run it (a production
+    Neon write); tell the user the command instead. For the
+    user: `drizzle.config.ts` prefers `DATABASE_URL_UNPOOLED`,
+    so the plain command is the right one — never run it
+    against the pooled `DATABASE_URL` (PgBouncer breaks
+    migrate's session behavior). Generating migration files
+    (`npm run db:generate`) is always safe.
   - `npx drizzle-kit push` — bypasses migration files; README's
     mention is stale.
   - `npm run videos:refresh -- --prune` — deletes rows; dry-run
@@ -885,9 +886,9 @@ Universal rules — follow exactly:
   - Pushing `v*` tags or commits to the `android` branch —
     triggers signed release builds.
   - `git push --force`, deleting branches, rewriting history.
-  - Anything writing to the production Neon DB beyond the
-    sanctioned migrate — if a task genuinely needs it, write
-    the change and tell the user the command to run.
+  - Anything writing to the production Neon DB — if a task
+    genuinely needs it, write the change and tell the user
+    the command to run.
 - **Branch prefixes**: `feature/` for new functionality (not
   `feat/`), `fix/` for bug fixes, `chore/` for
   maintenance/tooling, `docs/` for documentation, `refactor/`

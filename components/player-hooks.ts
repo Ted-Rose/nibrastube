@@ -99,10 +99,6 @@ export function useYouTubePlayer({
         videoId: load.videoId,
         width: "100%",
         height: "100%",
-        // Serve the iframe document from YouTube's Privacy Enhanced
-        // Mode domain so blocking youtube.com in Family Link (which
-        // filters WebView navigations) does not break the player.
-        host: "https://www.youtube-nocookie.com",
         playerVars: {
           autoplay: 1,
           modestbranding: 1,

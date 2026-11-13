@@ -242,38 +242,47 @@ jobs:
           # Negative control — the gate must be able to fail.
           head -c 1048576 dist/nibrastube.apk > truncated.apk
 
+      # android-emulator-runner's script: input is split on
+      # newlines and each line runs as its own `sh -c` — functions,
+      # variables and `set -e` cannot persist between lines. Run the
+      # real script from a file instead (single-line invocation).
+      - name: Write install-test script
+        run: |
+          cat > install-test.sh <<'EOF'
+          set -e
+
+          install_ok() {
+            OUT=$(adb install "$@" 2>&1)
+            echo "$OUT"
+            echo "$OUT" | grep -q Success
+          }
+
+          echo "== fresh install =="
+          install_ok dist/nibrastube.apk
+          adb uninstall com.nibrastube.app
+
+          if [ "$HAVE_PREV" = "1" ]; then
+            echo "== over-the-top update =="
+            install_ok prev.apk
+            install_ok -r dist/nibrastube.apk
+          else
+            echo "== no advertised APK — update leg skipped =="
+          fi
+
+          echo "== truncated-APK negative control =="
+          if install_ok truncated.apk; then
+            echo "::error::truncated APK installed — gate broken"
+            exit 1
+          fi
+          echo "negative control passed"
+          EOF
+
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           disable-animations: true
-          script: |
-            set -e
-
-            install_ok() {
-              OUT=$(adb install "$@" 2>&1)
-              echo "$OUT"
-              echo "$OUT" | grep -q Success
-            }
-
-            echo "== fresh install =="
-            install_ok dist/nibrastube.apk
-            adb uninstall com.nibrastube.app
-
-            if [ "$HAVE_PREV" = "1" ]; then
-              echo "== over-the-top update =="
-              install_ok prev.apk
-              install_ok -r dist/nibrastube.apk
-            else
-              echo "== no advertised APK — update leg skipped =="
-            fi
-
-            echo "== truncated-APK negative control =="
-            if install_ok truncated.apk; then
-              echo "::error::truncated APK installed — gate broken"
-              exit 1
-            fi
-            echo "negative control passed"
+          script: bash install-test.sh
 
   # Runs only after the emulator gate passes. APK bytes upload before
   # update.json — the manifest is the commit point, flipped last, so

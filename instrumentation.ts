@@ -12,13 +12,15 @@ export function register() {
         dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
         // NEXT_PUBLIC_SENTRY_* are baked into the Cloud Run image
         // env (Dockerfile runner stage); VERCEL_* cover Vercel.
+        // Unset build args bake in as "", so `||` (not `??`) is
+        // required to fall through to the defaults.
         environment:
-          process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ??
-          process.env.VERCEL_ENV ??
+          process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ||
+          process.env.VERCEL_ENV ||
           "development",
         release:
-          process.env.NEXT_PUBLIC_SENTRY_RELEASE ??
-          process.env.VERCEL_GIT_COMMIT_SHA ??
+          process.env.NEXT_PUBLIC_SENTRY_RELEASE ||
+          process.env.VERCEL_GIT_COMMIT_SHA ||
           undefined,
         tracesSampleRate: 0.1,
       });

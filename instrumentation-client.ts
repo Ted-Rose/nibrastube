@@ -58,7 +58,11 @@ function sentryBeforeSend(
     event.tags = { ...event.tags, errorKind: "network" };
   }
 
-  if (err instanceof DOMException && DOM_MUTATION_RE.test(err.message)) {
+  // originalException can be absent (GlobalHandlers' message-only
+  // events, e.g. event.error === null) or a cross-realm DOMException
+  // that fails instanceof — match the event's own strings, same as
+  // DROP_PATTERNS.
+  if (texts.some((t) => t && DOM_MUTATION_RE.test(t))) {
     event.tags = { ...event.tags, errorKind: "external-dom-mutation" };
   }
 
@@ -87,14 +91,16 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
     // NEXT_PUBLIC_SENTRY_* are set at image build time on the Cloud
     // Run deploy (Dockerfile build args); the VERCEL_* fallbacks keep
-    // the primary Vercel deploy self-labeling.
+    // the primary Vercel deploy self-labeling. Unset build args
+    // inline as "" (not undefined), so `||` is required — `??`
+    // would not fall through.
     environment:
-      process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ??
-      process.env.NEXT_PUBLIC_VERCEL_ENV ??
+      process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ||
+      process.env.NEXT_PUBLIC_VERCEL_ENV ||
       "development",
     release:
-      process.env.NEXT_PUBLIC_SENTRY_RELEASE ??
-      process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ??
+      process.env.NEXT_PUBLIC_SENTRY_RELEASE ||
+      process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
       undefined,
     integrations: [
       // Free tier ~= 50 replays/mo: record only sessions that hit an

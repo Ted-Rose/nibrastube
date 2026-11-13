@@ -15,6 +15,14 @@ export interface YTPlayer {
     startSeconds?: number;
     endSeconds?: number;
   }): void;
+  // Same arg shape as loadVideoById, but the video loads paused
+  // (state CUED) — used for auto-advance when autoplayOnNext is off.
+  cueVideoById(videoId: string): void;
+  cueVideoById(args: {
+    videoId: string;
+    startSeconds?: number;
+    endSeconds?: number;
+  }): void;
   getCurrentTime(): number;
   getDuration(): number;
   getPlayerState(): number;
@@ -44,6 +52,7 @@ export interface YTNamespace {
     PLAYING: number;
     PAUSED: number;
     BUFFERING: number;
+    CUED: number;
   };
 }
 

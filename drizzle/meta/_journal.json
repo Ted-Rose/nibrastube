@@ -134,6 +134,13 @@
       "when": 1793941885021,
       "tag": "0018_gray_corsair",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794564818325,
+      "tag": "0019_skinny_zaran",
+      "breakpoints": true
     }
   ]
 }

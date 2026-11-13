@@ -59,6 +59,13 @@ interface WatchExperienceProps {
   sequential?: boolean;
   // Per-profile opt-in: swipe right/up = next video, left/down = previous.
   swipeEnabled: boolean;
+  // Per-profile autoplay prefs: start the first video by itself when
+  // the watch page opens / start the next video by itself when the
+  // current one ends. Off = the transition waits for a tap on the
+  // player's own button (only those plays count toward YouTube watch
+  // history). User-initiated nav always plays either way.
+  autoplayOnOpen: boolean;
+  autoplayOnNext: boolean;
 }
 
 export function WatchExperience({
@@ -70,6 +77,8 @@ export function WatchExperience({
   returnQuery = "",
   sequential = false,
   swipeEnabled,
+  autoplayOnOpen,
+  autoplayOnNext,
 }: WatchExperienceProps) {
   const router = useRouter();
   const portalUrl = `/kids/${profileId}${returnQuery}`;
@@ -78,6 +87,11 @@ export function WatchExperience({
   const containerRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
   const advancingRef = useRef(false);
+  // Whether the latest goTo() wanted a paused load (cueVideoById —
+  // automatic advance when autoplayOnNext is off). CUED releases the
+  // nav guard a cued load never gets from PLAYING, and the onReady
+  // catch-up replays the flag when the goTo raced a player recreate.
+  const cuePendingRef = useRef(false);
   // Timestamp of the last goTo() load request — the watchdog below
   // treats a load that produces neither PLAYING nor an error event
   // within ~15s as a skip, so advancingRef can't latch forever.
@@ -115,11 +129,14 @@ export function WatchExperience({
   const skippedRef = useRef(new Set<string>());
   // The nav functions live inside the effect (they need its playlist
   // closures); this ref surfaces them to the JSX touch handlers AND to
-  // the player events below (ENDED → next, onError → skip).
+  // the player events below (ENDED → advance, onError → skip).
+  // `next`/`prev` are user-initiated (always play); `advance` is the
+  // automatic end-of-video step and honors autoplayOnNext.
   const swipeNavRef = useRef<{
     next: () => void;
     prev: () => void;
     skip: (code?: number) => void;
+    advance: () => void;
   } | null>(null);
   // Whether this watch page was entered from a feed link — consumed on
   // mount (see the effect below), read by the Back button.
@@ -217,6 +234,18 @@ export function WatchExperience({
       onStateChange: (event) => {
         if (event.data === window.YT?.PlayerState.PLAYING) {
           advancingRef.current = false;
+          cuePendingRef.current = false;
+          loadStartedRef.current = 0;
+        }
+        // A cueVideoById load finishes paused in CUED — never emits
+        // the PLAYING that releases the nav guard, so release it here
+        // or the watchdog would skip a healthy video 15s later.
+        if (
+          event.data === window.YT?.PlayerState.CUED &&
+          cuePendingRef.current
+        ) {
+          cuePendingRef.current = false;
+          advancingRef.current = false;
           loadStartedRef.current = 0;
         }
         // Pausing often precedes exiting — warm the exit routes.
@@ -232,7 +261,7 @@ export function WatchExperience({
             ...latestRef.current,
             position: latestRef.current.duration,
           };
-          swipeNavRef.current?.next();
+          swipeNavRef.current?.advance();
         }
       },
       onError: (event) => {
@@ -288,7 +317,9 @@ export function WatchExperience({
   }, [stablePlaylist, resumeAt]);
 
   // A goTo() during init skipped its loadVideoById (the ref was still
-  // null) — catch up if the index moved meanwhile.
+  // null) — catch up if the index moved meanwhile. cuePendingRef
+  // replays the nav's paused-vs-play intent (a cued ENDED-advance
+  // stays paused instead of sneaking a play in).
   const getCatchUpLoad = useCallback(
     (initial: PlayerLoad): PlayerLoad | null => {
       const want = stablePlaylist[indexRef.current];
@@ -297,6 +328,7 @@ export function WatchExperience({
         key: want.id,
         videoId: want.id,
         startSeconds: resumeAt(want),
+        cued: cuePendingRef.current,
       };
     },
     [stablePlaylist, resumeAt]
@@ -347,6 +379,7 @@ export function WatchExperience({
   const { playerRef, loadFailed } = useYouTubePlayer({
     containerRef,
     mountRef,
+    autoplay: autoplayOnOpen,
     events,
     getInitialLoad,
     getCatchUpLoad,
@@ -362,8 +395,10 @@ export function WatchExperience({
 
     // Switch to another playlist index by loading it into the SAME player
     // instead of navigating — keeps the element (and fullscreen mode)
-    // mounted. Shared by autoplay and swipe gestures.
-    const goTo = (next: number) => {
+    // mounted. Shared by autoplay and swipe gestures. `cue` loads the
+    // target paused (cueVideoById) — automatic advance when
+    // autoplayOnNext is off; user-initiated nav always plays.
+    const goTo = (next: number, cue = false) => {
       // Flush BEFORE loadVideoById — the player is reused, so the old
       // video's position would otherwise be lost.
       flush();
@@ -392,10 +427,18 @@ export function WatchExperience({
       if (next !== cur && curId) pushNavId(curId);
       indexRef.current = next;
       setIndex(next);
-      playerRef.current?.loadVideoById({
-        videoId: stablePlaylist[next].id,
-        startSeconds: resumeAt(stablePlaylist[next]),
-      });
+      cuePendingRef.current = cue;
+      if (cue) {
+        playerRef.current?.cueVideoById({
+          videoId: stablePlaylist[next].id,
+          startSeconds: resumeAt(stablePlaylist[next]),
+        });
+      } else {
+        playerRef.current?.loadVideoById({
+          videoId: stablePlaylist[next].id,
+          startSeconds: resumeAt(stablePlaylist[next]),
+        });
+      }
       // Watchdog: a load that produces neither PLAYING nor an error
       // event within ~15s is a silent stall — treat it as a skip so
       // advancingRef can't latch forever. PLAYING clears the stamp in
@@ -418,14 +461,27 @@ export function WatchExperience({
       );
     };
 
+    // Index pick shared by ENDED-advance and the user-initiated next.
+    const pickNext = () =>
+      sequential
+        ? (indexRef.current + 1) % stablePlaylist.length
+        : pickNextIndex(stablePlaylist.length, indexRef.current, statusAt);
+
+    // ENDED-driven advance — the only nav honoring autoplayOnNext:
+    // off → the next video loads paused (cue) instead of starting by
+    // itself. Also reached via skipAndAdvance on a dead video.
     const advance = () => {
       if (advancingRef.current) return;
       advancingRef.current = true;
-      goTo(
-        sequential
-          ? (indexRef.current + 1) % stablePlaylist.length
-          : pickNextIndex(stablePlaylist.length, indexRef.current, statusAt)
-      );
+      goTo(pickNext(), !autoplayOnNext);
+    };
+
+    // User-initiated next (swipe gesture) — always plays regardless of
+    // the autoplay prefs.
+    const goNext = () => {
+      if (advancingRef.current) return;
+      advancingRef.current = true;
+      goTo(pickNext());
     };
 
     // Previous = the video the kid just came from (nav history stack),
@@ -481,9 +537,10 @@ export function WatchExperience({
     };
 
     swipeNavRef.current = {
-      next: advance,
+      next: goNext,
       prev: goBack,
       skip: skipAndAdvance,
+      advance,
     };
 
     // Embedded Shorts loop internally and never emit ENDED, so also
@@ -561,6 +618,7 @@ export function WatchExperience({
       window.clearInterval(tick);
     };
   }, [
+    autoplayOnNext,
     stablePlaylist,
     statusAt,
     flush,

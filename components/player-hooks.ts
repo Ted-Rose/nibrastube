@@ -24,6 +24,9 @@ export interface PlayerLoad {
   videoId: string;
   startSeconds?: number;
   endSeconds?: number;
+  // Load paused (cueVideoById) instead of playing — automatic advance
+  // when the profile's autoplayOnNext is off.
+  cued?: boolean;
 }
 
 export interface PlayerEvents {
@@ -51,6 +54,7 @@ export function useYouTubePlayer({
   containerRef,
   mountRef,
   playerVars,
+  autoplay = false,
   events,
   getInitialLoad,
   getCatchUpLoad,
@@ -59,6 +63,11 @@ export function useYouTubePlayer({
   mountRef: RefObject<HTMLDivElement | null>;
   // Extra playerVars merged over the shared set.
   playerVars?: Record<string, number>;
+  // Start the initial load by itself (the watch page's per-kid
+  // autoplayOnOpen pref). Absent/false = the video waits for a tap on
+  // the player's own button — only those plays count toward YouTube
+  // watch history.
+  autoplay?: boolean;
   events: PlayerEvents;
   // Load the player starts with; null = nothing to play.
   getInitialLoad: () => PlayerLoad | null;
@@ -105,6 +114,7 @@ export function useYouTubePlayer({
           iv_load_policy: 3,
           controls: 1,
           playsinline: 1,
+          autoplay: autoplay ? 1 : 0,
           ...(load.startSeconds !== undefined
             ? { start: Math.floor(load.startSeconds) }
             : {}),
@@ -127,11 +137,16 @@ export function useYouTubePlayer({
             // was still null) — catch up if the target moved.
             const catchUp = getCatchUpLoad(load);
             if (catchUp) {
-              createdPlayer.loadVideoById({
+              const catchUpArgs = {
                 videoId: catchUp.videoId,
                 startSeconds: catchUp.startSeconds,
                 endSeconds: catchUp.endSeconds,
-              });
+              };
+              if (catchUp.cued) {
+                createdPlayer.cueVideoById(catchUpArgs);
+              } else {
+                createdPlayer.loadVideoById(catchUpArgs);
+              }
             }
             events.onReady?.(event);
           },
@@ -177,6 +192,7 @@ export function useYouTubePlayer({
     containerRef,
     mountRef,
     playerVars,
+    autoplay,
     events,
     getInitialLoad,
     getCatchUpLoad,

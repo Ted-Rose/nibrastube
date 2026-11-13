@@ -5,6 +5,7 @@ import { eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { deleteProfile } from "@/app/actions/profiles";
 import { SwipeToggle } from "@/components/profile-swipe-toggle";
+import { AutoplayToggles } from "@/components/profile-autoplay-toggles";
 import { ProfileCreateForm } from "@/components/profile-create-form";
 import { KidCredentialsForm } from "@/components/kid-credentials-form";
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,11 @@ export default async function ProfilesPage() {
 
               <div className="w-full pt-4 border-t border-slate-200">
                 <SwipeToggle profileId={profile.id} enabled={profile.swipeEnabled} />
+                <AutoplayToggles
+                  profileId={profile.id}
+                  autoplayOnOpen={profile.autoplayOnOpen}
+                  autoplayOnNext={profile.autoplayOnNext}
+                />
               </div>
 
               <div className="w-full pt-4 border-t border-slate-200">
@@ -158,6 +164,11 @@ export default async function ProfilesPage() {
                   </Link>
                   <div className="w-full pt-4 border-t border-slate-200">
                     <SwipeToggle profileId={profile.id} enabled={profile.swipeEnabled} />
+                    <AutoplayToggles
+                      profileId={profile.id}
+                      autoplayOnOpen={profile.autoplayOnOpen}
+                      autoplayOnNext={profile.autoplayOnNext}
+                    />
                   </div>
                 </CardFooter>
               </Card>

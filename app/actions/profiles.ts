@@ -308,3 +308,38 @@ export async function setSwipeEnabled(formData: FormData): Promise<void> {
 
   revalidatePath("/parent/profiles");
 }
+
+const autoplaySchema = z.object({
+  profileId: z.string().uuid(),
+  field: z.enum(["open", "next"]),
+  enabled: z.boolean(),
+});
+
+// Per-kid autoplay prefs — one switch row persists one column, so a
+// single {field, enabled} write mirrors setSwipeEnabled.
+export async function setAutoplayEnabled(
+  formData: FormData
+): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  await requireParentUnlocked();
+
+  const parsed = autoplaySchema.safeParse({
+    profileId: formData.get("profileId"),
+    field: formData.get("field"),
+    enabled: formData.get("enabled") === "true",
+  });
+  if (!parsed.success) return;
+
+  await assertCanManageProfile(session, parsed.data.profileId);
+  await db
+    .update(profiles)
+    .set(
+      parsed.data.field === "open"
+        ? { autoplayOnOpen: parsed.data.enabled }
+        : { autoplayOnNext: parsed.data.enabled }
+    )
+    .where(eq(profiles.id, parsed.data.profileId));
+
+  revalidatePath("/parent/profiles");
+}

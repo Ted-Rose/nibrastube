@@ -10,7 +10,7 @@ import {
 import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { isKidAvatar } from "@/lib/kid-avatars";
 import bcrypt from "bcryptjs";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
@@ -107,17 +107,19 @@ export async function deleteProfile(profileId: string) {
 // signup and credential write can both pass this check. Accepted: it
 // fails closed because login consults users.email first, so the users
 // row wins and the parent can simply rename the kid's username.
+// Login folds case, so this check must too — otherwise "DAVIDINO"
+// could be claimed next to "Davidino" and logins would be ambiguous.
 async function kidIdentifierTaken(
   username: string,
   excludeProfileId?: string
 ): Promise<boolean> {
   const [emailTaken, usernameTaken] = await Promise.all([
     db.query.users.findFirst({
-      where: eq(users.email, username),
+      where: sql`lower(${users.email}) = lower(${username})`,
       columns: { id: true },
     }),
     db.query.profiles.findFirst({
-      where: eq(profiles.username, username),
+      where: sql`lower(${profiles.username}) = lower(${username})`,
       columns: { id: true },
     }),
   ]);

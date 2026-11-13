@@ -34,6 +34,7 @@ jobs:
           docker build --platform linux/amd64 \
             --build-arg NEXT_PUBLIC_PUSHER_KEY="${{ secrets.NEXT_PUBLIC_PUSHER_KEY }}" \
             --build-arg NEXT_PUBLIC_PUSHER_CLUSTER="${{ vars.NEXT_PUBLIC_PUSHER_CLUSTER }}" \
+            --build-arg NEXT_PUBLIC_SENTRY_DSN="${{ vars.NEXT_PUBLIC_SENTRY_DSN }}" \
             --tag "$IMAGE:$GITHUB_SHA" \
             --tag "$IMAGE:latest" \
             .

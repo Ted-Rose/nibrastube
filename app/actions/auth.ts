@@ -9,7 +9,7 @@ import {
   setParentUnlocked,
 } from "@/lib/auth";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
@@ -75,13 +75,16 @@ export async function signup(
   // Check if user exists. Emails and kid usernames share one login
   // identifier namespace, so an email already claimed as a kid's
   // username is taken too — that kid's login would shadow the signup.
+  // Login folds case (see login below), so the taken-check must too —
+  // otherwise "A@b.com" could sign up under an existing "a@b.com" and
+  // create an ambiguous identifier.
   const [existingUser, usernameTaken] = await Promise.all([
     db.query.users.findFirst({
-      where: eq(users.email, email),
+      where: sql`lower(${users.email}) = lower(${email})`,
       columns: { id: true },
     }),
     db.query.profiles.findFirst({
-      where: eq(profiles.username, email),
+      where: sql`lower(${profiles.username}) = lower(${email})`,
       columns: { id: true },
     }),
   ]);
@@ -141,8 +144,12 @@ export async function login(
   // One form, two account types: the identifier is a parent's email or
   // a kid profile's username — they share one namespace, enforced at
   // write time (signup, setKidCredentials). Parents match first.
+  // Identifiers compare case-insensitively: kids mistype case and
+  // stored usernames are case-preserving ("Davidino"). lower() keeps
+  // eq() semantics — ilike would treat a literal "%"/"_" in the
+  // identifier as wildcards.
   const user = await db.query.users.findFirst({
-    where: eq(users.email, identifier),
+    where: sql`lower(${users.email}) = lower(${identifier})`,
   });
 
   if (user && (await bcrypt.compare(password, user.passwordHash))) {
@@ -154,7 +161,7 @@ export async function login(
   }
 
   const profile = await db.query.profiles.findFirst({
-    where: eq(profiles.username, identifier),
+    where: sql`lower(${profiles.username}) = lower(${identifier})`,
   });
 
   if (

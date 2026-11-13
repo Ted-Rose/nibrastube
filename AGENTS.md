@@ -717,11 +717,24 @@ Repo-local style:
   on cron calls to `/api/sync-channels`; unset = every call is a
   client ping. `DOCKER_BUILD=1` is set by the Dockerfile only — it
   switches `output` to `standalone` for the Cloud Run image.
-- Long-lived work is usually done in **git worktrees** under the
-  sibling dir `nibrastube-wt/<name>` (`git worktree add
-  ../nibrastube-wt/<name> -b <branch> origin/main`) — the main
-  checkout often holds the user's uncommitted work; do NOT switch
-  branches in it.
+- **All implementation work happens in a git worktree** — never
+  edit or commit in the main checkout (it often holds the user's
+  uncommitted work or another agent's session; do NOT switch
+  branches in it). For every task: `git fetch origin`, then
+  `git worktree add ../nibrastube-wt/<name> -b <type>/<slug>
+  origin/main` and do all work — commits, push, PR — inside it.
+  Once the PR's checks are green and no work remains, clean up
+  IMMEDIATELY — don't wait for the merge (the PR lives on the
+  remote branch; removing the local worktree/branch does not
+  touch it, and the remote branch is deleted at merge time).
+  From the main checkout: `git worktree remove
+  ../nibrastube-wt/<name>` + `git branch -D <type>/<slug>`
+  (`-D`, not `-d` — squash-merges leave the branch
+  "unmerged"). Abandoned/rejected work gets the same cleanup,
+  and follow-up requests get a FRESH worktree — never reuse an
+  old one. Goal state: `git worktree list` shows only the main
+  checkout when the task ends. Each worktree needs its own
+  `npm install` + `.env` copy (both gitignored).
 
 Universal rules — follow exactly:
 

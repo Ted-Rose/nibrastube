@@ -343,3 +343,29 @@ export async function setAutoplayEnabled(
 
   revalidatePath("/parent/profiles");
 }
+
+// Kid-settings "Reset cached data" button: hard-expires this
+// profile's feed data-cache tag so the next feed render re-queries
+// the DB. The client caller also wipes its sessionStorage feed
+// snapshots (lib/feed-memory.ts) and router.refresh()es to drop the
+// staleTimes.dynamic router cache — together all three cache layers
+// reset without signing out. Kid-scope auth via
+// assertCanEditKidData — the same gate as the settings page itself,
+// no parent PIN needed (nothing is deleted, only re-fetched).
+export async function resetFeedCache(
+  profileId: string
+): Promise<{ error?: string }> {
+  if (!z.string().uuid().safeParse(profileId).success) {
+    return { error: "Profile not found." };
+  }
+  try {
+    await assertCanEditKidData(profileId);
+  } catch (error) {
+    unstable_rethrow(error);
+    return { error: "Not authorized." };
+  }
+
+  invalidateProfileFeed(profileId);
+  revalidatePath(`/kids/${profileId}`, "layout");
+  return {};
+}

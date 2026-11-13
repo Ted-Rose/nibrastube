@@ -120,8 +120,10 @@ app/
                                 server components, KIDS_VIEWS table
     settings/                   Kid-facing profile settings — name +
                                 preset-emoji avatar picker
-                                (avatar-picker.tsx) + native-only
-                                "Check for updates" row
+                                (avatar-picker.tsx) + "Reset cached
+                                data" row (reset-cache-row.tsx →
+                                resetFeedCache + clearFeedSnapshots)
+                                + native-only "Check for updates" row
                                 (update-check-row.tsx)
   songs/                        Public song catalog — no sign-in
                                 required; session only adds the

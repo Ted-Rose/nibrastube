@@ -301,8 +301,12 @@ jobs:
           name: nibrastube-release
           path: dist
 
+      # Plain-scalar `run:` folds newlines to spaces — a trailing
+      # `\` becomes an escaped-space ARGUMENT to grep, not a line
+      # continuation ("grep:  : No such file or directory").
       - name: Load publish env
-        run: grep -E '^(APK_ASSET|VERSION_NAME)=' dist/publish.env \
+        run: >-
+          grep -E '^(APK_ASSET|VERSION_NAME)=' dist/publish.env
           >> "$GITHUB_ENV"
 
       # prerelease + make_latest "false": releases/latest stays on the

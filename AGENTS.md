@@ -821,7 +821,8 @@ Universal rules — follow exactly:
    `Feat:`/`Fix:`/`Docs:`/`Refactor:`/`Test:`/`Chore:`.
 3. **Commit on feature branches only, never `main`.**
    Name branches `<type>/<slug>` with the commit types
-   (`feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `chore/`).
+   (`feature/`, `fix/`, `docs/`, `refactor/`, `test/`,
+   `chore/`).
    Stage only files changed this session, by path — never
    `git add -A`, `git add .` or `git commit -a`; confirm the
    staged set with `git status` first; leave the user's own
@@ -925,6 +926,9 @@ Universal rules — follow exactly:
 - `.devin/skills/fix-good-first-issue/` — pick up a "good first
   issue", fix it, open a PR, run the reviewer loop, watch
   checks.
+- `.devin/skills/fix-sentry-issue-frontend/` — triage the
+  Sentry queue, fix events on a worktree branch, open a PR,
+  resolve the issue only after merge.
 - `.devin/skills/implement-plan/` — execute a legacy
   `docs/plans/*-plan.md` file with implementer → reviewer → fixer
   subagents (no new plan files — see "OpenSpec").
@@ -932,7 +936,9 @@ Universal rules — follow exactly:
   performance rules (SKILL.md index + per-rule files).
 - `.devin/skills/openspec-*/` — OpenSpec workflow skills: copies of
   `.agents/skills/openspec-*/` with frontmatter stripped to
-  `name:`/`description:` (see "OpenSpec").
+  `name:`/`description:` (see "OpenSpec") — EXCEPT
+  `openspec-apply-delegated`, which is repo-maintained (no
+  `.agents` counterpart; don't re-copy it on `openspec update`).
 - `.devin/skills/create-pr/` — PR body via `--body-file`.
 - `.devin/config.local.json` — permission allowlist, user-local and
   untracked (gitignored).

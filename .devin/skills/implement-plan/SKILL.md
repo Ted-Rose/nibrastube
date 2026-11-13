@@ -55,10 +55,10 @@ agents writing the same worktree concurrently. Prompt template:
        invariants, commands, and sharp edges. Every line <= 79
        chars in every file type.
     3. Migrations: `npm run db:generate` is safe (files only).
-       NEVER run `npm run db:migrate` under the default ai_agent
-       DATABASE_URL — if a migration must be applied, report the
-       avnadmin command to the user instead of running it, unless
-       you invoke it exactly as AGENTS.md documents.
+       If a migration must be APPLIED, report the
+       `npm run db:migrate` command to the user instead of
+       running it (production Neon write); never
+       `drizzle-kit push`.
     4. Implement the plan against the contract it specifies.
        Verify:
          npm run typecheck && npm run lint
@@ -107,9 +107,12 @@ Prompt:
 
 If the reviewer reported blocker/should-fix findings:
 
-1. Launch one `subagent_general` fixer on the same branch (the PR
-   worktree is still checked out at `../nibrastube-wt/<slug>` —
-   verify with `git -C <wt> branch --show-current`). Prompt: the PR
+1. Launch one `subagent_general` fixer on the same branch in a
+   FRESH worktree — a branch can live in only one worktree, so
+   remove the implementer's first (`git worktree remove
+   ../nibrastube-wt/<slug>`), then the fixer adds one on the
+   existing branch (`git worktree add ../nibrastube-wt/fix-<slug>
+   feature/<slug>`). Prompt: the PR
    URL, the numbered findings verbatim, "fix, commit (`Fix: ...`),
    push, re-watch `gh pr checks`, return what changed". Nits may be
    batched or skipped — say which.

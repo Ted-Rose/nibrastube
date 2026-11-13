@@ -38,8 +38,11 @@ stays small and survives `openspec update`.
      through to every openspec command here and inside the
      subagent prompt.
 
-3. Branch: `feature/<change-name>` unless the user says
-   otherwise. Never `main`.
+3. Branch in a worktree, never `main` or the main checkout:
+   `git fetch origin` then `git worktree add
+   ../nibrastube-wt/<change-name> -b
+   feature/<change-name> origin/main` — the implementer
+   works inside it (`npm install` there too).
 
 ## Phase 2 — implementer agent
 
@@ -105,7 +108,13 @@ stays small and survives `openspec update`.
    or the exact string `NO ISSUES`.
 8. On `[blocker]` or `[major]` findings, launch a fixer
    subagent (`subagent_general`) on the SAME branch to commit
-   and push fixes. Then start a new round with a NEW reviewer.
+   and push fixes. A branch can live in only one worktree —
+   if the implementer's worktree still holds it, remove that
+   worktree first (`git worktree remove
+   ../nibrastube-wt/<change-name>`), then the fixer adds a
+   fresh one on the existing branch (`git worktree add
+   ../nibrastube-wt/fix-<change-name> feature/<change-name>`).
+   Then start a new round with a NEW reviewer.
    Repeat until `NO ISSUES` (or only `[minor]`/`[nit]`) — max
    3 rounds, then stop and report what remains.
 9. Never let the implementer or a fixer review its own work —
@@ -123,6 +132,11 @@ stays small and survives `openspec update`.
 - Tasks that cannot be finished stay unchecked (`- [ ]`) — the
   fixer and reviewer must treat an unchecked task as incomplete
   work, not as a defect to review.
+- Once the loop is clean AND the PR's checks are green,
+  remove the worktree immediately (`git worktree remove
+  ../nibrastube-wt/<name>` + `git branch -D
+  feature/<change-name>` from the main checkout) — don't
+  wait for merge; remove every worktree the run created.
 - Final report: PR URL, branch, tasks done/total, review
   rounds, unresolved findings, check status, and whether the
   archive was included in the PR or deferred (with the

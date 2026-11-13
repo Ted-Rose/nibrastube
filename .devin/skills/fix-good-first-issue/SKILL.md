@@ -76,12 +76,11 @@ work always gets a fresh worktree, per AGENTS.md.)
   unchecked boxes are roadmap, not bugs.
 - Implement the fix. Keep every line <= 79 characters in every file
   type.
-- NEVER run `npm run db:migrate` under the default `ai_agent`
-  DATABASE_URL (fails silently). If the fix needs a schema change,
-  edit `lib/db/schema.ts` + `npm run db:generate`, commit the
-  `drizzle/` files, and hand the user the avnadmin migrate command —
-  or use it exactly as written in AGENTS.md. Never use
-  `npx drizzle-kit push`.
+- Schema changes: edit `lib/db/schema.ts` + `npm run
+  db:generate`, commit the `drizzle/` files, and never
+  `drizzle-kit push`. If a migration must be APPLIED, hand
+  the user the `npm run db:migrate` command rather than
+  running it (production Neon write — AGENTS.md).
 - No test suite — verify with:
 
       npm run typecheck && npm run lint

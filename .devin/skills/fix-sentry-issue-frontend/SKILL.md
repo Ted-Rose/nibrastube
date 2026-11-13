@@ -96,10 +96,11 @@ NOT switch branches in it:
 - Read `AGENTS.md`; 79-char lines in every file type.
 - `export PATH="/opt/homebrew/bin:$PATH"` on every exec call —
   node/npm/gh are not on the default PATH.
-- NEVER run `npm run db:migrate` under the default `ai_agent`
-  DATABASE_URL. Schema changes: edit `lib/db/schema.ts` +
-  `npm run db:generate`, commit the `drizzle/` files, hand the
-  user the avnadmin migrate command. Never `drizzle-kit push`.
+- Schema changes: edit `lib/db/schema.ts` + `npm run
+  db:generate`, commit the `drizzle/` files, and never
+  `drizzle-kit push`. If a migration must be APPLIED, hand
+  the user the `npm run db:migrate` command rather than
+  running it (production Neon write — AGENTS.md).
 - No test suite — verify:
 
       npm run typecheck && npm run lint

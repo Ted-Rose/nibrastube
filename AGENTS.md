@@ -289,6 +289,11 @@ docs/plans/                     Frozen legacy implementation plans —
                                 historical only, nothing new is added
                                 (see "OpenSpec"); deleted once fully
                                 implemented (see Conventions)
+docs/reviews/                   Committed Oct 2026 code audit —
+                                OVERALL.md is the master issue list
+                                (#1–#46); point-in-time reference,
+                                remaining work tracked via openspec
+                                changes (see README.md there)
 .devin/skills/                  Agent skills (see "Agent config
                                 layout")
 ```
@@ -965,6 +970,16 @@ archive).
   advisory locks) don't survive between statements. The app uses
   none of them, which is why `drizzle-kit migrate`/`pg_dump` must go
   through `DATABASE_URL_UNPOOLED`.
+- **DB ops runbook** (from the Aiven→Neon connection-exhaustion
+  incident): if `53300`-style exhaustion ever recurs, kill stale
+  idlers — `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+  WHERE datname = current_database() AND state = 'idle'
+  AND now() - state_change > interval '90 seconds';` — pools
+  reconnect on demand. If traffic outgrows the pooler: Neon plan
+  bump or a serverless-native driver. Corollary lesson: never edit
+  a migration `.sql` file after it has been applied —
+  `drizzle-kit migrate` hash-checks applied entries and a mismatch
+  makes it try to re-apply them; fixes belong in a NEW migration.
 - `npm`/`gh` are not on agent-shell PATH — see the global
   machine-environment notes for the required PATH prefix.
 

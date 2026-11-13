@@ -31,6 +31,7 @@ export interface YTNamespace {
       videoId: string;
       width: string;
       height: string;
+      host?: string;
       playerVars?: Record<string, number>;
       events?: {
         onReady?: (event: { target: YTPlayer }) => void;

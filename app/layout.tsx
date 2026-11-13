@@ -22,6 +22,11 @@ const fontMono = Geist_Mono({
 
 export const metadata: Metadata = {
   applicationName: "NibrasTube",
+  // Chrome's page translator wraps text nodes in <font> elements, which
+  // crashes React reconciliation (insertBefore/removeChild
+  // NotFoundError → "Rendered more hooks" → global error page). Opt
+  // the whole app out — every interactive text update is at risk.
+  other: { google: "notranslate" },
   title: {
     default: "NibrasTube",
     template: "%s | NibrasTube",
@@ -50,8 +55,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      translate="no"
       suppressHydrationWarning
       className={cn(
+        "notranslate",
         "antialiased",
         fontMono.variable,
         "font-sans",

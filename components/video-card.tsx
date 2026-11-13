@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { ViewTransition } from "react";
 import { Heart, Play, ThumbsDown } from "@phosphor-icons/react/dist/ssr";
+import { PrefetchLink } from "@/components/prefetch-link";
 import { Card, CardContent } from "@/components/ui/card";
 import type { watchProgress } from "@/lib/db/schema";
 import { formatDuration } from "@/lib/format";
@@ -60,7 +60,12 @@ export function VideoCard({
         decoding="async"
       />
       {reaction && (
-        <div className="absolute top-3 left-3 w-9 h-9 bg-white/90 rounded-full flex items-center justify-center shadow">
+        <div
+          className={cn(
+            "absolute top-3 left-3 flex h-9 w-9 items-center",
+            "justify-center rounded-full bg-white/90 shadow"
+          )}
+        >
           <span className="sr-only">
             {reaction === "like" ? "Liked" : "Disliked"}
           </span>
@@ -82,7 +87,8 @@ export function VideoCard({
       >
         <div
           className={cn(
-            "flex items-center justify-center rounded-full bg-primary shadow-lg",
+            "flex items-center justify-center rounded-full",
+            "bg-primary shadow-lg",
             compact ? "h-12 w-12" : "h-16 w-16"
           )}
         >
@@ -100,7 +106,12 @@ export function VideoCard({
         />
       )}
       {duration && (
-        <span className="absolute bottom-2 right-2 rounded-lg bg-black/75 px-2 py-0.5 text-sm font-bold text-white tabular-nums">
+        <span
+          className={cn(
+            "absolute bottom-2 right-2 rounded-lg bg-black/75",
+            "px-2 py-0.5 text-sm font-bold text-white tabular-nums"
+          )}
+        >
           {duration}
         </span>
       )}
@@ -120,11 +131,21 @@ export function VideoCard({
       className="relative"
       data-feed-anchor={vt ? video.id : undefined}
     >
-      <Link
+      <PrefetchLink
         href={href}
-        className="group block rounded-[32px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40"
+        className={cn(
+          "group block rounded-[32px] focus-visible:outline-none",
+          "focus-visible:ring-4 focus-visible:ring-primary/40"
+        )}
       >
-        <Card className="overflow-hidden border-0 shadow-lg rounded-[32px] bg-white transition-transform duration-300 motion-safe:group-hover:-translate-y-2 motion-safe:active:scale-[0.98]">
+        <Card
+          className={cn(
+            "overflow-hidden rounded-[32px] border-0 bg-white shadow-lg",
+            "transition-transform duration-300",
+            "motion-safe:group-hover:-translate-y-2",
+            "motion-safe:active:scale-[0.98]"
+          )}
+        >
           {vt ? (
             <ViewTransition name={`video-${video.id}`}>
               {thumbnail}
@@ -142,10 +163,12 @@ export function VideoCard({
             >
               {video.title}
             </h3>
-            <p className="text-slate-500 mt-2 font-medium">{video.channelTitle}</p>
+            <p className="mt-2 font-medium text-slate-500">
+              {video.channelTitle}
+            </p>
           </CardContent>
         </Card>
-      </Link>
+      </PrefetchLink>
       <VideoCardMenu
         profileId={profileId}
         videoId={video.id}

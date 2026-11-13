@@ -4,8 +4,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession, isKidSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { videos, watchHistory, watchProgress, whitelistedVideos } from "@/lib/db/schema";
+import {
+  videos,
+  watchHistory,
+  watchProgress,
+  whitelistedVideos,
+} from "@/lib/db/schema";
 import { assertCanManageProfile } from "@/lib/profiles";
+import { invalidateProfilesWhitelisting } from "@/lib/feed-cache";
 import { suitableVideo } from "@/lib/video-suitability";
 
 const bodySchema = z.object({
@@ -14,7 +20,8 @@ const bodySchema = z.object({
   positionSeconds: z.number().int().min(0),
   durationSeconds: z.number().int().min(0).nullable(),
   completed: z.boolean(),
-  sentAt: z.number(), // client epoch ms — guards against out-of-order beacons
+  // client epoch ms — guards against out-of-order beacons
+  sentAt: z.number(),
   // z.iso.date (not a bare regex) so impossible dates like 2026-02-30
   // get a 400 instead of a Postgres date/time-out-of-range 500.
   day: z.iso.date().optional(), // client-local date
@@ -67,12 +74,21 @@ export async function POST(request: NextRequest) {
   // ordering guard below and permanently block newer updates.
   const sentAt = new Date(Math.min(body.sentAt, Date.now()));
 
-  // Lazily repair videos rows missing duration (pre-duration-fix pins)
+  // Lazily repair videos rows missing duration (pre-duration-fix
+  // pins). `videos` is global — the new duration lands on every
+  // profile's cached feed rows, so bust each whitelisting profile's
+  // tag, not just the beacon's own.
   if (body.durationSeconds) {
-    await db
+    const repaired = await db
       .update(videos)
       .set({ durationSeconds: body.durationSeconds })
-      .where(and(eq(videos.id, body.videoId), isNull(videos.durationSeconds)));
+      .where(
+        and(eq(videos.id, body.videoId), isNull(videos.durationSeconds))
+      )
+      .returning({ id: videos.id });
+    if (repaired.length) {
+      await invalidateProfilesWhitelisting([body.videoId]);
+    }
   }
 
   await db

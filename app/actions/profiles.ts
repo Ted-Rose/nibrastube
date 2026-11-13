@@ -7,6 +7,7 @@ import {
   assertCanEditKidData,
   assertCanManageProfile,
 } from "@/lib/profiles";
+import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { isKidAvatar } from "@/lib/kid-avatars";
 import bcrypt from "bcryptjs";
 import { eq, and } from "drizzle-orm";
@@ -94,6 +95,8 @@ export async function deleteProfile(profileId: string) {
       )
     );
 
+  // The profile is gone — its cached feed entries must be too.
+  invalidateProfileFeed(profileId);
   revalidatePath("/parent/profiles");
 }
 
@@ -273,6 +276,7 @@ export async function updateKidAvatar(
   // header, this settings page, and watch pages all render the avatar.
   // /kids, /parent/profiles, and the parent dashboard's Select Kid
   // sidebar render it too.
+  invalidateProfileFeed(profileId);
   revalidatePath(`/kids/${profileId}`, "layout");
   revalidatePath("/kids");
   revalidatePath("/parent/profiles");

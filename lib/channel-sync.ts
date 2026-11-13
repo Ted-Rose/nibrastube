@@ -10,6 +10,10 @@ import {
   whitelistedVideos,
 } from "@/lib/db/schema";
 import { getUploadsPage, getVideosBatch } from "@/lib/youtube";
+import {
+  invalidateProfileFeed,
+  invalidateProfilesWhitelisting,
+} from "@/lib/feed-cache";
 import { upsertVideoRows } from "@/lib/video-cache";
 import {
   captureInternalException,
@@ -87,6 +91,13 @@ async function upsertVideosAndWhitelist(
 
   await upsertVideoRows(details);
 
+  // `videos` rows are global: a metadata flip (e.g. ageRestricted →
+  // true hides the row via suitableVideo) lands on every profile that
+  // whitelists the id, not just the one being synced. triggerPinned
+  // below only covers this profile and only when new pins were added,
+  // so bust the feed tag of every other whitelisting profile here.
+  await invalidateProfilesWhitelisting(details.map((v) => v.id));
+
   const excluded = await getExcludedVideoIds(
     profileId,
     details.map((v) => v.id)
@@ -112,7 +123,13 @@ async function upsertVideosAndWhitelist(
   return toInsert.length;
 }
 
+// Single chokepoint for "sync added pins" — backfill and poll both
+// call it only when added > 0. New whitelist rows must bust the
+// profile's cached feed or they stay invisible for the cache TTL.
 async function triggerPinned(profileId: string, channelId: string) {
+  // Bust the tag BEFORE the ping so a client's router.refresh() can't
+  // re-read the stale cache entry.
+  invalidateProfileFeed(profileId);
   const { pusherServer } = await import("@/lib/pusher");
   await pusherServer.trigger(`profile-${profileId}`, "video-pinned", {
     channelId,

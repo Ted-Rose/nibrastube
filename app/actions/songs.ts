@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { songs, users, videos } from "@/lib/db/schema";
+import { invalidateProfilesWhitelisting } from "@/lib/feed-cache";
 import {
   getSession,
   parentSession,
@@ -155,6 +156,10 @@ async function getOrFetchVideo(
     } else {
       const { id, ...updates } = videoRowValues(details);
       await db.update(videos).set(updates).where(eq(videos.id, id));
+      // `videos` is global — the overwrite lands on every profile's
+      // cached feed rows. An insert needs no busting: a missing row
+      // can hold no whitelist pins (FK).
+      await invalidateProfilesWhitelisting([id]);
     }
   }
 

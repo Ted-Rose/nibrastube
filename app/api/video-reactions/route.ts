@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getSession, isKidSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { videoReactions, videos, whitelistedVideos } from "@/lib/db/schema";
+import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { assertCanManageProfile } from "@/lib/profiles";
 import { suitableVideo } from "@/lib/video-suitability";
 
@@ -79,11 +80,14 @@ export async function POST(request: NextRequest) {
       });
   }
 
+  // Reactions drive Liked-tab membership and statusRank — bust the
+  // profile's cached feed rows BEFORE the ping so a client's
+  // router.refresh() can't re-read the stale cache entry.
+  invalidateProfileFeed(profileId);
   const { pusherServer } = await import("@/lib/pusher");
   await pusherServer.trigger(`profile-${profileId}`, "video-reacted", {
     videoId,
   });
-
   revalidatePath(`/kids/${profileId}`);
 
   return NextResponse.json({ ok: true });

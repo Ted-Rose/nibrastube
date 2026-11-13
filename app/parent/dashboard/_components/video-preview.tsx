@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { after } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { Prohibit, X } from "@phosphor-icons/react/dist/ssr";
 import { db } from "@/lib/db";
@@ -9,6 +10,7 @@ import {
   type DashboardVideo,
 } from "@/lib/youtube";
 import { upsertVideoRows } from "@/lib/video-cache";
+import { invalidateProfilesWhitelisting } from "@/lib/feed-cache";
 import { cn } from "@/lib/utils";
 import { VideoPreviewOverlay } from "./video-preview-overlay";
 import { Button } from "@/components/ui/button";
@@ -66,6 +68,10 @@ export async function VideoPreview({
     try {
       const details = await getVideoDetails(videoId);
       await upsertVideoRows([details]);
+      // The upsert rewrites a SHARED videos row — bust the feed tag of
+      // every whitelisting profile. Scheduled via after(): this is a
+      // Server Component render, where revalidateTag throws.
+      after(() => invalidateProfilesWhitelisting([details.id]));
       video = toDashboardVideo(details);
       if (!details.embeddable) {
         notice =

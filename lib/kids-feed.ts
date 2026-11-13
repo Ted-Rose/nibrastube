@@ -15,8 +15,13 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { db } from "@/lib/db";
+import {
+  FEED_REVALIDATE_SECONDS,
+  feedCacheTag,
+} from "@/lib/feed-cache";
 import {
   channels,
   playlistItems,
@@ -302,6 +307,64 @@ export interface FeedVideo {
   isShort: boolean;
 }
 
+// --- Feed data cache --------------------------------------------------
+// Whitelist-driven feed rows are shared across every device viewing a
+// profile, so the expensive whitelist+video(+channel) joins are wrapped
+// in unstable_cache with a per-profile tag (see lib/feed-cache.ts —
+// every content mutation busts it via invalidateProfileFeed). NEVER
+// wrap: getRecommendedVideos (daily re-rank + live impression state),
+// getWatchProgressMap below, getContinueWatching/getWatchHistory (their
+// row SETS are progress/history-beacon writes — caching them would
+// freeze "Continue watching" and History for the TTL), or any
+// auth/parent read.
+type WatchProgressRow = typeof watchProgress.$inferSelect;
+
+// Live per-request progress overlay: resume positions and progress
+// bars can never be served from the data cache — /api/watch-progress
+// beacons are silent writes with no invalidation. React cache()
+// dedupes so all feed reads in one render share a single query.
+const getWatchProgressMap = cache(async (profileId: string) => {
+  const rows = await db
+    .select()
+    .from(watchProgress)
+    .where(eq(watchProgress.profileId, profileId));
+  return new Map(rows.map((r) => [r.videoId, r]));
+});
+
+// Merge the live progress overlay into cached { video, reaction }
+// rows — same row shape the joined query used to return.
+function mergeProgress<R extends { video: { id: string } }>(
+  rows: R[],
+  progress: Map<string, WatchProgressRow>
+) {
+  return rows.map((r) => ({
+    ...r,
+    progress: progress.get(r.video.id) ?? null,
+  }));
+}
+
+// One unstable_cache entry per (profileId, params) tagged
+// feed:<profileId>. The params object is built with a fixed key order
+// at a single site per function, so JSON.stringify is a canonical key
+// (absent keys and undefined serialize identically).
+function cachedFeedRows<Args extends unknown[], R>(
+  fn: (...args: Args) => Promise<R>,
+  keyParts: string[],
+  profileId: string
+) {
+  return unstable_cache(fn, keyParts, {
+    revalidate: FEED_REVALIDATE_SECONDS,
+    tags: [feedCacheTag(profileId)],
+  });
+}
+
+// Cache-key canonicalization: null, "" and 0 must key like an absent
+// param (undefined serializes the same as a missing key in
+// JSON.stringify), or equivalent filters mint duplicate entries.
+// `||` over `??` is deliberate — a 0 length bound is unbounded.
+const keyParam = <T>(v: T | null | undefined): T | undefined =>
+  v || undefined;
+
 // JS mirror of the statusRank CASE below — same tiers, so autoplay picks
 // match what the sort=status grid shows.
 export function watchStatus(
@@ -312,28 +375,22 @@ export function watchStatus(
   return 0;
 }
 
-// Whitelisted videos + watch progress for a profile, optionally filtered by
-// title (q) and/or publishing channel, ordered per sort/dir.
-export async function getKidsVideos(
-  profileId: string,
-  {
-    q,
-    channelId,
-    sort,
-    dir,
-    type,
-    minLen,
-    maxLen,
-  }: {
-    q?: string;
-    channelId?: string | null;
-    sort: KidsSort;
-    dir: KidsDir;
-    type?: KidsType;
-    minLen?: number | null;
-    maxLen?: number | null;
-  }
-) {
+interface KidsVideosParams {
+  q?: string;
+  channelId?: string | null;
+  sort: KidsSort;
+  dir: KidsDir;
+  type?: KidsType;
+  minLen?: number | null;
+  maxLen?: number | null;
+}
+
+// The cacheable half of getKidsVideos — whitelist+video+reaction rows
+// only. The watchProgress LEFT JOIN stays (statusRank and the
+// impressionPenalty watched-mask ORDER BY it), so ordering reflects
+// cache-write time; progress values are merged live by the caller.
+async function kidsVideoRows(profileId: string, params: KidsVideosParams) {
+  const { q, channelId, sort, dir, type, minLen, maxLen } = params;
   // 0 = not watched, 1 = started/not finished, 2 = watched or disliked
   const statusRank = sql<number>`case
     when ${videoReactions.reaction} = 'dislike' then 2
@@ -365,7 +422,6 @@ export async function getKidsVideos(
   return db
     .select({
       video: feedVideoCols,
-      progress: watchProgress,
       reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
     })
     .from(whitelistedVideos)
@@ -402,6 +458,34 @@ export async function getKidsVideos(
       )
     )
     .orderBy(...orderBy);
+}
+
+// Whitelisted videos + watch progress for a profile, optionally filtered by
+// title (q) and/or publishing channel, ordered per sort/dir. Rows are
+// served from the per-profile data cache; progress is merged live.
+export async function getKidsVideos(
+  profileId: string,
+  params: KidsVideosParams
+) {
+  const canonical = {
+    q: keyParam(params.q),
+    channelId: keyParam(params.channelId),
+    sort: params.sort,
+    dir: params.dir,
+    type: params.type === "all" ? undefined : params.type,
+    minLen: keyParam(params.minLen),
+    maxLen: keyParam(params.maxLen),
+  };
+  const cached = cachedFeedRows(
+    () => kidsVideoRows(profileId, canonical),
+    ["kids-videos", profileId, JSON.stringify(canonical)],
+    profileId
+  );
+  const [rows, progress] = await Promise.all([
+    cached(),
+    getWatchProgressMap(profileId),
+  ]);
+  return mergeProgress(rows, progress);
 }
 
 // Whitelisted videos the kid started but hasn't finished (and hasn't
@@ -462,33 +546,31 @@ export async function getContinueWatching(
     .limit(limit);
 }
 
-// Recently pinned whitelisted videos the kid hasn't finished or 👎'd —
-// the home "New for you" shelf. The completed/disliked checks are
-// null-safe because progress and reactions are left joins. Ordered by
-// pin day then publish date: a channel backfill pins hundreds of rows
-// within seconds, newest upload first, so a plain `pinnedAt desc` would
-// surface the channel's OLDEST uploads.
-export async function getNewForYou(
+// The cacheable half of getNewForYou — membership is pin- and
+// reaction-driven (both carry tag invalidation), so the row set is
+// shareable. The completed check on the left-joined progress is
+// re-applied against the LIVE overlay by getNewForYou below, so a
+// video finished mid-TTL still drops out.
+async function newForYouRows(
   profileId: string,
   {
-    limit = 20,
-    days = 14,
+    limit,
+    days,
     type,
     minLen,
     maxLen,
   }: {
-    limit?: number;
-    days?: number;
+    limit: number;
+    days: number;
     type?: KidsType;
     minLen?: number | null;
     maxLen?: number | null;
-  } = {}
+  }
 ) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   return db
     .select({
       video: feedVideoCols,
-      progress: watchProgress,
       reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
     })
     .from(whitelistedVideos)
@@ -531,9 +613,102 @@ export async function getNewForYou(
     .limit(limit);
 }
 
+// Recently pinned whitelisted videos the kid hasn't finished or 👎'd —
+// the home "New for you" shelf. The completed/disliked checks are
+// null-safe because progress and reactions are left joins. Ordered by
+// pin day then publish date: a channel backfill pins hundreds of rows
+// within seconds, newest upload first, so a plain `pinnedAt desc` would
+// surface the channel's OLDEST uploads.
+export async function getNewForYou(
+  profileId: string,
+  {
+    limit = 20,
+    days = 14,
+    type,
+    minLen,
+    maxLen,
+  }: {
+    limit?: number;
+    days?: number;
+    type?: KidsType;
+    minLen?: number | null;
+    maxLen?: number | null;
+  } = {}
+) {
+  const canonical = {
+    limit,
+    days,
+    type: type === "all" ? undefined : type,
+    minLen: keyParam(minLen),
+    maxLen: keyParam(maxLen),
+  };
+  const cached = cachedFeedRows(
+    () => newForYouRows(profileId, canonical),
+    ["new-for-you", profileId, JSON.stringify(canonical)],
+    profileId
+  );
+  const [rows, progress] = await Promise.all([
+    cached(),
+    getWatchProgressMap(profileId),
+  ]);
+  // A video completed mid-TTL must leave the shelf now, not at the
+  // next recompute — re-check against the live overlay.
+  return mergeProgress(rows, progress).filter(
+    (r) => !r.progress?.completed
+  );
+}
+
+// The cacheable half of getLikedVideos — membership is reaction-driven
+// and reactions invalidate the profile tag, so the row set is
+// shareable. Progress merges live in getLikedVideos.
+async function likedVideoRows(
+  profileId: string,
+  {
+    q,
+    limit,
+    type,
+    minLen,
+    maxLen,
+  }: {
+    q?: string;
+    limit?: number;
+    type?: KidsType;
+    minLen?: number | null;
+    maxLen?: number | null;
+  }
+) {
+  const query = db
+    .select({
+      video: feedVideoCols,
+      reaction: sql<VideoReaction>`${videoReactions.reaction}`,
+    })
+    .from(videoReactions)
+    .innerJoin(videos, eq(videos.id, videoReactions.videoId))
+    .innerJoin(
+      whitelistedVideos,
+      and(
+        eq(whitelistedVideos.profileId, videoReactions.profileId),
+        eq(whitelistedVideos.videoId, videoReactions.videoId)
+      )
+    )
+    .where(
+      and(
+        eq(videoReactions.profileId, profileId),
+        eq(videoReactions.reaction, "like"),
+        suitableVideo,
+        typeFilter(type),
+        lenFilter(minLen, maxLen),
+        q ? ilike(videos.title, `%${q}%`) : undefined
+      )
+    )
+    .orderBy(desc(videoReactions.reactedAt));
+  return limit === undefined ? query : query.limit(limit);
+}
+
 // Videos the kid tapped 👍 on, newest reaction first. Inner-joins
 // whitelisted_videos so an unpinned favorite hides until re-pinned.
-// Same { video, progress, reaction } row shape as getKidsVideos.
+// Same { video, progress, reaction } row shape as getKidsVideos. Rows
+// are served from the per-profile data cache; progress merges live.
 export async function getLikedVideos(
   profileId: string,
   {
@@ -550,40 +725,23 @@ export async function getLikedVideos(
     maxLen?: number | null;
   } = {}
 ) {
-  const query = db
-    .select({
-      video: feedVideoCols,
-      progress: watchProgress,
-      reaction: sql<VideoReaction>`${videoReactions.reaction}`,
-    })
-    .from(videoReactions)
-    .innerJoin(videos, eq(videos.id, videoReactions.videoId))
-    .innerJoin(
-      whitelistedVideos,
-      and(
-        eq(whitelistedVideos.profileId, videoReactions.profileId),
-        eq(whitelistedVideos.videoId, videoReactions.videoId)
-      )
-    )
-    .leftJoin(
-      watchProgress,
-      and(
-        eq(watchProgress.profileId, videoReactions.profileId),
-        eq(watchProgress.videoId, videoReactions.videoId)
-      )
-    )
-    .where(
-      and(
-        eq(videoReactions.profileId, profileId),
-        eq(videoReactions.reaction, "like"),
-        suitableVideo,
-        typeFilter(type),
-        lenFilter(minLen, maxLen),
-        q ? ilike(videos.title, `%${q}%`) : undefined
-      )
-    )
-    .orderBy(desc(videoReactions.reactedAt));
-  return limit === undefined ? query : query.limit(limit);
+  const canonical = {
+    q: keyParam(q),
+    limit,
+    type: type === "all" ? undefined : type,
+    minLen: keyParam(minLen),
+    maxLen: keyParam(maxLen),
+  };
+  const cached = cachedFeedRows(
+    () => likedVideoRows(profileId, canonical),
+    ["liked-videos", profileId, JSON.stringify(canonical)],
+    profileId
+  );
+  const [rows, progress] = await Promise.all([
+    cached(),
+    getWatchProgressMap(profileId),
+  ]);
+  return mergeProgress(rows, progress);
 }
 
 // Everything a profile watched, one row per (video, kid-local day), newest
@@ -906,12 +1064,10 @@ export interface KidsChannel {
   videoCount: number;
 }
 
-// One card per channel that has whitelisted videos (grouped by the video's
-// real publisher, so manual pins count too), plus approved channels with 0
-// videos yet (mid-backfill). Thumbnails come from the channels registry.
-// Under a ?type=/?max= filter the count covers only matching videos
-// and channels with none drop out — "which channels have shorts?".
-export async function getKidsChannels(
+// The cacheable half of getKidsChannels — the three registry/whitelist
+// queries plus the in-memory tile merge, all membership-driven (pins,
+// channel approvals) so the per-profile tag covers every input.
+async function kidsChannelRows(
   profileId: string,
   {
     q,
@@ -923,7 +1079,7 @@ export async function getKidsChannels(
     type?: KidsType;
     minLen?: number | null;
     maxLen?: number | null;
-  } = {}
+  }
 ): Promise<KidsChannel[]> {
   const grouped = await db
     .select({
@@ -1001,6 +1157,41 @@ export async function getKidsChannels(
   return all.sort((a, b) => a.title.localeCompare(b.title));
 }
 
+// One card per channel that has whitelisted videos (grouped by the video's
+// real publisher, so manual pins count too), plus approved channels with 0
+// videos yet (mid-backfill). Thumbnails come from the channels registry.
+// Under a ?type=/?max= filter the count covers only matching videos
+// and channels with none drop out — "which channels have shorts?".
+// Served from the per-profile data cache; no progress overlay — tiles
+// carry no progress state.
+export async function getKidsChannels(
+  profileId: string,
+  {
+    q,
+    type = "all",
+    minLen,
+    maxLen,
+  }: {
+    q?: string;
+    type?: KidsType;
+    minLen?: number | null;
+    maxLen?: number | null;
+  } = {}
+): Promise<KidsChannel[]> {
+  const canonical = {
+    q: keyParam(q),
+    type: type === "all" ? undefined : type,
+    minLen: keyParam(minLen),
+    maxLen: keyParam(maxLen),
+  };
+  const cached = cachedFeedRows(
+    () => kidsChannelRows(profileId, canonical),
+    ["kids-channels", profileId, JSON.stringify(canonical)],
+    profileId
+  );
+  return cached();
+}
+
 export interface KidsPlaylist {
   id: string;
   name: string;
@@ -1011,14 +1202,10 @@ export interface KidsPlaylist {
   updatedAt: Date;
 }
 
-// Playlists for a profile with their VISIBLE item count (items whose video
-// is currently unpinned don't count) and a cover taken from the first
-// visible item — same unpin-hides semantics as getPlaylistVideos.
-// cache() shares one query per request across separate Suspense
-// boundaries (the home shelves and the view's own grid/menu snapshot).
-export const getPlaylists = cache(async function getPlaylists(
-  profileId: string
-): Promise<KidsPlaylist[]> {
+// The cacheable half of getPlaylists — playlist membership, visible
+// counts and covers are pin/playlist-write driven (both carry tag
+// invalidation).
+async function playlistRows(profileId: string): Promise<KidsPlaylist[]> {
   return db
     .select({
       id: playlists.id,
@@ -1053,14 +1240,32 @@ export const getPlaylists = cache(async function getPlaylists(
     .where(eq(playlists.profileId, profileId))
     .groupBy(playlists.id, playlists.name, playlists.createdAt)
     .orderBy(asc(playlists.createdAt));
+}
+
+// Playlists for a profile with their VISIBLE item count (items whose video
+// is currently unpinned don't count) and a cover taken from the first
+// visible item — same unpin-hides semantics as getPlaylistVideos.
+// cache() shares one query per request across separate Suspense
+// boundaries (the home shelves and the view's own grid/menu snapshot);
+// unstable_cache shares it across requests.
+export const getPlaylists = cache(async function getPlaylists(
+  profileId: string
+): Promise<KidsPlaylist[]> {
+  const cached = cachedFeedRows(
+    () => playlistRows(profileId),
+    ["playlists", profileId],
+    profileId
+  );
+  const rows = await cached();
+  // unstable_cache serializes via JSON — revive updatedAt or the save
+  // dialog's recency sort crashes on string.getTime().
+  return rows.map((p) => ({ ...p, updatedAt: new Date(p.updatedAt) }));
 });
 
-// One playlist's videos in kid-defined order. Same { video, progress,
-// reaction } row shape as getKidsVideos. Rows inner-join
-// whitelisted_videos on the playlist's profile, so an unpinned video hides
-// (and returns at its old position on re-pin) and a playlist belonging to
-// another profile returns nothing.
-export async function getPlaylistVideos(
+// The cacheable half of getPlaylistVideos — the kid-ordered item rows.
+// Item membership is playlist-write- and pin-driven (both carry tag
+// invalidation); progress merges live in getPlaylistVideos.
+async function playlistVideoRows(
   profileId: string,
   playlistId: string,
   {
@@ -1073,20 +1278,11 @@ export async function getPlaylistVideos(
     type?: KidsType;
     minLen?: number | null;
     maxLen?: number | null;
-  } = {}
+  }
 ) {
-  const playlist = await db.query.playlists.findFirst({
-    where: and(
-      eq(playlists.id, playlistId),
-      eq(playlists.profileId, profileId)
-    ),
-  });
-  if (!playlist) return [];
-
   return db
     .select({
       video: feedVideoCols,
-      progress: watchProgress,
       reaction: sql<VideoReaction | null>`${videoReactions.reaction}`,
     })
     .from(playlistItems)
@@ -1096,13 +1292,6 @@ export async function getPlaylistVideos(
       and(
         eq(whitelistedVideos.profileId, profileId),
         eq(whitelistedVideos.videoId, playlistItems.videoId)
-      )
-    )
-    .leftJoin(
-      watchProgress,
-      and(
-        eq(watchProgress.profileId, profileId),
-        eq(watchProgress.videoId, playlistItems.videoId)
       )
     )
     .leftJoin(
@@ -1124,4 +1313,58 @@ export async function getPlaylistVideos(
     // addedAt breaks same-position ties (concurrent adds racing on
     // max(position)+1) so the kid-visible order is deterministic.
     .orderBy(asc(playlistItems.position), asc(playlistItems.addedAt));
+}
+
+// One playlist's videos in kid-defined order. Same { video, progress,
+// reaction } row shape as getKidsVideos. Rows inner-join
+// whitelisted_videos on the playlist's profile, so an unpinned video hides
+// (and returns at its old position on re-pin) and a playlist belonging to
+// another profile returns nothing. Rows are served from the per-profile
+// data cache; progress is merged live.
+export async function getPlaylistVideos(
+  profileId: string,
+  playlistId: string,
+  {
+    q,
+    type,
+    minLen,
+    maxLen,
+  }: {
+    q?: string;
+    type?: KidsType;
+    minLen?: number | null;
+    maxLen?: number | null;
+  } = {}
+) {
+  // Ownership check stays live — cheap, and a just-deleted playlist must
+  // fail now rather than trust a tag write that raced the delete.
+  const playlist = await db.query.playlists.findFirst({
+    where: and(
+      eq(playlists.id, playlistId),
+      eq(playlists.profileId, profileId)
+    ),
+  });
+  if (!playlist) return [];
+
+  const canonical = {
+    q: keyParam(q),
+    type: type === "all" ? undefined : type,
+    minLen: keyParam(minLen),
+    maxLen: keyParam(maxLen),
+  };
+  const cached = cachedFeedRows(
+    () => playlistVideoRows(profileId, playlistId, canonical),
+    [
+      "playlist-videos",
+      profileId,
+      playlistId,
+      JSON.stringify(canonical),
+    ],
+    profileId
+  );
+  const [rows, progress] = await Promise.all([
+    cached(),
+    getWatchProgressMap(profileId),
+  ]);
+  return mergeProgress(rows, progress);
 }

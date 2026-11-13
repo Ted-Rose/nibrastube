@@ -5,7 +5,7 @@
 #   gcloud builds submit --config cloudbuild.yaml \
 #     --project <PROJECT_ID> \
 #     --substitutions=_IMAGE=<REGION>-docker.pkg.dev/<PROJECT_ID>/nibrastube/nibrastube:latest,\
-#_NEXT_PUBLIC_PUSHER_KEY=...,_NEXT_PUBLIC_PUSHER_CLUSTER=eu
+#_NEXT_PUBLIC_PUSHER_KEY=...,_NEXT_PUBLIC_PUSHER_CLUSTER=eu,_NEXT_PUBLIC_SENTRY_DSN=...
 #
 # .env must NOT be uploaded: it is excluded by .dockerignore for the docker
 # build context and by .gitignore for the gcloud source upload.
@@ -13,6 +13,7 @@ substitutions:
   _IMAGE: europe-west1-docker.pkg.dev/nibrastube-app/nibrastube/nibrastube:latest
   _NEXT_PUBLIC_PUSHER_KEY: ""
   _NEXT_PUBLIC_PUSHER_CLUSTER: ""
+  _NEXT_PUBLIC_SENTRY_DSN: ""
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
@@ -20,6 +21,7 @@ steps:
       - --platform=linux/amd64
       - --build-arg=NEXT_PUBLIC_PUSHER_KEY=${_NEXT_PUBLIC_PUSHER_KEY}
       - --build-arg=NEXT_PUBLIC_PUSHER_CLUSTER=${_NEXT_PUBLIC_PUSHER_CLUSTER}
+      - --build-arg=NEXT_PUBLIC_SENTRY_DSN=${_NEXT_PUBLIC_SENTRY_DSN}
       - --tag=${_IMAGE}
       - .
 images:

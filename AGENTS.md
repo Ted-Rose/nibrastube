@@ -661,8 +661,9 @@ npx tsx scripts/test-song-parser.ts   # ad-hoc checks for the song
 ```
 
 DB schema changes: edit `lib/db/schema.ts`, then `npm run
-db:generate` (commit the generated `drizzle/` files), `npm run
-db:migrate` to apply.
+db:generate` (commit the generated `drizzle/` files); applying
+via `npm run db:migrate` is user-run only — agents hand the
+command off (see "Dangerous commands").
 
 ## Android APK
 
@@ -788,11 +789,17 @@ Repo-local style:
   branches in it). For every task: `git fetch origin`, then
   `git worktree add ../nibrastube-wt/<name> -b <type>/<slug>
   origin/main` and do all work — commits, push, PR — inside it.
-  Once the PR's checks are green and no work remains, clean up
-  IMMEDIATELY — don't wait for the merge (the PR lives on the
-  remote branch; removing the local worktree/branch does not
+  Finishing a task means a green, reviewed PR — never ask the
+  user whether to open one. After pushing: open the PR ready
+  for review (NEVER a draft) per `.devin/skills/create-pr/`,
+  then run a review loop — spawn a FRESH reviewer subagent on
+  the diff, fix everything useful it reports, push, and repeat
+  with a new reviewer until a round finds nothing meaningful.
+  Once the loop is clean and the PR's checks are green, clean
+  up IMMEDIATELY — don't wait for the merge (the PR lives on
+  the remote branch; removing the local worktree/branch does not
   touch it, and the remote branch is deleted at merge time).
-  From the main checkout: `git worktree remove
+  From the main checkout: `git worktree remove --force
   ../nibrastube-wt/<name>` + `git branch -D <type>/<slug>`
   (`-D`, not `-d` — squash-merges leave the branch
   "unmerged"). Abandoned/rejected work gets the same cleanup,
@@ -815,7 +822,8 @@ Universal rules — follow exactly:
    `Feat:`/`Fix:`/`Docs:`/`Refactor:`/`Test:`/`Chore:`.
 3. **Commit on feature branches only, never `main`.**
    Name branches `<type>/<slug>` with the commit types
-   (`feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `chore/`).
+   (`feature/`, `fix/`, `docs/`, `refactor/`, `test/`,
+   `chore/`).
    Stage only files changed this session, by path — never
    `git add -A`, `git add .` or `git commit -a`; confirm the
    staged set with `git status` first; leave the user's own
@@ -865,12 +873,13 @@ Universal rules — follow exactly:
 ### Repo-specific rules
 
 - **Dangerous commands — never run**:
-  - `npm run db:migrate` against `DATABASE_URL` (the pooled
-    endpoint) — PgBouncer transaction pooling breaks migrate's
-    session behavior; `drizzle.config.ts` already prefers
-    `DATABASE_URL_UNPOOLED`, so the plain command is correct.
-    Generating migration files (`npm run db:generate`) is
-    always safe.
+  - `npm run db:migrate` — agents never run it (a production
+    Neon write); tell the user the command instead. For the
+    user: `drizzle.config.ts` prefers `DATABASE_URL_UNPOOLED`,
+    so the plain command is the right one — never run it
+    against the pooled `DATABASE_URL` (PgBouncer breaks
+    migrate's session behavior). Generating migration files
+    (`npm run db:generate`) is always safe.
   - `npx drizzle-kit push` — bypasses migration files; README's
     mention is stale.
   - `npm run videos:refresh -- --prune` — deletes rows; dry-run
@@ -878,9 +887,9 @@ Universal rules — follow exactly:
   - Pushing `v*` tags or commits to the `android` branch —
     triggers signed release builds.
   - `git push --force`, deleting branches, rewriting history.
-  - Anything writing to the production Neon DB beyond the
-    sanctioned migrate — if a task genuinely needs it, write
-    the change and tell the user the command to run.
+  - Anything writing to the production Neon DB — if a task
+    genuinely needs it, write the change and tell the user
+    the command to run.
 - **Branch prefixes**: `feature/` for new functionality (not
   `feat/`), `fix/` for bug fixes, `chore/` for
   maintenance/tooling, `docs/` for documentation, `refactor/`
@@ -917,7 +926,11 @@ Universal rules — follow exactly:
 - `AGENTS.md` (this file) — the contract doc every agent reads;
   `CLAUDE.md` just `@`-imports it.
 - `.devin/skills/fix-good-first-issue/` — pick up a "good first
-  issue", fix it, open a draft PR, watch checks.
+  issue", fix it, open a PR, run the reviewer loop, watch
+  checks.
+- `.devin/skills/fix-sentry-issue-frontend/` — triage the
+  Sentry queue, fix events on a worktree branch, open a PR,
+  resolve the issue only after merge.
 - `.devin/skills/implement-plan/` — execute a legacy
   `docs/plans/*-plan.md` file with implementer → reviewer → fixer
   subagents (no new plan files — see "OpenSpec").
@@ -925,7 +938,9 @@ Universal rules — follow exactly:
   performance rules (SKILL.md index + per-rule files).
 - `.devin/skills/openspec-*/` — OpenSpec workflow skills: copies of
   `.agents/skills/openspec-*/` with frontmatter stripped to
-  `name:`/`description:` (see "OpenSpec").
+  `name:`/`description:` (see "OpenSpec") — EXCEPT
+  `openspec-apply-delegated`, which is repo-maintained (no
+  `.agents` counterpart; don't re-copy it on `openspec update`).
 - `.devin/skills/create-pr/` — PR body via `--body-file`.
 - `.devin/config.local.json` — permission allowlist, user-local and
   untracked (gitignored).

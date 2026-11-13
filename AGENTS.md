@@ -719,10 +719,14 @@ bugs only:
 - YouTube quota/outages — `captureProviderException`, level
   warning, tag `error_code:rate_limited` / `provider_error`.
 
-Events carry `environment` from `NEXT_PUBLIC_VERCEL_ENV` /
-`VERCEL_ENV` (`production`/`preview`/`development`) and `release`
-from the Vercel git SHA, so previews and dev stay out of the prod
-queue and `resolvedInNextRelease` resolves at the next deploy.
+Events carry `environment` and `release` through a precedence
+chain — `NEXT_PUBLIC_SENTRY_ENVIRONMENT` /
+`NEXT_PUBLIC_SENTRY_RELEASE` (Docker build args on the Cloud Run
+image; `""` when unset, hence `||` fallthrough in both
+instrumentation files) → `NEXT_PUBLIC_VERCEL_ENV` / `VERCEL_ENV`
+(`production`/`preview`/`development`) and the Vercel git SHA — so
+previews and dev stay out of the prod queue and
+`resolvedInNextRelease` resolves at the next deploy.
 Logs stay console/Vercel logs — no logging integration events.
 
 REST ops (the agent fix queue) — `source

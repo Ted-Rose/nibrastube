@@ -8,6 +8,7 @@ import { canViewProfile } from "@/lib/profiles";
 import { BackLink } from "@/components/back-link";
 import { AppInstallMenu } from "@/components/app-install-menu";
 import { AvatarPicker } from "./avatar-picker";
+import { ResetCacheRow } from "./reset-cache-row";
 import { UpdateCheckRow } from "./update-check-row";
 
 interface KidSettingsProps {
@@ -70,6 +71,7 @@ export default async function KidSettingsPage({
             </p>
             <AppInstallMenu />
           </div>
+          <ResetCacheRow profileId={profile.id} />
           <UpdateCheckRow />
         </section>
       </main>

@@ -212,6 +212,28 @@ export function patchRows(
   return out;
 }
 
+// Remove every snapshot belonging to one profile — the settings
+// "Reset cached data" button calls this after the server busts the
+// feed data cache, so a returning feed can't restore rows or order
+// the backend no longer serves. Other profiles' snapshots and the
+// transient nt:watchFrom marker are left alone.
+export function clearFeedSnapshots(profileId: string) {
+  try {
+    const prefix = `${STORAGE_PREFIX}${profileId}:`;
+    const doomed: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(prefix)) doomed.push(key);
+    }
+    for (const key of doomed) sessionStorage.removeItem(key);
+    const index = readIndex();
+    for (const key of doomed) delete index[key];
+    sessionStorage.setItem(INDEX_KEY, JSON.stringify(index));
+  } catch {
+    // Storage disabled — nothing to clear.
+  }
+}
+
 // "Entered watch from a feed card" marker — set by WatchFromTracker's
 // capture-phase listener on any /watch/ link tap, consumed by the
 // watch page's Back button: set → router.back() (a real popstate —

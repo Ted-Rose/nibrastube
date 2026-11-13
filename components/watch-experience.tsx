@@ -371,8 +371,8 @@ export function WatchExperience({
     setIndex(indexRef.current);
 
     // Playlist changed under an open swipe dialog — the pending target
-    // preview may be stale, so drop it. The recreated player autoplays,
-    // which is the "keep watching" outcome anyway.
+    // preview may be stale, so drop it. The recreated player autoplays
+    // when autoplayOnOpen is on — the "keep watching" outcome anyway.
     setPendingSwipe(null);
   }, [stablePlaylist]);
 

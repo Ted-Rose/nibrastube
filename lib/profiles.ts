@@ -111,5 +111,8 @@ export async function getManageableProfiles(userId: string) {
       sharedIds.length > 0
         ? or(eq(profiles.parentId, userId), inArray(profiles.id, sharedIds))
         : eq(profiles.parentId, userId),
+    // Stable order — UPDATEs move rows in Postgres heap order, so an
+    // unordered list reshuffles the /kids picker and sidebar cards.
+    orderBy: (p, { asc }) => [asc(p.createdAt)],
   });
 }

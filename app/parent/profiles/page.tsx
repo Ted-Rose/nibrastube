@@ -22,8 +22,12 @@ export default async function ProfilesPage() {
   const user = parentSession(session);
   if (!user) redirect("/login");
 
+  // orderBy is load-bearing: Postgres heap order shifts whenever a
+  // row is UPDATEd, so an unordered list would reshuffle the cards
+  // (and which kid a toggle belongs to) on every revalidation.
   const kidProfiles = await db.query.profiles.findMany({
     where: eq(profiles.parentId, user.id),
+    orderBy: (p, { asc }) => [asc(p.createdAt)],
   });
 
   // Fetch all invites for these profiles
@@ -43,7 +47,8 @@ export default async function ProfilesPage() {
   });
   const sharedProfiles = sharedWithMe.length > 0
     ? await db.query.profiles.findMany({
-        where: inArray(profiles.id, sharedWithMe.map(s => s.profileId))
+        where: inArray(profiles.id, sharedWithMe.map(s => s.profileId)),
+        orderBy: (p, { asc }) => [asc(p.createdAt)],
       })
     : [];
 

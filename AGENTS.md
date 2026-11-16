@@ -56,6 +56,86 @@ unless explicitly asked. Repo is configured for **squash-merge only**
 PRs (`.github/settings.yml`); `main` is protected (no force pushes or
 deletions, enforced for admins).
 
+## Git workflow — staging-first
+
+`main` is production (`redzi.vercel.app`; the Cloud Run
+`nibrastube` standby mirror also deploys on `main` merges);
+`staging` is the integration branch — every push deploys as a
+Vercel preview (`nibrastube-git-staging-<team>.vercel.app`),
+which is the staging environment for UI validation. The
+invariant is **`main` ⊆ `staging`**: production only receives
+code that has already soaked on staging. The `staging-first`
+required check (`.github/workflows/require-staging.yml`) fails
+`main` PRs whose head SHA was never merged into `staging`, and
+`main` allows squash merges only.
+
+- **Features/fixes**: branch off `origin/main` — never
+  `staging`; the branch must carry no unverified staging
+  noise. Open the PR with `--base staging`, then squash-merge
+  once checks are green and the reviewer loop is clean —
+  agents merge into `staging` without asking. GitHub
+  auto-deletes the head branch on merge; expected.
+- **Staging fixes**: commit them on the ORIGINAL feature
+  branch (push it again if auto-deleted — same SHAs are
+  fine; after auto-delete, restore it with
+  `git push origin <sha>:refs/heads/<branch>` where `<sha>`
+  is the merged staging PR's `headRefOid`), then merge
+  into `staging` via the still-open staging PR or a new
+  one.
+- **Promotion to `main`** — only when the user asks to
+  release or merge to main. The `Promote to main` workflow
+  (`.github/workflows/promote-to-main.yml`) automates it:
+  `gh workflow run "Promote to main"` (or the Actions tab;
+  `-f dry_run=true` lists pending promotions). It opens a
+  `main` PR per staged branch — oldest staging-merge
+  first, original title + body + a promotion footer —
+  squash-merges each, then resets `staging` to `main`
+  (skipped entirely if any promotion fails — staging then
+  still holds unreleased work). Conflicting promotions are
+  resolved from the staging squash commit's tree — the
+  validated integration state, never guessed; a replay is
+  only attempted while all earlier promotions succeeded,
+  since a squash tree also carries their code. A branch
+  whose remote tip moved past its staging merge is skipped
+  — those commits were never staged. The scan covers the
+  200 most recent merged staging PRs. Manual
+  equivalent, per branch: re-push it if auto-deleted
+  (`git push origin <headRefOid>:refs/heads/<branch>`),
+  open a PR with `--base main` (same title + body — keep
+  `Closes #<N>` links so issues auto-close), then
+  `gh pr merge <N> --squash --admin`; then reset staging
+  (`git fetch origin && git push --force-with-lease origin
+  origin/main:refs/heads/staging` — the only sanctioned
+  force-push; the workflow does it via the refs API
+  instead). NEVER open `staging`→`main` PRs — that drags
+  integration noise into prod history. The reset discards
+  anything still on `staging` that was not promoted —
+  reset only once staging matches the release, and
+  re-merge leftovers to `staging` afterwards (re-pushing
+  the same SHAs still satisfies the check).
+- **`AUTOMERGE_TOKEN`**: the workflow prefers an admin PAT
+  in that secret but falls back to `GITHUB_TOKEN`.
+  `enforce_admins` is on for `main`, yet promotions
+  satisfy `staging-first` legitimately and `main` has no
+  review requirement, so `GITHUB_TOKEN` merges should
+  work — add the secret only if merges fail on review
+  requirements.
+- **"Merge straight to main" requests**: merge the branch
+  into `staging` first anyway, then the `main` PR — the
+  check blocks anything else, keeping `main` ⊆ `staging`
+  even for urgent merges. If the `main` PR's check already
+  ran red before the staging merge, re-run the failed job
+  after it (`gh run rerun <run-id> --failed` or a push).
+
+**Deployments**: `vercel.json`'s `git.deploymentEnabled`
+whitelists `main` + `staging` only — PRs and feature
+branches get no preview deployment (quota saving), so UI
+verification happens on the staging preview after merge,
+not per-PR. Caveat: Vercel reads the config from the
+pushed commit, so the whitelist only applies to pushes
+that already carry it. `deploy.yml` stays `main`-only —
+Cloud Run tracks production, not staging.
+
 ## Layout
 
 Route protection lives in `proxy.ts` (Next 16's middleware

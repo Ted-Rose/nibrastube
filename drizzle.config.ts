@@ -11,8 +11,20 @@ export default defineConfig({
     // the nibrastube_staging database instead of production.
     url:
       process.env.DB_TARGET === "staging"
-        ? (process.env.STAGING_DATABASE_URL_UNPOOLED ??
-          process.env.STAGING_DATABASE_URL)!
+        ? (() => {
+            if (
+              !process.env.STAGING_DATABASE_URL_UNPOOLED &&
+              process.env.STAGING_DATABASE_URL
+            ) {
+              console.warn(
+                "[drizzle] only the pooled STAGING_DATABASE_URL" +
+                  " is set — PgBouncer breaks drizzle-kit migrate;" +
+                  " prefer STAGING_DATABASE_URL_UNPOOLED.",
+              );
+            }
+            return (process.env.STAGING_DATABASE_URL_UNPOOLED ??
+              process.env.STAGING_DATABASE_URL)!;
+          })()
         : (process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL!),
   },
 });

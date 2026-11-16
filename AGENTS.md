@@ -58,6 +58,9 @@ deletions, enforced for admins).
 
 ## Git workflow — staging-first
 
+If `staging` does not exist yet, create it once:
+`git push origin main:refs/heads/staging`.
+
 `main` is production (`redzi.vercel.app`); `staging` is the
 integration branch — every push auto-deploys as a Vercel preview
 (`redzi-git-staging-<team>.vercel.app`), which is **the staging

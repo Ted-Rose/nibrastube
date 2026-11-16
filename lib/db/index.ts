@@ -17,7 +17,9 @@ import * as schema from "./schema";
 // dashboard env var is added (Preview scope) — but a preview falling back
 // to prod must be loud, not silent.
 const isPreview = process.env.VERCEL_ENV === "preview";
-if (isPreview && !process.env.STAGING_DATABASE_URL) {
+// `||` (not `??`) so an empty-string var counts as unset too.
+const stagingUrl = process.env.STAGING_DATABASE_URL || undefined;
+if (isPreview && !stagingUrl) {
   console.warn(
     "[db] VERCEL_ENV=preview but STAGING_DATABASE_URL is unset — " +
       "falling back to DATABASE_URL (production). Set the " +
@@ -25,7 +27,7 @@ if (isPreview && !process.env.STAGING_DATABASE_URL) {
   );
 }
 const databaseUrl = isPreview
-  ? (process.env.STAGING_DATABASE_URL ?? process.env.DATABASE_URL)
+  ? (stagingUrl ?? process.env.DATABASE_URL)
   : process.env.DATABASE_URL;
 
 const pool = new pg.Pool({

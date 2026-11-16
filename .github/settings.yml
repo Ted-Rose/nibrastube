@@ -12,10 +12,14 @@ repository:
 branches:
   - name: main
     protection:
-      # Block force pushes and deletions on main, enforced for admins too.
+      # Block force pushes and deletions on main. Admins are
+      # exempt (enforce_admins: false): the Promote-to-main
+      # workflow's admin token must be able to merge replayed
+      # promotions whose merge-commit head intentionally
+      # fails the staging-first gate.
       allow_force_pushes: false
       allow_deletions: false
-      enforce_admins: true
+      enforce_admins: false
       # Staging-first gate: production may only receive code already
       # merged into `staging` — see workflows/require-staging.yml and
       # AGENTS.md "Git workflow — staging-first".

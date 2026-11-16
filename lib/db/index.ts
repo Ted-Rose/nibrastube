@@ -14,11 +14,19 @@ import * as schema from "./schema";
 // a separate `nibrastube_staging` Neon database owned by a dedicated
 // `nibrastube_staging` role. Preview deploys must never write to prod.
 // DATABASE_URL remains the fallback so previews keep working until the
-// dashboard env var is added (Preview scope).
-const databaseUrl =
-  process.env.VERCEL_ENV === "preview"
-    ? (process.env.STAGING_DATABASE_URL ?? process.env.DATABASE_URL)
-    : process.env.DATABASE_URL;
+// dashboard env var is added (Preview scope) — but a preview falling back
+// to prod must be loud, not silent.
+const isPreview = process.env.VERCEL_ENV === "preview";
+if (isPreview && !process.env.STAGING_DATABASE_URL) {
+  console.warn(
+    "[db] VERCEL_ENV=preview but STAGING_DATABASE_URL is unset — " +
+      "falling back to DATABASE_URL (production). Set the " +
+      "Preview-scoped env var in the Vercel dashboard.",
+  );
+}
+const databaseUrl = isPreview
+  ? (process.env.STAGING_DATABASE_URL ?? process.env.DATABASE_URL)
+  : process.env.DATABASE_URL;
 
 const pool = new pg.Pool({
   connectionString: databaseUrl,

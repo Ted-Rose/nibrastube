@@ -5,7 +5,8 @@
 #   gcloud builds submit --config cloudbuild.yaml \
 #     --project <PROJECT_ID> \
 #     --substitutions=_IMAGE=<REGION>-docker.pkg.dev/<PROJECT_ID>/nibrastube/nibrastube:latest,\
-#_NEXT_PUBLIC_PUSHER_KEY=...,_NEXT_PUBLIC_PUSHER_CLUSTER=eu,_NEXT_PUBLIC_SENTRY_DSN=...
+#_NEXT_PUBLIC_PUSHER_KEY=...,_NEXT_PUBLIC_PUSHER_CLUSTER=eu,_NEXT_PUBLIC_SENTRY_DSN=...,\
+#_NEXT_PUBLIC_SENTRY_RELEASE=$(git rev-parse HEAD)
 #
 # .env must NOT be uploaded: it is excluded by .dockerignore for the docker
 # build context and by .gitignore for the gcloud source upload.
@@ -14,6 +15,11 @@ substitutions:
   _NEXT_PUBLIC_PUSHER_KEY: ""
   _NEXT_PUBLIC_PUSHER_CLUSTER: ""
   _NEXT_PUBLIC_SENTRY_DSN: ""
+  # This file only builds the production Cloud Run image, so the
+  # environment default is production; pass the checkout's commit
+  # sha as _NEXT_PUBLIC_SENTRY_RELEASE ("" = no release tag).
+  _NEXT_PUBLIC_SENTRY_ENVIRONMENT: production
+  _NEXT_PUBLIC_SENTRY_RELEASE: ""
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
@@ -22,6 +28,8 @@ steps:
       - --build-arg=NEXT_PUBLIC_PUSHER_KEY=${_NEXT_PUBLIC_PUSHER_KEY}
       - --build-arg=NEXT_PUBLIC_PUSHER_CLUSTER=${_NEXT_PUBLIC_PUSHER_CLUSTER}
       - --build-arg=NEXT_PUBLIC_SENTRY_DSN=${_NEXT_PUBLIC_SENTRY_DSN}
+      - --build-arg=NEXT_PUBLIC_SENTRY_ENVIRONMENT=${_NEXT_PUBLIC_SENTRY_ENVIRONMENT}
+      - --build-arg=NEXT_PUBLIC_SENTRY_RELEASE=${_NEXT_PUBLIC_SENTRY_RELEASE}
       - --tag=${_IMAGE}
       - .
 images:

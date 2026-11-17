@@ -10,13 +10,20 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# NEXT_PUBLIC_* vars are inlined into the client bundle at build time
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time.
+# SENTRY_ENVIRONMENT/RELEASE label Cloud Run events — without them
+# production crashes land in Sentry's "development" environment with
+# no release (Vercel sets its own VERCEL_ENV/VERCEL_GIT_COMMIT_SHA).
 ARG NEXT_PUBLIC_PUSHER_KEY
 ARG NEXT_PUBLIC_PUSHER_CLUSTER
 ARG NEXT_PUBLIC_SENTRY_DSN
+ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT
+ARG NEXT_PUBLIC_SENTRY_RELEASE
 ENV NEXT_PUBLIC_PUSHER_KEY=$NEXT_PUBLIC_PUSHER_KEY \
     NEXT_PUBLIC_PUSHER_CLUSTER=$NEXT_PUBLIC_PUSHER_CLUSTER \
     NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN \
+    NEXT_PUBLIC_SENTRY_ENVIRONMENT=$NEXT_PUBLIC_SENTRY_ENVIRONMENT \
+    NEXT_PUBLIC_SENTRY_RELEASE=$NEXT_PUBLIC_SENTRY_RELEASE \
     NEXT_TELEMETRY_DISABLED=1 \
     # Standalone output only exists for this image (next.config.mjs).
     DOCKER_BUILD=1 \
@@ -29,8 +36,14 @@ RUN npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
+# Re-declared so the server runtime (instrumentation.ts) reads the
+# same Sentry labels the client bundle inlined in the builder stage.
+ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT
+ARG NEXT_PUBLIC_SENTRY_RELEASE
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
+    NEXT_PUBLIC_SENTRY_ENVIRONMENT=$NEXT_PUBLIC_SENTRY_ENVIRONMENT \
+    NEXT_PUBLIC_SENTRY_RELEASE=$NEXT_PUBLIC_SENTRY_RELEASE \
     HOSTNAME=0.0.0.0 \
     PORT=8080
 

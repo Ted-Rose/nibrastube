@@ -68,12 +68,14 @@ export async function refreshStaleVideos(
     if (affected.length) {
       // Pins disappeared or metadata flipped — every affected kid
       // device needs a feed refresh, not just the acting profile's.
-      const { triggerProfileEvent } = await import("@/lib/pusher");
-      for (const row of affected) {
-        await triggerProfileEvent(row.profileId, "video-unpinned", {
-          removed,
-        });
-      }
+      // One batched trigger: a Pusher outage reports a single
+      // warning, not one per profile.
+      const { triggerProfileEvents } = await import("@/lib/pusher");
+      await triggerProfileEvents(
+        affected.map((row) => row.profileId),
+        "video-unpinned",
+        { removed }
+      );
     }
   }
 

@@ -9,6 +9,7 @@ import {
   whitelistedVideos,
 } from "@/lib/db/schema";
 import {
+  captureYouTubeException,
   getUploadsPage,
   getVideosBatch,
   isYouTubeQuotaError,
@@ -19,10 +20,7 @@ import {
   invalidateProfilesWhitelisting,
 } from "@/lib/feed-cache";
 import { upsertVideoRows } from "@/lib/video-cache";
-import {
-  captureInternalException,
-  captureProviderException,
-} from "@/lib/report";
+import { captureProviderException } from "@/lib/report";
 
 const MAX_CHANNELS_PER_RUN = 50;
 // ~2000 videos per run; resume via backfillPageToken
@@ -300,7 +298,11 @@ export async function syncAllChannels(): Promise<number> {
           `(profile ${row.whitelist.profileId}):`,
         err
       );
-      captureInternalException(err);
+      // Classify like every other YouTube-boundary catch: routine
+      // misses aren't sent, other API failures → warning
+      // provider_error, non-upstream failures (e.g. a DB write) →
+      // error internal_error.
+      captureYouTubeException(err);
     }
   }
 

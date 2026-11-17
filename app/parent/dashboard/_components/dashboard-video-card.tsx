@@ -139,6 +139,10 @@ export function DashboardVideoCard({
             action={pinVideo.bind(null, profileId, video.id)}
             className="w-full"
           >
+            {/* pinVideo bounces back here on a dead upstream id —
+                ?video= reopens the overlay's "removed or private"
+                notice card. */}
+            <input type="hidden" name="returnTo" value={previewHref} />
             <SubmitButton
               variant="outline"
               size="touch"

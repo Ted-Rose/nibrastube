@@ -32,8 +32,13 @@ export default function PusherListener({ profileId }: { profileId: string }) {
     // pusher-js retries connection failures forever and never
     // throws — bind "error" so a lasting outage (bad key, Pusher
     // down) still leaves a warning-level trail in Sentry instead of
-    // silently degrading real-time refreshes.
+    // silently degrading real-time refreshes. It re-fires per
+    // failed reconnect, so report once per mount: an outage floods
+    // one event per device, not one per retry.
+    let connectionErrorReported = false;
     const onConnectionError = (err: unknown) => {
+      if (connectionErrorReported) return;
+      connectionErrorReported = true;
       captureProviderException(
         err instanceof Error ? err : new Error("Pusher connection error"),
         "provider_error"

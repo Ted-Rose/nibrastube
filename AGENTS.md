@@ -364,7 +364,7 @@ lib/
   channel-sync.ts               backfillChannel / pollChannel /
                                 syncAllChannels
   pusher.ts                     pusherServer + getPusherClient
-                                factories + triggerProfileEvent
+                                factories + triggerProfileEvent(s)
                                 (best-effort ping — Pusher outages
                                 report at warning, never throw)
   notify.ts                     notifyAdmin() — Telegram sendMessage;
@@ -825,10 +825,14 @@ Caught-failure coverage (see `lib/report.ts`):
   auth-guard denials; catch sites map those to 403/redirect/error
   results and report only non-`ProfileAccessError` failures, so
   a DB outage masked as a denial still reaches the queue.
-- `triggerProfileEvent` (`lib/pusher.ts`) is the only server-side
-  trigger path — a Pusher outage is caught, reported at warning
-  `provider_error`, and never fails the committed mutation.
-  `PusherListener` binds connection `error` to the same stream.
+- `triggerProfileEvent`/`triggerProfileEvents` (`lib/pusher.ts`)
+  are the only server-side trigger paths — a Pusher outage is
+  caught, reported at warning `provider_error`, and never fails
+  the committed mutation. The plural helper fans out to a list of
+  profile channels in one batched trigger call (an outage reports
+  once per call site, not once per profile).
+  `PusherListener` binds connection `error` to the same stream,
+  once per mount — pusher-js re-fires it per failed reconnect.
 - `notifyAdmin` (Telegram) failures → warning `provider_error`.
 
 Events carry `environment` from `NEXT_PUBLIC_VERCEL_ENV` /

@@ -163,7 +163,9 @@ denial still reaches the fix queue while routine denials do not.
 Server-side Pusher pings SHALL go through `triggerProfileEvent`
 (`lib/pusher.ts`), which catches trigger failures and reports
 them at warning `provider_error` — a Pusher outage never fails a
-committed mutation.
+committed mutation. Fan-out to multiple profile channels SHALL
+use `triggerProfileEvents`, which batches the channels into one
+trigger call so an outage reports a single warning per call site.
 
 #### Scenario: Pusher outage does not fail the mutation
 

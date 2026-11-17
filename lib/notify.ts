@@ -9,12 +9,20 @@ export async function notifyAdmin(text: string): Promise<void> {
   if (!token || !chatId) return;
 
   try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(5000),
-      body: JSON.stringify({ chat_id: chatId, text }),
-    });
+    const res = await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(5000),
+        body: JSON.stringify({ chat_id: chatId, text }),
+      }
+    );
+    // A resolved response isn't a delivered message — Telegram
+    // 4xx/5xx (bad token, blocked bot, chat gone) must surface too.
+    if (!res.ok) {
+      throw new Error(`Telegram sendMessage failed: ${res.status}`);
+    }
   } catch (err) {
     console.error("Admin notification failed:", err);
     // Upstream (Telegram) outage — warning-level trend stream only.

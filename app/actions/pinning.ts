@@ -20,12 +20,17 @@ import {
 } from "@/lib/youtube";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import {
   invalidateProfileFeed,
   invalidateProfilesWhitelisting,
 } from "@/lib/feed-cache";
 
-export async function pinVideo(profileId: string, videoId: string) {
+export async function pinVideo(
+  profileId: string,
+  videoId: string,
+  formData: FormData
+) {
   const session = await getSession();
   if (!session) {
     console.log("Pinning failed: Not authenticated");
@@ -49,8 +54,22 @@ export async function pinVideo(profileId: string, videoId: string) {
       details = await getVideoDetails(videoId);
     } catch (err) {
       // Deleted/private upstream is a routine miss — pin nothing
-      // rather than 500. Outages and real errors still propagate.
-      if (err instanceof YouTubeNotFoundError) return;
+      // rather than 500, but give the parent feedback: bounce back
+      // to the dashboard with ?video=<id> set so the preview
+      // overlay fetches the same dead id and renders its "removed
+      // or made private" notice card. Same returnTo convention as
+      // refreshStaleVideos; the bound forms carry it as a hidden
+      // input. Outages and real errors still propagate.
+      if (err instanceof YouTubeNotFoundError) {
+        const returnTo = formData.get("returnTo");
+        redirect(
+          typeof returnTo === "string" &&
+            returnTo.startsWith("/parent/dashboard")
+            ? returnTo
+            : `/parent/dashboard?profileId=${profileId}` +
+                `&video=${videoId}`
+        );
+      }
       throw err;
     }
     channelId = details.channelId ?? channelId;

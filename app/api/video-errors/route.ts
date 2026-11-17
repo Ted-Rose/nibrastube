@@ -112,12 +112,12 @@ export async function POST(request: NextRequest) {
   // Reuses "video-unpinned" (a listener-bound name); the payload only
   // matters to the client as "refresh now".
   if (affected.length) {
-    const { triggerProfileEvent } = await import("@/lib/pusher");
-    for (const profileId of affected) {
-      await triggerProfileEvent(profileId, "video-unpinned", {
-        videoId,
-      });
-    }
+    // One batched trigger: a Pusher outage reports a single
+    // warning, not one per profile.
+    const { triggerProfileEvents } = await import("@/lib/pusher");
+    await triggerProfileEvents(affected, "video-unpinned", {
+      videoId,
+    });
   }
 
   // No revalidatePath — the flag is global and the next render of any

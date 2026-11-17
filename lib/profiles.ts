@@ -1,6 +1,6 @@
 import { and, eq, inArray, or } from "drizzle-orm";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import {
   getSession,
   isKidSession,
@@ -106,6 +106,7 @@ export async function canViewProfile(
     await assertCanManageProfile(session, profileId);
     return true;
   } catch (err) {
+    unstable_rethrow(err);
     // Denials are routine; anything else (e.g. a DB outage masked
     // as "can't view") is a real failure worth reporting.
     if (!(err instanceof ProfileAccessError)) {

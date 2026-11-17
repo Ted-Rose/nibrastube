@@ -9,10 +9,6 @@ const BASE_URL = "https://www.googleapis.com/youtube/v3";
 
 // --- error classification (Sentry reporting for CAUGHT failures) ---
 
-/** Raised when the daily quota is blown — an expected provider
- * state, never the error-level fix queue. */
-export class QuotaExceededError extends Error {}
-
 /** Raised by getVideoDetails when YouTube returns no item for the
  * id — a routine upstream miss (deleted/private video), not an
  * outage. */
@@ -67,7 +63,7 @@ export function captureYouTubeException(exc: unknown): void {
   if (exc instanceof YouTubeNotFoundError || isRoutineYouTubeMiss(exc)) {
     return;
   }
-  if (exc instanceof QuotaExceededError || isYouTubeQuotaError(exc)) {
+  if (isYouTubeQuotaError(exc)) {
     captureProviderException(exc, "rate_limited");
     return;
   }

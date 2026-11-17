@@ -34,9 +34,10 @@ export async function triggerProfileEvent(
  * change lands on every whitelisting profile). Pusher accepts a
  * channel list on one trigger call, so a Pusher outage reports ONE
  * warning here instead of one per affected profile — and the ping
- * costs one HTTP call, not N. Chunked under the multi-event
- * channel cap; a failed chunk stops the loop since an outage won't
- * recover inside the same call.
+ * costs one HTTP call, not N. Chunked at 50 channels per trigger
+ * call (Pusher's multi-channel cap is 100); a failed chunk
+ * early-returns and intentionally drops later chunks — an outage
+ * won't recover inside the same call.
  */
 export async function triggerProfileEvents(
   profileIds: string[],

@@ -354,8 +354,8 @@ lib/
   youtube.ts                    YouTube Data API wrappers +
                                 ISO-8601 duration parse + error
                                 classes/classifier for caught
-                                failures (QuotaExceededError,
-                                YouTubeNotFoundError,
+                                failures (YouTubeNotFoundError,
+                                isYouTubeQuotaError,
                                 captureYouTubeException)
   song-timestamps.ts            Pure parsers → ParsedSong[]:
                                 parseTracklist (comments),
@@ -786,6 +786,17 @@ and `instrumentation.ts` (`register()` on `NEXT_RUNTIME ===
 set — no DSN, no traffic. `app/global-error.tsx` reports
 root-layout render crashes; `lib/report.ts` is the chokepoint for
 caught failures.
+
+Credential hygiene at send time: the server init scrubs the
+YOUTUBE_API_KEY and TELEGRAM_BOT_TOKEN values — plus any
+`bot<id>:<token>` URL path segment — out of every serialized
+event, span and breadcrumb (`beforeSend`/`beforeSendSpan`/
+`beforeBreadcrumb` in `instrumentation.ts`), covering the
+uncaught paths that bypass `lib/report.ts`'s sanitizer. And
+every `after()` callback ends in `flushSentryEvents()` —
+the SDK's own flush fires when the handler/action returns and
+races post-response work, so `after()` captures need an
+explicit drain or they can freeze unsent on Vercel.
 
 **INERT until activated**: `NEXT_PUBLIC_SENTRY_DSN` is not yet set
 on the `redzi` Vercel project (Production scope, then redeploy —

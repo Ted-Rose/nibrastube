@@ -3,7 +3,10 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
 import { dailySyncs } from "@/lib/db/schema";
 import { syncAllChannels } from "@/lib/channel-sync";
-import { captureInternalException } from "@/lib/report";
+import {
+  captureInternalException,
+  flushSentryEvents,
+} from "@/lib/report";
 
 // Vercel Cron sends `Authorization: Bearer $CRON_SECRET` when the env
 // var is set — that is the canonical daily trigger. Unauthenticated
@@ -45,6 +48,9 @@ async function runDailySync(request: NextRequest) {
         .update(dailySyncs)
         .set({ finishedAt: new Date(), channelsSynced: synced })
         .where(eq(dailySyncs.syncDate, today));
+      // The SDK flushes when the route returns, which races this
+      // post-response work — drain again so captures above send.
+      await flushSentryEvents();
     }
   });
 

@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -26,6 +26,7 @@ export async function selectProfile(profileId: string) {
     // of surfacing a raw error.
     await assertCanManageProfile(session, profileId);
   } catch (err) {
+    unstable_rethrow(err);
     // Denials are routine; anything else (e.g. a DB outage masked
     // as one) is a real failure worth reporting.
     if (!(err instanceof ProfileAccessError)) {

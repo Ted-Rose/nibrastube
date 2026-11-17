@@ -25,6 +25,7 @@ import {
 } from "@/lib/youtube";
 import { backfillChannel } from "@/lib/channel-sync";
 import { invalidateProfileFeed } from "@/lib/feed-cache";
+import { flushSentryEvents } from "@/lib/report";
 
 export async function approveChannel(profileId: string, channelId: string) {
   const session = await getSession();
@@ -95,6 +96,10 @@ export async function approveChannel(profileId: string, channelId: string) {
       // Quota/outage → warning; anything else (e.g. a DB write)
       // is a real bug → error.
       captureYouTubeException(err);
+    } finally {
+      // The SDK flushes when the action returns, which races this
+      // post-response work — drain again so captures above send.
+      await flushSentryEvents();
     }
   });
 

@@ -65,3 +65,18 @@ export function captureProviderException(
     tags: { error_code: code },
   });
 }
+
+/**
+ * Drain queued events at the end of a `next/server` `after()`
+ * callback. The SDK schedules its own flush when the route
+ * handler/server action returns, which races post-response
+ * `after()` work — events captured there can freeze unsent on
+ * Vercel. Never throws: telemetry must not break the task.
+ */
+export async function flushSentryEvents(): Promise<void> {
+  try {
+    await Sentry.flush(2000);
+  } catch {
+    // Transport failures are already console noise inside the SDK.
+  }
+}

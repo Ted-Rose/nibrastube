@@ -13,7 +13,6 @@ import {
   getUploadsPage,
   getVideosBatch,
   isYouTubeQuotaError,
-  QuotaExceededError,
 } from "@/lib/youtube";
 import {
   invalidateProfileFeed,
@@ -286,7 +285,7 @@ export async function syncAllChannels(): Promise<number> {
       }
       synced++;
     } catch (err) {
-      if (err instanceof QuotaExceededError || isYouTubeQuotaError(err)) {
+      if (isYouTubeQuotaError(err)) {
         console.error("YouTube quota exceeded — aborting sync run early");
         // Quota aborts are an expected provider state — warning-level
         // trend stream, never the error fix queue.

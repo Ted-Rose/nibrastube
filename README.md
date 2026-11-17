@@ -39,6 +39,10 @@ Create a `.env` file in the root directory:
 ```env
 DATABASE_URL=postgresql://user:pass@host:port/dbname
 DATABASE_URL_UNPOOLED=postgresql://user:pass@host:port/dbname
+# staging deploys (Vercel previews + `staging` branch) —
+# local only; Vercel Preview scope needs just the pooled URL
+STAGING_DATABASE_URL=postgresql://user:pass@host:port/dbname
+STAGING_DATABASE_URL_UNPOOLED=postgresql://user:pass@host:port/dbname
 JWT_SECRET=your_secret_here
 YOUTUBE_API_KEY=your_google_api_key
 PUSHER_APP_ID=...

@@ -19,3 +19,4 @@ android/app/src/main/assets/
 # Devin user-local config (permissions, personal overrides)
 .devin/config.local.json
 .devin/mcp_config.local.json
+pr-body.md

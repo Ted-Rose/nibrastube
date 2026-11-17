@@ -8,8 +8,30 @@ import * as schema from "./schema";
 // which multiplexes many client connections onto few real backends, so the
 // lambda-side pool size no longer risks exhausting the server — max stays
 // small only to bound per-instance memory and connection churn.
+//
+// Staging: every Vercel preview deploy (VERCEL_ENV=preview — the
+// `staging` branch's soak environment) uses STAGING_DATABASE_URL,
+// a separate `nibrastube_staging` Neon database owned by a dedicated
+// `nibrastube_staging` role. Preview deploys must never write to prod.
+// DATABASE_URL remains the fallback so previews keep working until the
+// dashboard env var is added (Preview scope) — but a preview falling back
+// to prod must be loud, not silent.
+const isPreview = process.env.VERCEL_ENV === "preview";
+// `||` (not `??`) so an empty-string var counts as unset too.
+const stagingUrl = process.env.STAGING_DATABASE_URL || undefined;
+if (isPreview && !stagingUrl) {
+  console.warn(
+    "[db] VERCEL_ENV=preview but STAGING_DATABASE_URL is unset — " +
+      "falling back to DATABASE_URL (production). Set the " +
+      "Preview-scoped env var in the Vercel dashboard.",
+  );
+}
+const databaseUrl = isPreview
+  ? (stagingUrl ?? process.env.DATABASE_URL)
+  : process.env.DATABASE_URL;
+
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: databaseUrl,
   application_name: "nibrastube",
   max: 3,
   idleTimeoutMillis: 10_000,

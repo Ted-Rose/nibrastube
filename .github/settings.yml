@@ -16,3 +16,22 @@ branches:
       allow_force_pushes: false
       allow_deletions: false
       enforce_admins: true
+      # Require the staging-first gate + OpenSpec validate on main PRs
+      # (strict: false — branches need not be up-to-date with main).
+      required_status_checks:
+        strict: false
+        contexts:
+          - staging-first
+          - validate
+  - name: staging
+    protection:
+      # Integration branch: same CI check, but force pushes stay
+      # allowed so the post-release reset (staging → main) works.
+      allow_force_pushes: true
+      allow_deletions: false
+      enforce_admins: false
+      required_pull_request_reviews: null
+      required_status_checks:
+        strict: false
+        contexts:
+          - validate

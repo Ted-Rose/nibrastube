@@ -1,5 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "staging": true,
+      "**": false
+    }
+  },
   "regions": ["fra1"],
   "crons": [
     { "path": "/api/sync-channels", "schedule": "0 4 * * *" }

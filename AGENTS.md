@@ -56,6 +56,86 @@ unless explicitly asked. Repo is configured for **squash-merge only**
 PRs (`.github/settings.yml`); `main` is protected (no force pushes or
 deletions, enforced for admins).
 
+## Git workflow — staging-first
+
+`main` is production (`redzi.vercel.app`; the Cloud Run
+`nibrastube` standby mirror also deploys on `main` merges);
+`staging` is the integration branch — every push deploys as a
+Vercel preview (`nibrastube-git-staging-<team>.vercel.app`),
+which is the staging environment for UI validation. The
+invariant is **`main` ⊆ `staging`**: production only receives
+code that has already soaked on staging. The `staging-first`
+required check (`.github/workflows/require-staging.yml`) fails
+`main` PRs whose head SHA was never merged into `staging`, and
+`main` allows squash merges only.
+
+- **Features/fixes**: branch off `origin/main` — never
+  `staging`; the branch must carry no unverified staging
+  noise. Open the PR with `--base staging`, then squash-merge
+  once checks are green and the reviewer loop is clean —
+  agents merge into `staging` without asking. GitHub
+  auto-deletes the head branch on merge; expected.
+- **Staging fixes**: commit them on the ORIGINAL feature
+  branch (push it again if auto-deleted — same SHAs are
+  fine; after auto-delete, restore it with
+  `git push origin <sha>:refs/heads/<branch>` where `<sha>`
+  is the merged staging PR's `headRefOid`), then merge
+  into `staging` via the still-open staging PR or a new
+  one.
+- **Promotion to `main`** — only when the user asks to
+  release or merge to main. The `Promote to main` workflow
+  (`.github/workflows/promote-to-main.yml`) automates it:
+  `gh workflow run "Promote to main"` (or the Actions tab;
+  `-f dry_run=true` lists pending promotions). It opens a
+  `main` PR per staged branch — oldest staging-merge
+  first, original title + body + a promotion footer —
+  squash-merges each, then resets `staging` to `main`
+  (skipped entirely if any promotion fails — staging then
+  still holds unreleased work). Conflicting promotions are
+  resolved from the staging squash commit's tree — the
+  validated integration state, never guessed; a replay is
+  only attempted while all earlier promotions succeeded,
+  since a squash tree also carries their code. A branch
+  whose remote tip moved past its staging merge is skipped
+  — those commits were never staged. The scan covers the
+  200 most recent merged staging PRs. Manual
+  equivalent, per branch: re-push it if auto-deleted
+  (`git push origin <headRefOid>:refs/heads/<branch>`),
+  open a PR with `--base main` (same title + body — keep
+  `Closes #<N>` links so issues auto-close), then
+  `gh pr merge <N> --squash --admin`; then reset staging
+  (`git fetch origin && git push --force-with-lease origin
+  origin/main:refs/heads/staging` — the only sanctioned
+  force-push; the workflow does it via the refs API
+  instead). NEVER open `staging`→`main` PRs — that drags
+  integration noise into prod history. The reset discards
+  anything still on `staging` that was not promoted —
+  reset only once staging matches the release, and
+  re-merge leftovers to `staging` afterwards (re-pushing
+  the same SHAs still satisfies the check).
+- **`AUTOMERGE_TOKEN`**: the workflow prefers an admin PAT
+  in that secret but falls back to `GITHUB_TOKEN`.
+  `enforce_admins` is on for `main`, yet promotions
+  satisfy `staging-first` legitimately and `main` has no
+  review requirement, so `GITHUB_TOKEN` merges should
+  work — add the secret only if merges fail on review
+  requirements.
+- **"Merge straight to main" requests**: merge the branch
+  into `staging` first anyway, then the `main` PR — the
+  check blocks anything else, keeping `main` ⊆ `staging`
+  even for urgent merges. If the `main` PR's check already
+  ran red before the staging merge, re-run the failed job
+  after it (`gh run rerun <run-id> --failed` or a push).
+
+**Deployments**: `vercel.json`'s `git.deploymentEnabled`
+whitelists `main` + `staging` only — PRs and feature
+branches get no preview deployment (quota saving), so UI
+verification happens on the staging preview after merge,
+not per-PR. Caveat: Vercel reads the config from the
+pushed commit, so the whitelist only applies to pushes
+that already carry it. `deploy.yml` stays `main`-only —
+Cloud Run tracks production, not staging.
+
 ## Layout
 
 Route protection lives in `proxy.ts` (Next 16's middleware
@@ -251,7 +331,10 @@ lib/
                                 shared by the settings picker and
                                 updateKidAvatar validation
   profiles.ts                   assertCanManageProfile,
-                                getManageableProfiles
+                                assertCanEditKidData,
+                                getManageableProfiles +
+                                ProfileAccessError (marks routine
+                                auth denials for Sentry filters)
   kids-feed.ts                  Kids feed params/URL builder + row
                                 queries — whitelist-driven reads are
                                 unstable_cache'd per (profileId,
@@ -269,7 +352,11 @@ lib/
                                 declaring it per-component collides
                                 as TS2717)
   youtube.ts                    YouTube Data API wrappers +
-                                ISO-8601 duration parse
+                                ISO-8601 duration parse + error
+                                classes/classifier for caught
+                                failures (YouTubeNotFoundError,
+                                isYouTubeQuotaError,
+                                captureYouTubeException)
   song-timestamps.ts            Pure parsers → ParsedSong[]:
                                 parseTracklist (comments),
                                 parseChapters (description fallback,
@@ -277,9 +364,13 @@ lib/
   channel-sync.ts               backfillChannel / pollChannel /
                                 syncAllChannels
   pusher.ts                     pusherServer + getPusherClient
-                                factories
+                                factories + triggerProfileEvent(s)
+                                (best-effort ping — Pusher outages
+                                report at warning, never throw)
   notify.ts                     notifyAdmin() — Telegram sendMessage;
-                                no-ops without TELEGRAM_* env vars
+                                no-ops without TELEGRAM_* env vars;
+                                send failures report at Sentry
+                                warning (provider_error)
   report.ts                     Sentry chokepoint for CAUGHT failures
                                 (captureInternalException /
                                 captureProviderException)
@@ -661,8 +752,9 @@ npx tsx scripts/test-song-parser.ts   # ad-hoc checks for the song
 ```
 
 DB schema changes: edit `lib/db/schema.ts`, then `npm run
-db:generate` (commit the generated `drizzle/` files), `npm run
-db:migrate` to apply.
+db:generate` (commit the generated `drizzle/` files); applying
+via `npm run db:migrate` is user-run only — agents hand the
+command off (see "Dangerous commands").
 
 ## Android APK
 
@@ -695,6 +787,17 @@ set — no DSN, no traffic. `app/global-error.tsx` reports
 root-layout render crashes; `lib/report.ts` is the chokepoint for
 caught failures.
 
+Credential hygiene at send time: the server init scrubs the
+YOUTUBE_API_KEY and TELEGRAM_BOT_TOKEN values — plus any
+`bot<id>:<token>` URL path segment — out of every serialized
+event, span and breadcrumb (`beforeSend`/`beforeSendSpan`/
+`beforeBreadcrumb` in `instrumentation.ts`), covering the
+uncaught paths that bypass `lib/report.ts`'s sanitizer. And
+every `after()` callback ends in `flushSentryEvents()` —
+the SDK's own flush fires when the handler/action returns and
+races post-response work, so `after()` captures need an
+explicit drain or they can freeze unsent on Vercel.
+
 **INERT until activated**: `NEXT_PUBLIC_SENTRY_DSN` is not yet set
 on the `redzi` Vercel project (Production scope, then redeploy —
 env vars bake in at build time; pending user action), so prod
@@ -718,6 +821,30 @@ bugs only:
   tag `error_code:internal_error`.
 - YouTube quota/outages — `captureProviderException`, level
   warning, tag `error_code:rate_limited` / `provider_error`.
+
+Caught-failure coverage (see `lib/report.ts`):
+
+- `captureYouTubeException` (`lib/youtube.ts`) classifies catches
+  at YouTube-API boundaries: routine upstream misses
+  (`YouTubeNotFoundError` from `getVideoDetails`; API reasons
+  `commentsDisabled`/`videoNotFound`/`playlistNotFound`/
+  `channelNotFound`) are handled outcomes — never sent; quota →
+  warning `rate_limited`; other API failures → warning
+  `provider_error`; a non-upstream error caught in the same block
+  (e.g. a DB write) → error `internal_error`.
+- `ProfileAccessError` (`lib/profiles.ts`) marks deliberate
+  auth-guard denials; catch sites map those to 403/redirect/error
+  results and report only non-`ProfileAccessError` failures, so
+  a DB outage masked as a denial still reaches the queue.
+- `triggerProfileEvent`/`triggerProfileEvents` (`lib/pusher.ts`)
+  are the only server-side trigger paths — a Pusher outage is
+  caught, reported at warning `provider_error`, and never fails
+  the committed mutation. The plural helper fans out to a list of
+  profile channels in one batched trigger call (an outage reports
+  once per call site, not once per profile).
+  `PusherListener` binds connection `error` to the same stream,
+  once per mount — pusher-js re-fires it per failed reconnect.
+- `notifyAdmin` (Telegram) failures → warning `provider_error`.
 
 Events carry `environment` and `release` through a precedence
 chain — `NEXT_PUBLIC_SENTRY_ENVIRONMENT` /
@@ -792,11 +919,17 @@ Repo-local style:
   branches in it). For every task: `git fetch origin`, then
   `git worktree add ../nibrastube-wt/<name> -b <type>/<slug>
   origin/main` and do all work — commits, push, PR — inside it.
-  Once the PR's checks are green and no work remains, clean up
-  IMMEDIATELY — don't wait for the merge (the PR lives on the
-  remote branch; removing the local worktree/branch does not
+  Finishing a task means a green, reviewed PR — never ask the
+  user whether to open one. After pushing: open the PR ready
+  for review (NEVER a draft) per `.devin/skills/create-pr/`,
+  then run a review loop — spawn a FRESH reviewer subagent on
+  the diff, fix everything useful it reports, push, and repeat
+  with a new reviewer until a round finds nothing meaningful.
+  Once the loop is clean and the PR's checks are green, clean
+  up IMMEDIATELY — don't wait for the merge (the PR lives on
+  the remote branch; removing the local worktree/branch does not
   touch it, and the remote branch is deleted at merge time).
-  From the main checkout: `git worktree remove
+  From the main checkout: `git worktree remove --force
   ../nibrastube-wt/<name>` + `git branch -D <type>/<slug>`
   (`-D`, not `-d` — squash-merges leave the branch
   "unmerged"). Abandoned/rejected work gets the same cleanup,
@@ -819,7 +952,8 @@ Universal rules — follow exactly:
    `Feat:`/`Fix:`/`Docs:`/`Refactor:`/`Test:`/`Chore:`.
 3. **Commit on feature branches only, never `main`.**
    Name branches `<type>/<slug>` with the commit types
-   (`feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `chore/`).
+   (`feature/`, `fix/`, `docs/`, `refactor/`, `test/`,
+   `chore/`).
    Stage only files changed this session, by path — never
    `git add -A`, `git add .` or `git commit -a`; confirm the
    staged set with `git status` first; leave the user's own
@@ -869,12 +1003,13 @@ Universal rules — follow exactly:
 ### Repo-specific rules
 
 - **Dangerous commands — never run**:
-  - `npm run db:migrate` against `DATABASE_URL` (the pooled
-    endpoint) — PgBouncer transaction pooling breaks migrate's
-    session behavior; `drizzle.config.ts` already prefers
-    `DATABASE_URL_UNPOOLED`, so the plain command is correct.
-    Generating migration files (`npm run db:generate`) is
-    always safe.
+  - `npm run db:migrate` — agents never run it (a production
+    Neon write); tell the user the command instead. For the
+    user: `drizzle.config.ts` prefers `DATABASE_URL_UNPOOLED`,
+    so the plain command is the right one — never run it
+    against the pooled `DATABASE_URL` (PgBouncer breaks
+    migrate's session behavior). Generating migration files
+    (`npm run db:generate`) is always safe.
   - `npx drizzle-kit push` — bypasses migration files; README's
     mention is stale.
   - `npm run videos:refresh -- --prune` — deletes rows; dry-run
@@ -882,9 +1017,9 @@ Universal rules — follow exactly:
   - Pushing `v*` tags or commits to the `android` branch —
     triggers signed release builds.
   - `git push --force`, deleting branches, rewriting history.
-  - Anything writing to the production Neon DB beyond the
-    sanctioned migrate — if a task genuinely needs it, write
-    the change and tell the user the command to run.
+  - Anything writing to the production Neon DB — if a task
+    genuinely needs it, write the change and tell the user
+    the command to run.
 - **Branch prefixes**: `feature/` for new functionality (not
   `feat/`), `fix/` for bug fixes, `chore/` for
   maintenance/tooling, `docs/` for documentation, `refactor/`
@@ -921,7 +1056,11 @@ Universal rules — follow exactly:
 - `AGENTS.md` (this file) — the contract doc every agent reads;
   `CLAUDE.md` just `@`-imports it.
 - `.devin/skills/fix-good-first-issue/` — pick up a "good first
-  issue", fix it, open a draft PR, watch checks.
+  issue", fix it, open a PR, run the reviewer loop, watch
+  checks.
+- `.devin/skills/fix-sentry-issue-frontend/` — triage the
+  Sentry queue, fix events on a worktree branch, open a PR,
+  resolve the issue only after merge.
 - `.devin/skills/implement-plan/` — execute a legacy
   `docs/plans/*-plan.md` file with implementer → reviewer → fixer
   subagents (no new plan files — see "OpenSpec").
@@ -929,7 +1068,9 @@ Universal rules — follow exactly:
   performance rules (SKILL.md index + per-rule files).
 - `.devin/skills/openspec-*/` — OpenSpec workflow skills: copies of
   `.agents/skills/openspec-*/` with frontmatter stripped to
-  `name:`/`description:` (see "OpenSpec").
+  `name:`/`description:` (see "OpenSpec") — EXCEPT
+  `openspec-apply-delegated`, which is repo-maintained (no
+  `.agents` counterpart; don't re-copy it on `openspec update`).
 - `.devin/skills/create-pr/` — PR body via `--body-file`.
 - `.devin/config.local.json` — permission allowlist, user-local and
   untracked (gitignored).

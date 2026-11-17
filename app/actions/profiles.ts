@@ -6,7 +6,9 @@ import { getSession, requireParentUnlocked } from "@/lib/auth";
 import {
   assertCanEditKidData,
   assertCanManageProfile,
+  ProfileAccessError,
 } from "@/lib/profiles";
+import { captureInternalException } from "@/lib/report";
 import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { isKidAvatar } from "@/lib/kid-avatars";
 import bcrypt from "bcryptjs";
@@ -266,6 +268,11 @@ export async function updateKidAvatar(
     await assertCanEditKidData(profileId);
   } catch (error) {
     unstable_rethrow(error);
+    // Denials are routine; anything else (e.g. a DB outage masked
+    // as one) is a real failure worth reporting.
+    if (!(error instanceof ProfileAccessError)) {
+      captureInternalException(error);
+    }
     return { error: "Not authorized." };
   }
 
@@ -364,6 +371,11 @@ export async function resetFeedCache(
     await assertCanEditKidData(profileId);
   } catch (error) {
     unstable_rethrow(error);
+    // Denials are routine; anything else (e.g. a DB outage masked
+    // as one) is a real failure worth reporting.
+    if (!(error instanceof ProfileAccessError)) {
+      captureInternalException(error);
+    }
     return { error: "Not authorized." };
   }
 

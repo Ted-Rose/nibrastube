@@ -107,7 +107,7 @@ server time so a far-future client clock cannot poison the guard.
 Caught internal bugs SHALL be reported via
 `captureInternalException` (Sentry level `error`, tag
 `error_code:internal_error` — the agent fix queue); expected
-provider failures (YouTube quota/outage) via
+provider failures (YouTube quota/outage, Pusher, Telegram) via
 `captureProviderException` (level `warning`, tag
 `error_code:rate_limited` or `provider_error` — trend-only, never
 the fix queue). All Sentry traffic SHALL be DSN-gated: without
@@ -124,3 +124,51 @@ the fix queue). All Sentry traffic SHALL be DSN-gated: without
 - **WHEN** a YouTube quota abort is reported
 - **THEN** it reaches Sentry at level warning tagged
   `error_code:rate_limited`
+
+### Requirement: YouTube catches classify via captureYouTubeException
+
+Catch blocks at a YouTube-API boundary SHALL classify via
+`captureYouTubeException` (`lib/youtube.ts`): routine upstream
+misses (`YouTubeNotFoundError`; API `reason`s `commentsDisabled`,
+`videoNotFound`, `playlistNotFound`, `channelNotFound`) SHALL NOT
+be sent; quota aborts report at warning `rate_limited`; other
+upstream failures at warning `provider_error`; a non-upstream
+failure caught in the same block (e.g. a DB write) reports at
+error `internal_error`.
+
+#### Scenario: Routine upstream miss is never reported
+
+- **WHEN** a caught failure is a deleted/private YouTube video,
+  disabled comments, or a missing playlist/channel
+- **THEN** no Sentry event is sent and the caller's handled path
+  runs
+
+### Requirement: Denials marked ProfileAccessError
+
+Deliberate authorization denials SHALL be thrown as
+`ProfileAccessError` (`lib/profiles.ts`); catch sites that map
+denials to 403/redirect/error results SHALL report only
+non-`ProfileAccessError` failures, so a DB outage masked as a
+denial still reaches the fix queue while routine denials do not.
+
+#### Scenario: DB outage masked as a denial still reports
+
+- **WHEN** an authorization guard's catch receives something
+  other than `ProfileAccessError`
+- **THEN** it reports at level error tagged
+  `error_code:internal_error`
+
+### Requirement: Pusher pings via triggerProfileEvent
+
+Server-side Pusher pings SHALL go through `triggerProfileEvent`
+(`lib/pusher.ts`), which catches trigger failures and reports
+them at warning `provider_error` — a Pusher outage never fails a
+committed mutation. Fan-out to multiple profile channels SHALL
+use `triggerProfileEvents`, which batches the channels into one
+trigger call so an outage reports a single warning per call site.
+
+#### Scenario: Pusher outage does not fail the mutation
+
+- **WHEN** `triggerProfileEvent` cannot deliver the ping
+- **THEN** it reports at level warning tagged
+  `error_code:provider_error` and the caller still succeeds

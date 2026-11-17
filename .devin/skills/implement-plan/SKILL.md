@@ -2,7 +2,7 @@
 name: implement-plan
 description: Implement a legacy docs/plans/*-plan.md file end-to-end
   with subagents — an implementer agent cuts a feature branch and
-  opens a draft PR, then fresh reviewer agents review it and fixer
+  opens a PR, then fresh reviewer agents review it and fixer
   agents iterate until clean. Invoke when the user asks to
   implement/execute a plan file using agents.
 ---
@@ -50,15 +50,16 @@ agents writing the same worktree concurrently. Prompt template:
          cd <repo>; git fetch origin
          git worktree add ../nibrastube-wt/<slug> \
            -b feature/<slug> origin/main
-         cd ../nibrastube-wt/<slug> && npm install
+         cd ../nibrastube-wt/<slug> && npm install &&
+         cp ../nibrastube/.env .env
     2. Read AGENTS.md first — it defines the whitelist/auth
        invariants, commands, and sharp edges. Every line <= 79
        chars in every file type.
     3. Migrations: `npm run db:generate` is safe (files only).
-       NEVER run `npm run db:migrate` under the default ai_agent
-       DATABASE_URL — if a migration must be applied, report the
-       avnadmin command to the user instead of running it, unless
-       you invoke it exactly as AGENTS.md documents.
+       If a migration must be APPLIED, report the
+       `npm run db:migrate` command to the user instead of
+       running it (production Neon write); never
+       `drizzle-kit push`.
     4. Implement the plan against the contract it specifies.
        Verify:
          npm run typecheck && npm run lint
@@ -67,13 +68,13 @@ agents writing the same worktree concurrently. Prompt template:
     5. Commit only files you edited (never git add -A, never
        commit plan/scratch md). Format: `Type: Capitalized msg`.
        Push: git push -u origin feature/<slug>
-    6. Open a DRAFT PR on the fork following
-       .devin/skills/create-pr/ — write the body to
-       pr-body.md, use --body-file, rm it after. Body must include
+    6. Open a PR (ready for review — never a draft) on the
+       fork following .devin/skills/create-pr/ — write the
+       body to pr-body.md, use --body-file, rm it after. Body must include
        a UI-verification section (pages/clicks/expected result)
        and --repo Ted-Rose/nibrastube.
     7. gh pr checks <N> --repo Ted-Rose/nibrastube --watch; fix
-       failures until green, then gh pr ready.
+       failures until green.
     Return: PR URL, worktree path, files changed, verification
     results, anything you could not do.
 
@@ -107,9 +108,13 @@ Prompt:
 
 If the reviewer reported blocker/should-fix findings:
 
-1. Launch one `subagent_general` fixer on the same branch (the PR
-   worktree is still checked out at `../nibrastube-wt/<slug>` —
-   verify with `git -C <wt> branch --show-current`). Prompt: the PR
+1. Launch one `subagent_general` fixer on the same branch in a
+   FRESH worktree — a branch can live in only one worktree, so
+   remove whichever worktree currently holds it (`git worktree
+   list` to find it; `git worktree remove --force
+   ../nibrastube-wt/<name>`), then the fixer adds one on the
+   existing branch (`git worktree add ../nibrastube-wt/fix-<slug>
+   feature/<slug>`). Prompt: the PR
    URL, the numbered findings verbatim, "fix, commit (`Fix: ...`),
    push, re-watch `gh pr checks`, return what changed". Nits may be
    batched or skipped — say which.
@@ -135,8 +140,12 @@ If the reviewer reported blocker/should-fix findings:
   only when the outcome is `partial` / `in progress` / `reverted`,
   with its status header updated accordingly.
 
+Once a review round is clean AND the PR's checks are green, remove
+the worktree immediately — `git worktree remove --force <path>` +
+`git branch -D <type>/<slug>` per AGENTS.md; don't wait for merge.
+
 ## Final report
 
-PR URL, review rounds needed, findings fixed per round, the worktree
-path, and any outstanding items (e.g. a migration command the user
-must run).
+PR URL, review rounds needed, findings fixed per round, confirmation
+the worktree was removed, and any outstanding items (e.g. a
+migration command the user must run).

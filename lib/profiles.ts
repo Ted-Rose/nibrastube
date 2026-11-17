@@ -1,6 +1,6 @@
 import { and, eq, inArray, or } from "drizzle-orm";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import {
   getSession,
   isKidSession,
@@ -9,6 +9,15 @@ import {
 } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { profiles, sharedAccess } from "@/lib/db/schema";
+import { captureInternalException } from "@/lib/report";
+
+/**
+ * Deliberate authorization failure thrown by the assert* guards below.
+ * Distinguishing it from unexpected failures (e.g. a DB outage raised
+ * inside the same query) lets catch sites keep routine denials out of
+ * Sentry's error queue while still reporting real bugs.
+ */
+export class ProfileAccessError extends Error {}
 
 /**
  * Returns the profile if the session user owns it or has a shared_access row;
@@ -20,12 +29,12 @@ export async function assertCanManageProfile(
   profileId: string
 ) {
   const userId = parentSession(session)?.id;
-  if (!userId) throw new Error("Not authenticated");
+  if (!userId) throw new ProfileAccessError("Not authenticated");
 
   const profile = await db.query.profiles.findFirst({
     where: eq(profiles.id, profileId),
   });
-  if (!profile) throw new Error("Profile not found");
+  if (!profile) throw new ProfileAccessError("Profile not found");
   if (profile.parentId === userId) return profile;
 
   const shared = await db.query.sharedAccess.findFirst({
@@ -34,7 +43,9 @@ export async function assertCanManageProfile(
       eq(sharedAccess.profileId, profileId)
     ),
   });
-  if (!shared) throw new Error("Not authorized for this profile");
+  if (!shared) {
+    throw new ProfileAccessError("Not authorized for this profile");
+  }
   return profile;
 }
 
@@ -50,7 +61,7 @@ export async function assertCanEditKidData(profileId: string) {
   const session = await getSession();
   if (isKidSession(session)) {
     if (session.profileId !== profileId) {
-      throw new Error("Not authorized for this profile");
+      throw new ProfileAccessError("Not authorized for this profile");
     }
     // Same existence check as canViewProfile — a kid JWT for a deleted
     // profile shouldn't be able to write either. Proxy clears the
@@ -94,7 +105,13 @@ export async function canViewProfile(
   try {
     await assertCanManageProfile(session, profileId);
     return true;
-  } catch {
+  } catch (err) {
+    unstable_rethrow(err);
+    // Denials are routine; anything else (e.g. a DB outage masked
+    // as "can't view") is a real failure worth reporting.
+    if (!(err instanceof ProfileAccessError)) {
+      captureInternalException(err);
+    }
     return false;
   }
 }

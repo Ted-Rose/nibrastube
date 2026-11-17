@@ -2,8 +2,8 @@
 name: fix-good-first-issue
 description: Pick an open GitHub issue labeled "good first issue" in
   Ted-Rose/nibrastube, fix it on a new branch cut from updated main,
-  open a draft PR, wait for checks, fix any failures, and mark the PR
-  ready for review. Invoke when the user asks to fix a
+  open a PR, wait for checks, fix any failures, and run a
+  reviewer loop until clean. Invoke when the user asks to fix a
   good-first-issue / pick up an issue.
 ---
 
@@ -65,8 +65,10 @@ Do not disturb the main checkout's working tree:
       -b fix/issue-<N>-<short-slug> origin/main
     cd ../nibrastube-wt/issue-<N>
     npm install   # worktrees don't share node_modules
+    cp ../nibrastube/.env .env   # nor .env
 
-(If the worktree dir already exists, `cd` into it and reuse it.)
+(If the worktree dir already exists, remove it first — follow-up
+work always gets a fresh worktree, per AGENTS.md.)
 
 ## 4. Fix the issue
 
@@ -75,12 +77,11 @@ Do not disturb the main checkout's working tree:
   unchecked boxes are roadmap, not bugs.
 - Implement the fix. Keep every line <= 79 characters in every file
   type.
-- NEVER run `npm run db:migrate` under the default `ai_agent`
-  DATABASE_URL (fails silently). If the fix needs a schema change,
-  edit `lib/db/schema.ts` + `npm run db:generate`, commit the
-  `drizzle/` files, and hand the user the avnadmin migrate command —
-  or use it exactly as written in AGENTS.md. Never use
-  `npx drizzle-kit push`.
+- Schema changes: edit `lib/db/schema.ts` + `npm run
+  db:generate`, commit the `drizzle/` files, and never
+  `drizzle-kit push`. If a migration must be APPLIED, hand
+  the user the `npm run db:migrate` command rather than
+  running it (production Neon write — AGENTS.md).
 - No test suite — verify with:
 
       npm run typecheck && npm run lint
@@ -92,7 +93,7 @@ Do not disturb the main checkout's working tree:
 - If the change alters behavior, update `AGENTS.md` (conventions
   rule 10).
 
-## 5. Commit, push, and open a draft PR
+## 5. Commit, push, and open a PR
 
 - Stage only files you edited — never `git add -A` / `git add .`.
   Never commit plan/scratch markdown.
@@ -102,11 +103,12 @@ Do not disturb the main checkout's working tree:
 
       git push -u origin fix/issue-<N>-<short-slug>
 
-- Create the PR as a DRAFT targeting the fork's `main`. Follow
-  `.devin/skills/create-pr/`: write the body to a temp file and
-  use `--body-file` (never inline `--body`):
+- Create the PR ready for review (never a draft) targeting the
+  fork's `main`. Follow `.devin/skills/create-pr/`: write the
+  body to a temp file and use `--body-file` (never inline
+  `--body`):
 
-      gh pr create --repo Ted-Rose/nibrastube --draft \
+      gh pr create --repo Ted-Rose/nibrastube \
         --title "Type: Capitalized message" \
         --base main --head fix/issue-<N>-<short-slug> \
         --body-file pr-body.md
@@ -122,13 +124,19 @@ Do not disturb the main checkout's working tree:
 
 - When the watch ends, inspect results. If any check fails, get logs
   (`gh run view --log-failed`), fix, commit, push, watch again.
-- Repeat until every check passes. Do not mark ready while checks are
-  pending or failing. (The repo may report no checks — note that and
+- Repeat until every check passes — the worktree stays up until
+  they do. (The repo may report no checks — note that and
   continue.)
 
-## 7. Mark ready for review and report
+## 7. Reviewer loop, then report
 
-    gh pr ready <PR-number> --repo Ted-Rose/nibrastube
+Spawn a FRESH reviewer subagent on the PR diff
+(`gh pr diff <N> --repo Ted-Rose/nibrastube`). Fix everything
+useful it reports, push, then spawn another fresh reviewer —
+repeat until a round finds nothing meaningful. Keep the
+worktree until the loop is clean AND checks are green, then
+remove it (`git worktree remove --force` + `git branch -D`,
+per AGENTS.md).
 
-Then report to the user: the issue number/title fixed, the PR URL,
-the worktree path, and the final check status.
+Then report to the user: the issue number/title fixed, the PR
+URL, and the final check status.

@@ -1,7 +1,78 @@
 import axios from "axios";
+import {
+  captureInternalException,
+  captureProviderException,
+} from "@/lib/report";
 
 const API_KEY = process.env.YOUTUBE_API_KEY;
 const BASE_URL = "https://www.googleapis.com/youtube/v3";
+
+// --- error classification (Sentry reporting for CAUGHT failures) ---
+
+/** Raised by getVideoDetails when YouTube returns no item for the
+ * id — a routine upstream miss (deleted/private video), not an
+ * outage. */
+export class YouTubeNotFoundError extends Error {}
+
+/** YouTube API 403 whose body carries reason "quotaExceeded" —
+ * the daily-quota abort the sync treats as an expected state. */
+export function isYouTubeQuotaError(err: unknown): boolean {
+  if (
+    !axios.isAxiosError(err) ||
+    err.response?.status !== 403 ||
+    err.response.data == null
+  ) {
+    return false;
+  }
+  return JSON.stringify(err.response.data).includes("quotaExceeded");
+}
+
+// Upstream "reason" strings meaning the resource simply does not
+// exist or a feature is off — handled outcomes a caller degrades
+// around, not outages worth a Sentry event.
+const ROUTINE_REASONS = [
+  "commentsDisabled",
+  "videoNotFound",
+  "playlistNotFound",
+  "channelNotFound",
+];
+
+/** Axios failure whose upstream reason is a routine miss. */
+function isRoutineYouTubeMiss(err: unknown): boolean {
+  if (!axios.isAxiosError(err) || err.response?.data == null) {
+    return false;
+  }
+  const body = JSON.stringify(err.response.data);
+  return ROUTINE_REASONS.some((reason) => body.includes(reason));
+}
+
+/**
+ * Report a CAUGHT failure at a YouTube-API boundary at the right
+ * stream (see lib/report.ts and AGENTS.md "Sentry event streams"):
+ *
+ * - routine upstream misses (`YouTubeNotFoundError`, deleted
+ *   video/playlist/channel, disabled comments) — never sent;
+ * - quota aborts — level warning, `error_code:rate_limited`;
+ * - any other upstream API failure — level warning,
+ *   `error_code:provider_error`;
+ * - anything that is not an upstream API failure at all (a DB
+ *   write or bug caught in the same block) — level error,
+ *   `error_code:internal_error`.
+ */
+export function captureYouTubeException(exc: unknown): void {
+  if (exc instanceof YouTubeNotFoundError || isRoutineYouTubeMiss(exc)) {
+    return;
+  }
+  if (isYouTubeQuotaError(exc)) {
+    captureProviderException(exc, "rate_limited");
+    return;
+  }
+  if (axios.isAxiosError(exc)) {
+    captureProviderException(exc, "provider_error");
+    return;
+  }
+  captureInternalException(exc);
+}
 
 export interface YouTubeVideo {
   id: string;
@@ -342,7 +413,10 @@ export async function getVideoDetails(
     },
   });
 
-  const item: YTVideoItem = response.data.items[0];
+  const item: YTVideoItem | undefined = response.data.items?.[0];
+  // Deleted/private upstream — a routine miss callers degrade
+  // around, typed so catch sites can tell it from a real failure.
+  if (!item) throw new YouTubeNotFoundError(videoId);
   return mapVideoItem(item);
 }
 

@@ -289,6 +289,14 @@ export function VideoPreviewOverlay({
             <form
               action={pinVideo.bind(null, profileId, video.id)}
             >
+              {/* pinVideo bounces back to this URL on a dead
+                  upstream id — ?video= reopens the overlay, which
+                  renders the "removed or private" notice card. */}
+              <input
+                type="hidden"
+                name="returnTo"
+                value={`${closeHref}&video=${video.id}`}
+              />
               <SubmitButton
                 size="touch"
                 pendingLabel="Pinning…"

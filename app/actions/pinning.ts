@@ -10,19 +10,27 @@ import {
 import { getSession, requireParentUnlocked } from "@/lib/auth";
 import { assertCanManageProfile } from "@/lib/profiles";
 import {
+  captureYouTubeException,
   channelRowValues,
   getChannelDetails,
   getVideoDetails,
   videoRowValues,
+  YouTubeNotFoundError,
+  type FullVideoDetails,
 } from "@/lib/youtube";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import {
   invalidateProfileFeed,
   invalidateProfilesWhitelisting,
 } from "@/lib/feed-cache";
 
-export async function pinVideo(profileId: string, videoId: string) {
+export async function pinVideo(
+  profileId: string,
+  videoId: string,
+  formData: FormData
+) {
   const session = await getSession();
   if (!session) {
     console.log("Pinning failed: Not authenticated");
@@ -41,7 +49,29 @@ export async function pinVideo(profileId: string, videoId: string) {
   if (!existingVideo || !existingVideo.fetchedAt) {
     // Covers first pin and self-heal of rows cached before the
     // rich-metadata columns existed.
-    const details = await getVideoDetails(videoId);
+    let details: FullVideoDetails;
+    try {
+      details = await getVideoDetails(videoId);
+    } catch (err) {
+      // Deleted/private upstream is a routine miss — pin nothing
+      // rather than 500, but give the parent feedback: bounce back
+      // to the dashboard with ?video=<id> set so the preview
+      // overlay fetches the same dead id and renders its "removed
+      // or made private" notice card. Same returnTo convention as
+      // refreshStaleVideos; the bound forms carry it as a hidden
+      // input. Outages and real errors still propagate.
+      if (err instanceof YouTubeNotFoundError) {
+        const returnTo = formData.get("returnTo");
+        redirect(
+          typeof returnTo === "string" &&
+            returnTo.startsWith("/parent/dashboard")
+            ? returnTo
+            : `/parent/dashboard?profileId=${profileId}` +
+                `&video=${videoId}`
+        );
+      }
+      throw err;
+    }
     channelId = details.channelId ?? channelId;
     if (!existingVideo) {
       await db.insert(videos).values(videoRowValues(details));
@@ -74,6 +104,9 @@ export async function pinVideo(profileId: string, videoId: string) {
         }
       } catch (err) {
         console.error(`Channel hydrate failed for ${channelId}:`, err);
+        // Quota/outage → warning; anything else (e.g. a DB write)
+        // is a real bug → error.
+        captureYouTubeException(err);
       }
     }
   }
@@ -100,10 +133,8 @@ export async function pinVideo(profileId: string, videoId: string) {
   // 4. Bust the feed tag BEFORE the real-time ping, so a client's
   // router.refresh() can't re-read the stale cache entry.
   invalidateProfileFeed(profileId);
-  const { pusherServer } = await import("@/lib/pusher");
-  await pusherServer.trigger(`profile-${profileId}`, "video-pinned", {
-    videoId,
-  });
+  const { triggerProfileEvent } = await import("@/lib/pusher");
+  await triggerProfileEvent(profileId, "video-pinned", { videoId });
 
   revalidatePath(`/parent/dashboard`);
   revalidatePath(`/kids/${profileId}`);
@@ -147,10 +178,8 @@ export async function unpinVideo(profileId: string, videoId: string) {
   // Bust the feed tag BEFORE the real-time ping, so a client's
   // router.refresh() can't re-read the stale cache entry.
   invalidateProfileFeed(profileId);
-  const { pusherServer } = await import("@/lib/pusher");
-  await pusherServer.trigger(`profile-${profileId}`, "video-unpinned", {
-    videoId,
-  });
+  const { triggerProfileEvent } = await import("@/lib/pusher");
+  await triggerProfileEvent(profileId, "video-unpinned", { videoId });
 
   revalidatePath(`/parent/dashboard`);
   revalidatePath(`/kids/${profileId}`);

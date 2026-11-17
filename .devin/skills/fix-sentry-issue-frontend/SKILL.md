@@ -2,7 +2,7 @@
 name: fix-sentry-issue-frontend
 description: Pull unresolved production errors from the Sentry
   nibrastube-app project, reproduce and fix them on a branch cut
-  from updated main, open a draft PR against the fork, and mark
+  from updated main, open a PR against the fork, and mark
   the Sentry issue resolved only after the PR merges. Invoke
   when the user asks to fix Sentry issues / triage the Sentry
   queue in nibrastube.
@@ -92,14 +92,16 @@ NOT switch branches in it:
       -b fix/sentry-<issue_short_id> origin/main
     cd ../nibrastube-wt/sentry-<id>
     npm install   # worktrees don't share node_modules
+    cp ../nibrastube/.env .env   # nor .env
 
 - Read `AGENTS.md`; 79-char lines in every file type.
 - `export PATH="/opt/homebrew/bin:$PATH"` on every exec call —
   node/npm/gh are not on the default PATH.
-- NEVER run `npm run db:migrate` under the default `ai_agent`
-  DATABASE_URL. Schema changes: edit `lib/db/schema.ts` +
-  `npm run db:generate`, commit the `drizzle/` files, hand the
-  user the avnadmin migrate command. Never `drizzle-kit push`.
+- Schema changes: edit `lib/db/schema.ts` + `npm run
+  db:generate`, commit the `drizzle/` files, and never
+  `drizzle-kit push`. If a migration must be APPLIED, hand
+  the user the `npm run db:migrate` command rather than
+  running it (production Neon write — AGENTS.md).
 - No test suite — verify:
 
       npm run typecheck && npm run lint
@@ -109,16 +111,17 @@ NOT switch branches in it:
   parser is touched, also `npx tsx scripts/test-song-parser.ts`.
 - Update `AGENTS.md` when behavior changes.
 
-## 5. Draft PR
+## 5. Open the PR
 
 - Stage only files you edited, by path (never `git add -A` /
   `git add .`). Never commit plan/scratch markdown.
 - Commit format `Type: Capitalized message` (usually `Fix:`).
-- `git push -u origin <branch>`, then a DRAFT PR targeting the
-  fork's `main` per `.devin/skills/create-pr/` — body via
-  `--body-file`, never inline `--body`:
+- `git push -u origin <branch>`, then a PR (ready for review,
+  never a draft) targeting the fork's `main` per
+  `.devin/skills/create-pr/` — body via `--body-file`, never
+  inline `--body`:
 
-      gh pr create --repo Ted-Rose/nibrastube --draft \
+      gh pr create --repo Ted-Rose/nibrastube \
         --title "Type: Capitalized message" \
         --base main --head fix/sentry-<issue_short_id> \
         --body-file pr-body.md
@@ -128,7 +131,12 @@ NOT switch branches in it:
   stack frame, and include the UI verification / QC section.
 - `gh pr checks <N> --repo Ted-Rose/nibrastube --watch`; fix
   until green (the repo may report no checks — note it and
-  continue), then `gh pr ready --repo Ted-Rose/nibrastube`.
+  continue). Then run the reviewer loop: spawn a fresh
+  reviewer subagent on the diff, fix useful findings, push,
+  repeat until a round finds nothing meaningful. Remove the
+  worktree once the loop is clean and checks are green
+  (`git worktree remove --force` + `git branch -D`, per
+  AGENTS.md).
 
 ## 6. Resolve — only after merge
 
@@ -149,5 +157,5 @@ an issue without asking the user.
   "@sentry/nextjs"` under plain tsx/ESM loses the named exports
   (CJS interop) — write `.cts` + `require()` or use
   `@sentry/node`.
-- Report at the end: issue handled, PR URL, worktree path, and
-  Sentry resolution status.
+- Report at the end: issue handled, PR URL, worktree removed
+  (yes/no), and Sentry resolution status.

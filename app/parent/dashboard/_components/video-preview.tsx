@@ -5,6 +5,7 @@ import { Prohibit, X } from "@phosphor-icons/react/dist/ssr";
 import { db } from "@/lib/db";
 import { videos, whitelistedVideos } from "@/lib/db/schema";
 import {
+  captureYouTubeException,
   getVideoDetails,
   toDashboardVideo,
   type DashboardVideo,
@@ -78,8 +79,11 @@ export async function VideoPreview({
           "YouTube doesn't allow this video to play inside other " +
           "sites, so it can't be previewed here.";
       }
-    } catch {
-      // Video deleted/private upstream, or the API/quota failed.
+    } catch (err) {
+      // Video deleted/private upstream (routine miss — never sent),
+      // or the API/quota failed (warning), or our own code failed
+      // (error) — classified and reported by the helper.
+      captureYouTubeException(err);
       notice =
         "This video couldn't be found on YouTube — it may have " +
         "been removed or made private.";

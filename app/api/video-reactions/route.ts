@@ -7,7 +7,11 @@ import { getSession, isKidSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { videoReactions, videos, whitelistedVideos } from "@/lib/db/schema";
 import { invalidateProfileFeed } from "@/lib/feed-cache";
-import { assertCanManageProfile } from "@/lib/profiles";
+import {
+  assertCanManageProfile,
+  ProfileAccessError,
+} from "@/lib/profiles";
+import { captureInternalException } from "@/lib/report";
 import { suitableVideo } from "@/lib/video-suitability";
 
 const bodySchema = z.object({
@@ -38,7 +42,12 @@ export async function POST(request: NextRequest) {
   ) {
     try {
       await assertCanManageProfile(session, profileId);
-    } catch {
+    } catch (err) {
+      // Denials are routine; anything else (e.g. a DB outage masked
+      // as one) is a real failure worth reporting.
+      if (!(err instanceof ProfileAccessError)) {
+        captureInternalException(err);
+      }
       return NextResponse.json({ ok: false }, { status: 403 });
     }
   }
@@ -84,10 +93,8 @@ export async function POST(request: NextRequest) {
   // profile's cached feed rows BEFORE the ping so a client's
   // router.refresh() can't re-read the stale cache entry.
   invalidateProfileFeed(profileId);
-  const { pusherServer } = await import("@/lib/pusher");
-  await pusherServer.trigger(`profile-${profileId}`, "video-reacted", {
-    videoId,
-  });
+  const { triggerProfileEvent } = await import("@/lib/pusher");
+  await triggerProfileEvent(profileId, "video-reacted", { videoId });
   revalidatePath(`/kids/${profileId}`);
 
   return NextResponse.json({ ok: true });

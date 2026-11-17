@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -12,7 +12,11 @@ import {
   isKidSession,
   setParentUnlocked,
 } from "@/lib/auth";
-import { assertCanManageProfile } from "@/lib/profiles";
+import {
+  assertCanManageProfile,
+  ProfileAccessError,
+} from "@/lib/profiles";
+import { captureInternalException } from "@/lib/report";
 
 export async function selectProfile(profileId: string) {
   try {
@@ -21,7 +25,13 @@ export async function selectProfile(profileId: string) {
     // be locked onto a device; sends the user back to the picker instead
     // of surfacing a raw error.
     await assertCanManageProfile(session, profileId);
-  } catch {
+  } catch (err) {
+    unstable_rethrow(err);
+    // Denials are routine; anything else (e.g. a DB outage masked
+    // as one) is a real failure worth reporting.
+    if (!(err instanceof ProfileAccessError)) {
+      captureInternalException(err);
+    }
     redirect("/kids");
   }
 

@@ -40,12 +40,8 @@ async function notifyPlaylistChanged(profileId: string) {
   // Bust the feed tag BEFORE the ping so a client's router.refresh()
   // can't re-read the stale cache entry.
   invalidateProfileFeed(profileId);
-  const { pusherServer } = await import("@/lib/pusher");
-  await pusherServer.trigger(
-    `profile-${profileId}`,
-    "playlist-changed",
-    {}
-  );
+  const { triggerProfileEvent } = await import("@/lib/pusher");
+  await triggerProfileEvent(profileId, "playlist-changed", {});
   revalidatePath(`/kids/${profileId}`);
 }
 

@@ -6,7 +6,11 @@ import { getSession, isKidSession, parentSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { videos, whitelistedVideos } from "@/lib/db/schema";
 import { invalidateProfilesWhitelisting } from "@/lib/feed-cache";
-import { assertCanManageProfile } from "@/lib/profiles";
+import {
+  assertCanManageProfile,
+  ProfileAccessError,
+} from "@/lib/profiles";
+import { captureInternalException } from "@/lib/report";
 
 // Player-observed permanent IFrame failures → a global block flag on
 // the videos row, which suitableVideo then hides on every surface.
@@ -50,7 +54,12 @@ export async function POST(request: NextRequest) {
     ) {
       try {
         await assertCanManageProfile(session, profileId);
-      } catch {
+      } catch (err) {
+        // Denials are routine; anything else (e.g. a DB outage
+        // masked as one) is a real failure worth reporting.
+        if (!(err instanceof ProfileAccessError)) {
+          captureInternalException(err);
+        }
         return NextResponse.json({ ok: false }, { status: 403 });
       }
     }
@@ -103,14 +112,12 @@ export async function POST(request: NextRequest) {
   // Reuses "video-unpinned" (a listener-bound name); the payload only
   // matters to the client as "refresh now".
   if (affected.length) {
-    const { pusherServer } = await import("@/lib/pusher");
-    for (const profileId of affected) {
-      await pusherServer.trigger(
-        `profile-${profileId}`,
-        "video-unpinned",
-        { videoId }
-      );
-    }
+    // One batched trigger: a Pusher outage reports a single
+    // warning, not one per profile.
+    const { triggerProfileEvents } = await import("@/lib/pusher");
+    await triggerProfileEvents(affected, "video-unpinned", {
+      videoId,
+    });
   }
 
   // No revalidatePath — the flag is global and the next render of any

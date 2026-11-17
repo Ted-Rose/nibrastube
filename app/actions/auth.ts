@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { z } from "zod";
 import { notifyAdmin } from "@/lib/notify";
+import { flushSentryEvents } from "@/lib/report";
 
 export interface AuthFormState {
   error?: string;
@@ -60,7 +61,8 @@ export async function signup(
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const name = formData.get("name") as string;
-  const pin = (formData.get("pin") as string) || "0000"; // Defaulting to 0000 if not provided
+  // Default the PIN to 0000 when the form doesn't provide one.
+  const pin = (formData.get("pin") as string) || "0000";
   const callback = safeCallback(formData.get("callback"));
 
   const validated = signupSchema.safeParse({ email, password, name, pin });
@@ -105,18 +107,28 @@ export async function signup(
     })
     .returning();
 
-  await authLogin({ id: newUser.id, email: newUser.email, name: newUser.name });
+  await authLogin({
+    id: newUser.id,
+    email: newUser.email,
+    name: newUser.name,
+  });
   // Signing up already proves the password — treat the parent portal as
   // unlocked on this device.
   await setParentUnlocked();
   // Admin notification goes through after() so the Telegram POST stays
   // off the signup path and still runs once redirect() below responds.
   after(async () => {
-    const total = await db.$count(users);
-    await notifyAdmin(
-      `New NibrasTube signup: ${newUser.email} ` +
-        `(${newUser.name ?? "no name"}) — total users: ${total}`
-    );
+    try {
+      const total = await db.$count(users);
+      await notifyAdmin(
+        `New NibrasTube signup: ${newUser.email} ` +
+          `(${newUser.name ?? "no name"}) — total users: ${total}`
+      );
+    } finally {
+      // The SDK flushes when the action returns, which races this
+      // post-response work — drain again so captures above send.
+      await flushSentryEvents();
+    }
   });
   redirect(callback);
 }

@@ -58,35 +58,32 @@ deletions, enforced for admins).
 
 ## Git workflow — staging-first
 
-If `staging` does not exist yet, create it once:
-`git push origin main:refs/heads/staging`.
-
-`main` is production (`redzi.vercel.app`); `staging` is the
-integration branch — every push auto-deploys as a Vercel preview
-(`redzi-git-staging-<team>.vercel.app`), which is **the staging
-environment**. The invariant is **`main` ⊆ `staging`**: production
-only receives code that has already soaked on staging. The
-`staging-first` required check
-(`.github/workflows/require-staging.yml`) fails `main` PRs whose
-head SHA was never merged into `staging`.
-
-The staging environment uses a **separate Neon database**,
+`main` is production (`redzi.vercel.app`; the Cloud Run
+`nibrastube` standby mirror also deploys on `main` merges);
+`staging` is the integration branch — every push deploys as a
+Vercel preview (`nibrastube-git-staging-<team>.vercel.app`),
+which is the staging environment for UI validation. The
+invariant is **`main` ⊆ `staging`**: production only receives
+code that has already soaked on staging. The `staging-first`
+required check (`.github/workflows/require-staging.yml`) fails
+`main` PRs whose head SHA was never merged into `staging`, and
+`main` allows squash merges only.
+  The staging environment uses a **separate Neon database**,
 `nibrastube_staging`, owned by the read/write role
 `nibrastube_staging`: `lib/db/index.ts` picks
 `STAGING_DATABASE_URL` whenever `VERCEL_ENV=preview` (the staging
-branch's preview AND every PR preview), so non-production deploys
-never touch prod data. `STAGING_DATABASE_URL` /
+branch deploys as a preview), so staging soak testing can never
+touch prod data. `STAGING_DATABASE_URL` /
 `STAGING_DATABASE_URL_UNPOOLED` must exist in the Vercel project
-(Preview scope); the local `.env` carries the same keys. Apply
-schema changes to it with `npm run db:migrate:staging`
-(`DB_TARGET=staging` in `drizzle.config.ts`).
+env (Preview scope); apply schema changes to staging with
+`npm run db:migrate:staging`.
 
 - **Features/fixes**: branch off `origin/main` — never
   `staging`; the branch must carry no unverified staging
-  noise. Open the PR with `--base staging`, then
-  squash-merge once checks are green and the reviewer loop
-  is clean — agents merge into `staging` without asking.
-  GitHub auto-deletes the head branch on merge; expected.
+  noise. Open the PR with `--base staging`, then squash-merge
+  once checks are green and the reviewer loop is clean —
+  agents merge into `staging` without asking. GitHub
+  auto-deletes the head branch on merge; expected.
 - **Staging fixes**: commit them on the ORIGINAL feature
   branch (push it again if auto-deleted — same SHAs are
   fine; after auto-delete, restore it with
@@ -97,16 +94,17 @@ schema changes to it with `npm run db:migrate:staging`
 - **Promotion to `main`** — only when the user asks to
   release or merge to main. The `Promote to main` workflow
   (`.github/workflows/promote-to-main.yml`) automates it:
-  `gh workflow run "Promote to main" --repo
-  Ted-Rose/nibrastube` (or the Actions tab; `-f
-  dry_run=true` lists pending promotions). It opens a
+  `gh workflow run "Promote to main"` (or the Actions tab;
+  `-f dry_run=true` lists pending promotions). It opens a
   `main` PR per staged branch — oldest staging-merge
   first, original title + body + a promotion footer —
   squash-merges each, then resets `staging` to `main`
   (skipped entirely if any promotion fails — staging then
   still holds unreleased work). Conflicting promotions are
   resolved from the staging squash commit's tree — the
-  validated integration state, never guessed. A branch
+  validated integration state, never guessed; a replay is
+  only attempted while all earlier promotions succeeded,
+  since a squash tree also carries their code. A branch
   whose remote tip moved past its staging merge is skipped
   — those commits were never staged. The scan covers the
   200 most recent merged staging PRs. Manual
@@ -123,17 +121,29 @@ schema changes to it with `npm run db:migrate:staging`
   anything still on `staging` that was not promoted —
   reset only once staging matches the release, and
   re-merge leftovers to `staging` afterwards (re-pushing
-  the same SHAs still satisfies the check). The workflow
-  needs the `AUTOMERGE_TOKEN` admin PAT — with plain
-  `GITHUB_TOKEN` the merges fail against `main`'s
-  protection (enforced for admins); that is the signal to
-  configure the PAT.
+  the same SHAs still satisfies the check).
+- **`AUTOMERGE_TOKEN`**: the workflow prefers an admin PAT
+  in that secret but falls back to `GITHUB_TOKEN`.
+  `enforce_admins` is on for `main`, yet promotions
+  satisfy `staging-first` legitimately and `main` has no
+  review requirement, so `GITHUB_TOKEN` merges should
+  work — add the secret only if merges fail on review
+  requirements.
 - **"Merge straight to main" requests**: merge the branch
   into `staging` first anyway, then the `main` PR — the
   check blocks anything else, keeping `main` ⊆ `staging`
   even for urgent merges. If the `main` PR's check already
   ran red before the staging merge, re-run the failed job
   after it (`gh run rerun <run-id> --failed` or a push).
+
+**Deployments**: `vercel.json`'s `git.deploymentEnabled`
+whitelists `main` + `staging` only — PRs and feature
+branches get no preview deployment (quota saving), so UI
+verification happens on the staging preview after merge,
+not per-PR. Caveat: Vercel reads the config from the
+pushed commit, so the whitelist only applies to pushes
+that already carry it. `deploy.yml` stays `main`-only —
+Cloud Run tracks production, not staging.
 
 ## Layout
 
@@ -728,11 +738,11 @@ npm run db:generate # drizzle-kit generate → new migration in
                     # drizzle/ — safe, touches files only
 npm run db:migrate  # drizzle-kit migrate — runs against
                     # DATABASE_URL_UNPOOLED (Neon's direct endpoint)
-                    # via drizzle.config.ts; the pooled URL breaks
-                    # migrate's session behavior
 npm run db:migrate:staging  # same, but targets
                     # STAGING_DATABASE_URL_UNPOOLED (the
                     # nibrastube_staging Neon DB) — safe for agents
+                    # via drizzle.config.ts; the pooled URL breaks
+                    # migrate's session behavior
 npm run videos:refresh -- --dry-run   # re-fetch videos rows missing
                     # YouTube fields (filters: --stale --missing cols
                     # --ids --channel --whitelisted --all --where;
@@ -855,8 +865,8 @@ Repo-local style:
   migrate), `STAGING_DATABASE_URL` +
   `STAGING_DATABASE_URL_UNPOOLED` (the `nibrastube_staging`
   Neon DB — used by every `VERCEL_ENV=preview` deploy and by
-  `npm run db:migrate:staging`), `JWT_SECRET`,
-  `YOUTUBE_API_KEY`, `PUSHER_APP_ID`,
+  `npm run db:migrate:staging`), `JWT_SECRET`, `YOUTUBE_API_KEY`,
+  `PUSHER_APP_ID`,
   `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER` (see `.env`,
   never commit it). Sentry: `NEXT_PUBLIC_SENTRY_DSN` enables
   monitoring (reaches the browser bundle AND the Node runtime —
@@ -964,20 +974,17 @@ Universal rules — follow exactly:
     user: `drizzle.config.ts` prefers `DATABASE_URL_UNPOOLED`,
     so the plain command is the right one — never run it
     against the pooled `DATABASE_URL` (PgBouncer breaks
-    migrate's session behavior). Generating migration files
-    (`npm run db:generate`) is always safe, and
-    `npm run db:migrate:staging` is agent-safe too — it
-    targets the `nibrastube_staging` database, not prod.
+    migrate's session behavior). `npm run db:migrate:staging`
+    is agent-safe — it targets the `nibrastube_staging`
+    database. Generating migration files
+    (`npm run db:generate`) is always safe.
   - `npx drizzle-kit push` — bypasses migration files; README's
     mention is stale.
   - `npm run videos:refresh -- --prune` — deletes rows; dry-run
     first.
   - Pushing `v*` tags or commits to the `android` branch —
     triggers signed release builds.
-  - `git push --force`, deleting branches, rewriting history —
-    except the post-release `staging` reset documented in
-    "Git workflow — staging-first" (`--force-with-lease`,
-    `staging` only).
+  - `git push --force`, deleting branches, rewriting history.
   - Anything writing to the production Neon DB — if a task
     genuinely needs it, write the change and tell the user
     the command to run.

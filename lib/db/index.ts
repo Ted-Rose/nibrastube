@@ -9,8 +9,8 @@ import * as schema from "./schema";
 // lambda-side pool size no longer risks exhausting the server — max stays
 // small only to bound per-instance memory and connection churn.
 //
-// Staging: every Vercel preview deploy (VERCEL_ENV=preview — the `staging`
-// branch's soak environment and per-PR previews) uses STAGING_DATABASE_URL,
+// Staging: every Vercel preview deploy (VERCEL_ENV=preview — the
+// `staging` branch's soak environment) uses STAGING_DATABASE_URL,
 // a separate `nibrastube_staging` Neon database owned by a dedicated
 // `nibrastube_staging` role. Preview deploys must never write to prod.
 // DATABASE_URL remains the fallback so previews keep working until the

@@ -22,9 +22,10 @@ export default defineConfig({
                   " prefer STAGING_DATABASE_URL_UNPOOLED.",
               );
             }
-            return (process.env.STAGING_DATABASE_URL_UNPOOLED ??
+            // `||` so an empty var counts as unset too.
+            return (process.env.STAGING_DATABASE_URL_UNPOOLED ||
               process.env.STAGING_DATABASE_URL)!;
           })()
-        : (process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL!),
+        : (process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL!),
   },
 });

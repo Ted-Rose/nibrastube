@@ -35,7 +35,11 @@ per-secret cost and one place to update config.
 
 `NEXT_PUBLIC_*` vars are inlined at **build** time — they are Docker
 `--build-arg`s (`NEXT_PUBLIC_PUSHER_KEY`, `NEXT_PUBLIC_PUSHER_CLUSTER`,
-`NEXT_PUBLIC_SENTRY_DSN`), not runtime env vars. The Sentry DSN lives
+`NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_ENVIRONMENT`,
+`NEXT_PUBLIC_SENTRY_RELEASE`), not runtime env vars. The last two
+label Sentry events: `instrumentation*.ts` prefer them over
+`VERCEL_ENV`/the Vercel git SHA via `||` — unset args inline as
+`""`, which is why `||` (not `??`) is used. The Sentry DSN lives
 in the `NEXT_PUBLIC_SENTRY_DSN` GitHub **variable** (DSNs are public)
 and must also be uncommented in `.env`/`ENV_FILE` so server-side
 instrumentation sees it at runtime.
@@ -79,7 +83,7 @@ IMAGE=europe-west1-docker.pkg.dev/nibrastube-app/nibrastube/nibrastube:latest
 
 gcloud builds submit --config cloudbuild.yaml \
   --project nibrastube-app \
-  --substitutions="_IMAGE=$IMAGE,_NEXT_PUBLIC_PUSHER_KEY=$(grep '^NEXT_PUBLIC_PUSHER_KEY=' .env | cut -d= -f2-),_NEXT_PUBLIC_PUSHER_CLUSTER=eu,_NEXT_PUBLIC_SENTRY_DSN=$(grep '^NEXT_PUBLIC_SENTRY_DSN=' .env | cut -d= -f2-)"
+  --substitutions="_IMAGE=$IMAGE,_NEXT_PUBLIC_PUSHER_KEY=$(grep '^NEXT_PUBLIC_PUSHER_KEY=' .env | cut -d= -f2-),_NEXT_PUBLIC_PUSHER_CLUSTER=eu,_NEXT_PUBLIC_SENTRY_DSN=$(grep '^NEXT_PUBLIC_SENTRY_DSN=' .env | cut -d= -f2-),_NEXT_PUBLIC_SENTRY_RELEASE=$(git rev-parse HEAD)"
 
 { echo "ENV_FILE: |"; sed 's/^/  /' .env; } > /tmp/env.yaml
 gcloud run deploy nibrastube --project nibrastube-app --region europe-west1 \

@@ -331,7 +331,10 @@ lib/
                                 shared by the settings picker and
                                 updateKidAvatar validation
   profiles.ts                   assertCanManageProfile,
-                                getManageableProfiles
+                                assertCanEditKidData,
+                                getManageableProfiles +
+                                ProfileAccessError (marks routine
+                                auth denials for Sentry filters)
   kids-feed.ts                  Kids feed params/URL builder + row
                                 queries — whitelist-driven reads are
                                 unstable_cache'd per (profileId,
@@ -349,7 +352,11 @@ lib/
                                 declaring it per-component collides
                                 as TS2717)
   youtube.ts                    YouTube Data API wrappers +
-                                ISO-8601 duration parse
+                                ISO-8601 duration parse + error
+                                classes/classifier for caught
+                                failures (QuotaExceededError,
+                                YouTubeNotFoundError,
+                                captureYouTubeException)
   song-timestamps.ts            Pure parsers → ParsedSong[]:
                                 parseTracklist (comments),
                                 parseChapters (description fallback,
@@ -357,9 +364,13 @@ lib/
   channel-sync.ts               backfillChannel / pollChannel /
                                 syncAllChannels
   pusher.ts                     pusherServer + getPusherClient
-                                factories
+                                factories + triggerProfileEvent
+                                (best-effort ping — Pusher outages
+                                report at warning, never throw)
   notify.ts                     notifyAdmin() — Telegram sendMessage;
-                                no-ops without TELEGRAM_* env vars
+                                no-ops without TELEGRAM_* env vars;
+                                send failures report at Sentry
+                                warning (provider_error)
   report.ts                     Sentry chokepoint for CAUGHT failures
                                 (captureInternalException /
                                 captureProviderException)
@@ -799,6 +810,26 @@ bugs only:
   tag `error_code:internal_error`.
 - YouTube quota/outages — `captureProviderException`, level
   warning, tag `error_code:rate_limited` / `provider_error`.
+
+Caught-failure coverage (see `lib/report.ts`):
+
+- `captureYouTubeException` (`lib/youtube.ts`) classifies catches
+  at YouTube-API boundaries: routine upstream misses
+  (`YouTubeNotFoundError` from `getVideoDetails`; API reasons
+  `commentsDisabled`/`videoNotFound`/`playlistNotFound`/
+  `channelNotFound`) are handled outcomes — never sent; quota →
+  warning `rate_limited`; other API failures → warning
+  `provider_error`; a non-upstream error caught in the same block
+  (e.g. a DB write) → error `internal_error`.
+- `ProfileAccessError` (`lib/profiles.ts`) marks deliberate
+  auth-guard denials; catch sites map those to 403/redirect/error
+  results and report only non-`ProfileAccessError` failures, so
+  a DB outage masked as a denial still reaches the queue.
+- `triggerProfileEvent` (`lib/pusher.ts`) is the only server-side
+  trigger path — a Pusher outage is caught, reported at warning
+  `provider_error`, and never fails the committed mutation.
+  `PusherListener` binds connection `error` to the same stream.
+- `notifyAdmin` (Telegram) failures → warning `provider_error`.
 
 Events carry `environment` from `NEXT_PUBLIC_VERCEL_ENV` /
 `VERCEL_ENV` (`production`/`preview`/`development`) and `release`

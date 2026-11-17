@@ -11,6 +11,7 @@ import {
   whitelistedVideos,
 } from "@/lib/db/schema";
 import {
+  captureYouTubeException,
   getChannelDetails,
   getUploadsPage,
   getVideosBatch,
@@ -104,7 +105,10 @@ export async function ChannelDetail({
   let details: ChannelDetails | null;
   try {
     details = await getChannelDetails(channelId);
-  } catch {
+  } catch (err) {
+    // API/quota failures → warning-level provider stream; anything
+    // not upstream is a real bug → error level.
+    captureYouTubeException(err);
     return (
       <ChannelNotice
         href={allChannelsHref}
@@ -145,7 +149,10 @@ export async function ChannelDetail({
       after(() => invalidateProfilesWhitelisting(hydratedIds));
       uploads = hydrated.map(toDashboardVideo);
       nextPageToken = page.nextPageToken ?? null;
-    } catch {
+    } catch (err) {
+      // Same classification as above — routine upstream misses
+      // stay silent, outages warn, real bugs error.
+      captureYouTubeException(err);
       uploadsError = true;
     }
   }

@@ -13,6 +13,7 @@ import {
   requireParentUnlocked,
 } from "@/lib/auth";
 import {
+  captureYouTubeException,
   getVideoDetails,
   listVideoComments,
   parseYouTubeVideoId,
@@ -139,7 +140,10 @@ async function getOrFetchVideo(
   let details: FullVideoDetails;
   try {
     details = await getVideoDetails(videoId);
-  } catch {
+  } catch (err) {
+    // Routine misses (deleted/private video) stay silent; quota and
+    // outages report at warning, real bugs at error.
+    captureYouTubeException(err);
     return null;
   }
   if (
@@ -222,6 +226,9 @@ async function runSongImport(
       comments = await listVideoComments(videoId);
     } catch (err) {
       if (axios.isAxiosError(err)) {
+        // Disabled/removed comments are a routine miss (never
+        // sent); quota and outages report at warning level.
+        captureYouTubeException(err);
         return {
           error:
             "Couldn't load comments for that video (disabled or removed?).",

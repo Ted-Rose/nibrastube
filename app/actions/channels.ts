@@ -18,7 +18,11 @@ import {
   assertCanManageProfile,
   getManageableProfiles,
 } from "@/lib/profiles";
-import { channelRowValues, getChannelDetails } from "@/lib/youtube";
+import {
+  captureYouTubeException,
+  channelRowValues,
+  getChannelDetails,
+} from "@/lib/youtube";
 import { backfillChannel } from "@/lib/channel-sync";
 import { invalidateProfileFeed } from "@/lib/feed-cache";
 
@@ -88,6 +92,9 @@ export async function approveChannel(profileId: string, channelId: string) {
       }
     } catch (err) {
       console.error(`Backfill failed for channel ${channelId}:`, err);
+      // Quota/outage → warning; anything else (e.g. a DB write)
+      // is a real bug → error.
+      captureYouTubeException(err);
     }
   });
 
@@ -194,10 +201,8 @@ export async function unapproveChannel(profileId: string, channelId: string) {
   // Bust the feed tag BEFORE the ping so a client's router.refresh()
   // can't re-read the stale cache entry.
   invalidateProfileFeed(profileId);
-  const { pusherServer } = await import("@/lib/pusher");
-  await pusherServer.trigger(`profile-${profileId}`, "video-unpinned", {
-    channelId,
-  });
+  const { triggerProfileEvent } = await import("@/lib/pusher");
+  await triggerProfileEvent(profileId, "video-unpinned", { channelId });
 
   revalidatePath(`/parent/dashboard`);
   revalidatePath(`/kids/${profileId}`);

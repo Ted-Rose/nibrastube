@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getPusherClient } from "@/lib/pusher";
+import { captureProviderException } from "@/lib/report";
 
 export default function PusherListener({ profileId }: { profileId: string }) {
   const router = useRouter();
@@ -28,8 +29,21 @@ export default function PusherListener({ profileId }: { profileId: string }) {
     channel.bind("video-reacted", scheduleRefresh);
     channel.bind("playlist-changed", scheduleRefresh);
 
+    // pusher-js retries connection failures forever and never
+    // throws — bind "error" so a lasting outage (bad key, Pusher
+    // down) still leaves a warning-level trail in Sentry instead of
+    // silently degrading real-time refreshes.
+    const onConnectionError = (err: unknown) => {
+      captureProviderException(
+        err instanceof Error ? err : new Error("Pusher connection error"),
+        "provider_error"
+      );
+    };
+    pusher.connection.bind("error", onConnectionError);
+
     return () => {
       if (timer) clearTimeout(timer);
+      pusher.connection.unbind("error", onConnectionError);
       pusher.unsubscribe(`profile-${profileId}`);
     };
   }, [profileId, router]);

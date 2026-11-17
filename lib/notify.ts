@@ -1,3 +1,5 @@
+import { captureProviderException } from "@/lib/report";
+
 // Fire-and-forget admin notification, currently Telegram-only: set
 // TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID to enable. Silently no-ops
 // without them so dev/preview environments don't spam the admin chat.
@@ -15,5 +17,7 @@ export async function notifyAdmin(text: string): Promise<void> {
     });
   } catch (err) {
     console.error("Admin notification failed:", err);
+    // Upstream (Telegram) outage — warning-level trend stream only.
+    captureProviderException(err, "provider_error");
   }
 }

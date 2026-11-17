@@ -10,7 +10,11 @@ import {
   watchProgress,
   whitelistedVideos,
 } from "@/lib/db/schema";
-import { assertCanManageProfile } from "@/lib/profiles";
+import {
+  assertCanManageProfile,
+  ProfileAccessError,
+} from "@/lib/profiles";
+import { captureInternalException } from "@/lib/report";
 import { invalidateProfilesWhitelisting } from "@/lib/feed-cache";
 import { suitableVideo } from "@/lib/video-suitability";
 
@@ -48,7 +52,12 @@ export async function POST(request: NextRequest) {
   ) {
     try {
       await assertCanManageProfile(session, body.profileId);
-    } catch {
+    } catch (err) {
+      // Denials are routine; anything else (e.g. a DB outage masked
+      // as one) is a real failure worth reporting.
+      if (!(err instanceof ProfileAccessError)) {
+        captureInternalException(err);
+      }
       return NextResponse.json({ ok: false }, { status: 403 });
     }
   }

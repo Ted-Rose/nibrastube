@@ -1,4 +1,3 @@
-import axios from "axios";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -9,7 +8,12 @@ import {
   whitelistedChannels,
   whitelistedVideos,
 } from "@/lib/db/schema";
-import { getUploadsPage, getVideosBatch } from "@/lib/youtube";
+import {
+  getUploadsPage,
+  getVideosBatch,
+  isYouTubeQuotaError,
+  QuotaExceededError,
+} from "@/lib/youtube";
 import {
   invalidateProfileFeed,
   invalidateProfilesWhitelisting,
@@ -25,21 +29,11 @@ const MAX_CHANNELS_PER_RUN = 50;
 const MAX_BACKFILL_PAGES_PER_RUN = 40;
 const MAX_POLL_PAGES_PER_RUN = 5; // ~250 newest uploads checked per poll
 
-export class QuotaExceededError extends Error {}
-
 type ChannelRow = typeof channels.$inferSelect;
 
 export interface ChannelJoin {
   whitelist: typeof whitelistedChannels.$inferSelect;
   channel: ChannelRow;
-}
-
-function isQuotaError(err: unknown): boolean {
-  return (
-    axios.isAxiosError(err) &&
-    err.response?.status === 403 &&
-    JSON.stringify(err.response.data).includes("quotaExceeded")
-  );
 }
 
 async function getExcludedVideoIds(profileId: string, videoIds: string[]) {
@@ -130,10 +124,8 @@ async function triggerPinned(profileId: string, channelId: string) {
   // Bust the tag BEFORE the ping so a client's router.refresh() can't
   // re-read the stale cache entry.
   invalidateProfileFeed(profileId);
-  const { pusherServer } = await import("@/lib/pusher");
-  await pusherServer.trigger(`profile-${profileId}`, "video-pinned", {
-    channelId,
-  });
+  const { triggerProfileEvent } = await import("@/lib/pusher");
+  await triggerProfileEvent(profileId, "video-pinned", { channelId });
 }
 
 /**
@@ -296,7 +288,7 @@ export async function syncAllChannels(): Promise<number> {
       }
       synced++;
     } catch (err) {
-      if (err instanceof QuotaExceededError || isQuotaError(err)) {
+      if (err instanceof QuotaExceededError || isYouTubeQuotaError(err)) {
         console.error("YouTube quota exceeded — aborting sync run early");
         // Quota aborts are an expected provider state — warning-level
         // trend stream, never the error fix queue.

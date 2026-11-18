@@ -556,8 +556,11 @@ docs/reviews/                   Committed Oct 2026 code audit —
   channel removes its `viaChannelId` pins and clears its tombstones.
   YouTube quota errors abort the run early. `channel_sync_exclusions`
   are keyed by profile owner; paused channels are filtered in
-  `syncAllChannels` and abort mid-flight via the approval re-check,
-  and approving a paused channel skips the backfill.
+  `syncAllChannels` and abort mid-flight via the approval re-check —
+  a fetched-but-unpinned page never advances the cursor — and
+  approving a paused channel skips the backfill; resuming one
+  schedules an `after()` catch-up (finish the backfill or poll for
+  uploads missed while paused).
 - **Song imports:** parents paste a compilation-video URL in the
   dashboard; `app/actions/songs.ts` tries the video's comments first —
   the one by `users.songCommenterHandle` parses into `songs` rows via

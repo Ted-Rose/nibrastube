@@ -22,10 +22,11 @@ import {
   captureYouTubeException,
   channelRowValues,
   getChannelDetails,
+  isYouTubeQuotaError,
 } from "@/lib/youtube";
-import { backfillChannel } from "@/lib/channel-sync";
+import { backfillChannel, pollChannel } from "@/lib/channel-sync";
 import { invalidateProfileFeed } from "@/lib/feed-cache";
-import { flushSentryEvents } from "@/lib/report";
+import { captureProviderException, flushSentryEvents } from "@/lib/report";
 
 export async function approveChannel(profileId: string, channelId: string) {
   const session = await getSession();
@@ -148,14 +149,78 @@ export async function setChannelSyncExcluded(
       .values(ownerIds.map((parentId) => ({ parentId, channelId })))
       .onConflictDoNothing();
   } else {
-    await db
+    const deleted = await db
       .delete(channelSyncExclusions)
       .where(
         and(
           inArray(channelSyncExclusions.parentId, ownerIds),
           eq(channelSyncExclusions.channelId, channelId)
         )
-      );
+      )
+      .returning({ parentId: channelSyncExclusions.parentId });
+
+    // Resume is otherwise passive — an interrupted backfill would
+    // sit until the next daily sync. Catch up in the background:
+    // finish any incomplete backfill, poll the rest for uploads
+    // missed while paused. Skipped when nothing was actually muted
+    // — no reason to burn YouTube quota on a no-op resume.
+    if (deleted.length > 0) {
+      after(async () => {
+        try {
+          const channel = await db.query.channels.findFirst({
+            where: eq(channels.id, channelId),
+          });
+          if (!channel) return;
+          const targets = await db
+            .select({ whitelist: whitelistedChannels })
+            .from(whitelistedChannels)
+            .innerJoin(
+              profiles,
+              eq(whitelistedChannels.profileId, profiles.id)
+            )
+            .where(
+              and(
+                eq(whitelistedChannels.channelId, channelId),
+                inArray(
+                  profiles.parentId,
+                  deleted.map((d) => d.parentId)
+                )
+              )
+            );
+          for (const target of targets) {
+            try {
+              const join = { whitelist: target.whitelist, channel };
+              if (target.whitelist.backfillComplete) {
+                await pollChannel(target.whitelist.profileId, join);
+              } else {
+                await backfillChannel(target.whitelist.profileId, join);
+              }
+            } catch (err) {
+              if (isYouTubeQuotaError(err)) {
+                console.error(
+                  "YouTube quota exceeded — aborting resume catch-up"
+                );
+                captureProviderException(err, "rate_limited");
+                break;
+              }
+              console.error(
+                `Resume sync failed for ${channelId} ` +
+                  `(profile ${target.whitelist.profileId}):`,
+                err
+              );
+              captureYouTubeException(err);
+            }
+          }
+        } catch (err) {
+          console.error(`Resume sync failed for ${channelId}:`, err);
+          captureYouTubeException(err);
+        } finally {
+          // The SDK flushes when the action returns, which races
+          // this post-response work — drain again so captures send.
+          await flushSentryEvents();
+        }
+      });
+    }
   }
 
   revalidatePath(`/parent/dashboard`);

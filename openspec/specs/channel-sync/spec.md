@@ -123,8 +123,8 @@ A `403` + `quotaExceeded` response from the YouTube API SHALL abort
 the whole sync run (not just the channel), reported via
 `captureProviderException` at warning level tagged
 `error_code:rate_limited`. Any other per-channel failure SHALL be
-logged and reported via `captureInternalException` without stopping
-the remaining channels.
+logged and classified via `captureYouTubeException` without
+stopping the remaining channels.
 
 #### Scenario: Quota exhaustion stops the run
 
@@ -134,8 +134,9 @@ the remaining channels.
 #### Scenario: Other failure skips only that channel
 
 - **WHEN** one channel's sync throws a non-quota error
-- **THEN** it is reported as an internal error and the run
-  continues with the next channel
+- **THEN** it is classified and reported by
+  `captureYouTubeException` and the run continues with the next
+  channel
 
 ### Requirement: Sync pause is owner-scoped and survives re-approval
 

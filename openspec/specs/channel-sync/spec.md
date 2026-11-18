@@ -36,11 +36,12 @@ skipped entirely.
 
 `backfillChannel` SHALL page the channel's uploads playlist (≤40
 pages/run, ~2000 videos), persisting `backfillPageToken` and
-`backfillComplete` so an interrupted backfill resumes where it left
-off. Before each page and each insert batch it SHALL re-check that
-the channel is still approved and unmuted, aborting mid-flight if
-either changed. Synced videos SHALL be inserted as `viaChannelId`
-pins skipping tombstoned exclusions.
+`backfillComplete` so an interrupted run resumes where it left off.
+It SHALL re-check approval/unmute before each page and after each
+page's inserts; when the check fails mid-page the cursor SHALL NOT
+advance — no fetched page is skipped or marked complete. Synced
+videos SHALL be inserted as `viaChannelId` pins skipping tombstoned
+exclusions.
 
 #### Scenario: Interrupted backfill resumes via token
 
@@ -60,6 +61,14 @@ pins skipping tombstoned exclusions.
 - **WHEN** a video in the fetched page has a
   `channel_video_exclusions` row for the profile
 - **THEN** it is not re-pinned
+
+#### Scenario: Pause during a page keeps the cursor
+
+- **WHEN** a mute or un-approve lands after a page was fetched but
+  before its pins were written
+- **THEN** the run stops without persisting that page's
+  `nextPageToken`, so resume refetches the page instead of skipping
+  it
 
 ### Requirement: Daily sync polls newest uploads
 
@@ -148,6 +157,26 @@ manage.
 - **WHEN** a muted channel is un-approved and re-approved
 - **THEN** the exclusion row persists and the channel still syncs
   nothing
+
+### Requirement: Resuming sync triggers an immediate catch-up
+
+`setChannelSyncExcluded(channelId, false)` SHALL delete the owner
+exclusion rows and schedule a background `after()` catch-up for
+each affected `whitelisted_channels` row — `backfillChannel` when
+`backfillComplete` is false, `pollChannel` otherwise — so resumed
+channels do not wait for the next daily sync.
+
+#### Scenario: Resume finishes an interrupted backfill
+
+- **WHEN** a parent resumes a channel paused mid-backfill
+- **THEN** the backfill continues from its persisted cursor in the
+  background, without waiting for the daily sync
+
+#### Scenario: Resume polls for missed uploads
+
+- **WHEN** a parent resumes a channel whose backfill had completed
+- **THEN** a poll runs in the background, pinning uploads posted
+  while the channel was paused
 
 ### Requirement: Sync emits real-time notifications
 

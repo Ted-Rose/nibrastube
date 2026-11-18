@@ -23,7 +23,7 @@ import {
   channelRowValues,
   getChannelDetails,
 } from "@/lib/youtube";
-import { backfillChannel } from "@/lib/channel-sync";
+import { backfillChannel, pollChannel } from "@/lib/channel-sync";
 import { invalidateProfileFeed } from "@/lib/feed-cache";
 import { flushSentryEvents } from "@/lib/report";
 
@@ -156,6 +156,47 @@ export async function setChannelSyncExcluded(
           eq(channelSyncExclusions.channelId, channelId)
         )
       );
+
+    // Resume is otherwise passive — an interrupted backfill would
+    // sit until the next daily sync. Catch up in the background:
+    // finish any incomplete backfill, poll the rest for uploads
+    // missed while paused.
+    after(async () => {
+      try {
+        const channel = await db.query.channels.findFirst({
+          where: eq(channels.id, channelId),
+        });
+        if (!channel) return;
+        const rows = await db
+          .select({ whitelist: whitelistedChannels })
+          .from(whitelistedChannels)
+          .innerJoin(
+            profiles,
+            eq(whitelistedChannels.profileId, profiles.id)
+          )
+          .where(
+            and(
+              eq(whitelistedChannels.channelId, channelId),
+              inArray(profiles.parentId, ownerIds)
+            )
+          );
+        for (const row of rows) {
+          const join = { whitelist: row.whitelist, channel };
+          if (row.whitelist.backfillComplete) {
+            await pollChannel(row.whitelist.profileId, join);
+          } else {
+            await backfillChannel(row.whitelist.profileId, join);
+          }
+        }
+      } catch (err) {
+        console.error(`Resume sync failed for ${channelId}:`, err);
+        captureYouTubeException(err);
+      } finally {
+        // The SDK flushes when the action returns, which races this
+        // post-response work — drain again so captures above send.
+        await flushSentryEvents();
+      }
+    });
   }
 
   revalidatePath(`/parent/dashboard`);

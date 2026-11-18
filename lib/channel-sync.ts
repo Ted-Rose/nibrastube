@@ -160,6 +160,13 @@ export async function backfillChannel(
       result.videoIds
     );
 
+    // A pause or un-approve landing during the fetch makes the
+    // upsert's own re-check skip the whole page; advancing the cursor
+    // anyway would skip those videos forever — and a skipped final
+    // page would even get marked complete. Stop first so the next
+    // run refetches the page.
+    if (!(await isChannelSyncEnabled(profileId, channel.id))) break;
+
     pageToken = result.nextPageToken;
     const complete = !pageToken;
     await db

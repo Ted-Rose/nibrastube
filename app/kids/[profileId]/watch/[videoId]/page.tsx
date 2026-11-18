@@ -22,7 +22,10 @@ interface WatchPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function WatchPage({ params, searchParams }: WatchPageProps) {
+export default async function WatchPage({
+  params,
+  searchParams,
+}: WatchPageProps) {
   const { profileId, videoId } = await params;
 
   // 1. Access check first — kid-locked to this profile or a parent who
@@ -150,6 +153,29 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
     // age-restricted or playback-blocked video lands here and stays
     // unwatchable even when a parent pinned it.
     redirect(`/kids/${profileId}${kidsFeedQuery(feed)}`);
+  }
+
+  // A sequential queue (playlist drill-in, history) is bounded — it
+  // used to wrap back to its first video after the last one played.
+  // Extend it with the profile's "Picked for you" picks instead, so
+  // the last playlist video rolls into fresh recommendations before
+  // the queue ever loops. The same q/type/length filters scope the
+  // picks, mirroring how the queue itself mirrors the feed. Picks
+  // already in the queue are dropped — a video can't play twice in
+  // one pass.
+  if (sequential) {
+    const queued = new Set(rows.map((r) => r.video.id));
+    const picks = await getRecommendedVideos(profileId, {
+      q: feed.q,
+      type,
+      minLen,
+      maxLen,
+    });
+    for (const row of picks) {
+      if (queued.has(row.video.id)) continue;
+      queued.add(row.video.id);
+      rows.push(row);
+    }
   }
 
   const playlist = rows.map(({ video, progress, reaction }) => {

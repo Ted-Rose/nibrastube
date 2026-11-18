@@ -110,6 +110,11 @@ export default async function WatchPage({
               maxLen,
             });
   let currentIndex = rows.findIndex((r) => r.video.id === videoId);
+  // Whether `rows` still reflects the feed's q/type/length filters —
+  // the stale-link fallback below rebuilds it unfiltered, and the
+  // pick tail appended for sequential queues should match whatever
+  // scoping the queue itself ended up with.
+  const queueScoped = currentIndex !== -1;
 
   if (currentIndex === -1) {
     // Stale link from a filtered view — fall back to the full list (still
@@ -159,18 +164,16 @@ export default async function WatchPage({
   // used to wrap back to its first video after the last one played.
   // Extend it with the profile's "Picked for you" picks instead, so
   // the last playlist video rolls into fresh recommendations before
-  // the queue ever loops. The same q/type/length filters scope the
-  // picks, mirroring how the queue itself mirrors the feed. Picks
-  // already in the queue are dropped — a video can't play twice in
-  // one pass.
+  // the queue ever loops. The picks inherit the queue's own scoping —
+  // filtered when the filtered fetch found the video, unfiltered
+  // after the stale-link fallback. Picks already in the queue are
+  // dropped — a video can't play twice in one pass.
   if (sequential) {
     const queued = new Set(rows.map((r) => r.video.id));
-    const picks = await getRecommendedVideos(profileId, {
-      q: feed.q,
-      type,
-      minLen,
-      maxLen,
-    });
+    const picks = await getRecommendedVideos(
+      profileId,
+      queueScoped ? { q: feed.q, type, minLen, maxLen } : {}
+    );
     for (const row of picks) {
       if (queued.has(row.video.id)) continue;
       queued.add(row.video.id);

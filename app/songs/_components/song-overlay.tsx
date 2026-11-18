@@ -17,8 +17,8 @@ import {
 // continuation (the drill-in's ?video= and the "mine" scope are
 // dropped; sort/dir/q still apply, and feed rows already in the queue
 // are skipped). A song outside the feed — hand-crafted URL, or beyond
-// the grid's row cap — leads the queue alone, then continues into the
-// catalog like any other last song.
+// the grid's row cap — leads the queue ahead of the feed rows, then
+// continues into the catalog like any other last song.
 export async function SongOverlay({
   songId,
   feed,
@@ -33,13 +33,18 @@ export async function SongOverlay({
   userId: string | null;
   closeHref: string;
 }) {
+  // Only a ?video= drill-in or the "mine" scope narrows the feed's
+  // rows below the full catalog — everywhere else those rows already
+  // ARE the continuation, so reuse the same params object and let
+  // getSongs' React cache() fold this into the first call.
+  const catalogFeed: SongsFeedParams =
+    feed.video !== null || feed.view === "mine"
+      ? { ...feed, view: "songs", video: null }
+      : feed;
   const [song, rows, catalogRows] = await Promise.all([
     getSong(songId),
     getSongs(feed, userId ?? undefined),
-    getSongs(
-      { ...feed, view: "songs", video: null },
-      userId ?? undefined
-    ),
+    getSongs(catalogFeed, userId ?? undefined),
   ]);
   if (!song) return null;
 

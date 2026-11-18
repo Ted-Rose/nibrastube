@@ -166,7 +166,8 @@ export default async function WatchPage({
   // the last playlist video rolls into fresh recommendations before
   // the queue ever loops. The picks inherit the queue's own scoping —
   // filtered when the filtered fetch found the video, unfiltered
-  // after the stale-link fallback. Picks already in the queue are
+  // after the stale-link fallback (a ?date= history filter has no
+  // pick equivalent and is dropped). Picks already in the queue are
   // dropped — a video can't play twice in one pass.
   if (sequential) {
     const queued = new Set(rows.map((r) => r.video.id));

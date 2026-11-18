@@ -181,7 +181,10 @@ export async function setChannelSyncExcluded(
             .where(
               and(
                 eq(whitelistedChannels.channelId, channelId),
-                inArray(profiles.parentId, ownerIds)
+                inArray(
+                  profiles.parentId,
+                  deleted.map((d) => d.parentId)
+                )
               )
             );
           for (const target of targets) {

@@ -163,9 +163,10 @@ manage.
 
 `setChannelSyncExcluded(channelId, false)` SHALL delete the owner
 exclusion rows and schedule a background `after()` catch-up for
-each affected `whitelisted_channels` row — `backfillChannel` when
-`backfillComplete` is false, `pollChannel` otherwise — so resumed
-channels do not wait for the next daily sync.
+each `whitelisted_channels` row under the owners actually unmuted —
+`backfillChannel` when `backfillComplete` is false, `pollChannel`
+otherwise — so resumed channels do not wait for the next daily
+sync. No exclusion rows deleted SHALL mean no catch-up scheduled.
 
 #### Scenario: Resume finishes an interrupted backfill
 

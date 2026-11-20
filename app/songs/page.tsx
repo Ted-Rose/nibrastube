@@ -147,6 +147,7 @@ export default async function SongsPage({ searchParams }: SongsPageProps) {
           <FeedContent
             feed={feed}
             userId={userId}
+            hasSession={!!session}
             profileId={profileId}
           />
         </Suspense>

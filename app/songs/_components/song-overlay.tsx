@@ -82,7 +82,11 @@ export async function SongOverlay({
   }
   return (
     // Keyed by song id: navigating to another ?song= (Back/Forward)
-    // remounts the player on that song instead of retuning in place.
+    // remounts the player on that song instead of retuning in
+    // place. Edge case: after auto-advance rewrites the URL from
+    // ?song=A to ?song=B, Back to ?song=A re-renders the SAME key —
+    // the mounted instance keeps playing B while the URL claims A,
+    // self-healing on the next advance or exit.
     <SongPlayerOverlay
       key={song.id}
       queue={queue}

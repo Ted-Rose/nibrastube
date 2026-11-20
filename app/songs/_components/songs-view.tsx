@@ -27,10 +27,14 @@ import { feedTitle, sortOptions, SONGS_VIEWS } from "./view-config";
 export async function SongsView({
   feed,
   userId,
+  hasSession,
   profileId,
 }: {
   feed: SongsFeedParams;
   userId: string | null;
+  // Any signed-in session — suppresses the "Sign up free" CTA that
+  // only bounces a kid session back to its feed.
+  hasSession: boolean;
   profileId: string | null;
 }) {
   const { video, q: query } = feed;
@@ -50,6 +54,7 @@ export async function SongsView({
           <AllSongsGrid
             feed={feed}
             userId={userId}
+            hasSession={hasSession}
             profileId={profileId}
           />
         </Suspense>
@@ -101,10 +106,14 @@ export async function SongsView({
             href: "/parent/dashboard",
             prefetch: false,
           }
-        : {
-            label: "Sign up free",
-            href: "/signup",
-          };
+        : hasSession
+          ? // Kid session on an empty grid — signup is a dead-end
+            // redirect back to their feed, and they can't import.
+            undefined
+          : {
+              label: "Sign up free",
+              href: "/signup",
+            };
 
   return (
     <>
@@ -143,10 +152,12 @@ export async function SongsView({
 async function AllSongsGrid({
   feed,
   userId,
+  hasSession,
   profileId,
 }: {
   feed: SongsFeedParams;
   userId: string | null;
+  hasSession: boolean;
   profileId: string | null;
 }) {
   const rows = await getSongs(
@@ -175,10 +186,13 @@ async function AllSongsGrid({
                   href: "/parent/dashboard",
                   prefetch: false,
                 }
-              : {
-                  label: "Sign up free",
-                  href: "/signup",
-                }
+              : hasSession
+                ? // Kid session — signup would just redirect back.
+                  undefined
+                : {
+                    label: "Sign up free",
+                    href: "/signup",
+                  }
           }
         />
       ) : (

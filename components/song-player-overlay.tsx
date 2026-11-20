@@ -129,10 +129,14 @@ export function SongPlayerOverlay({
   // both maps, and rows with no pending optimistic write take the
   // server's value — a reaction tapped on another device reaches us
   // through a refresh. A locally-pending tap (optimistic value not
-  // yet committed) keeps its state either way.
+  // yet committed) keeps its state either way. This reads the RAW
+  // queue prop, not stableQueue: the id signature hides reaction-
+  // only diffs, which are exactly what this merge exists to pick up
+  // — and reaction merging feeds no player-facing callback, so it
+  // doesn't need the stability guarantee.
   useEffect(() => {
     let changed = false;
-    for (const s of stableQueue) {
+    for (const s of queue) {
       const local = reactionsRef.current.get(s.id);
       const pending = local !== committedRef.current.get(s.id);
       if (!pending && local !== s.reaction) {
@@ -142,13 +146,17 @@ export function SongPlayerOverlay({
       }
     }
     if (changed) setReactions(new Map(reactionsRef.current));
-  }, [stableQueue]);
+  }, [queue]);
 
   // Re-follow the playing song when the queue's contents shift —
   // otherwise a refresh that reorders or shrinks the queue leaves
   // indexRef pointing at the wrong row (or past the end, where no
   // player would ever be created). Same pattern as the watch page's
-  // playlist re-follow.
+  // playlist re-follow. Defensive today — the deferred refresh
+  // means a mounted instance's queue can't change — but if a live
+  // queue change ever becomes reachable, note the recreated player
+  // would restart the current segment (no resumeAt equivalent like
+  // watch-experience's).
   useEffect(() => {
     const idx = stableQueue.findIndex(
       (s) => s.id === playingIdRef.current

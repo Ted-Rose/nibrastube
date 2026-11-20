@@ -9,12 +9,16 @@ import { SongsView } from "./songs-view";
 export function FeedContent({
   feed,
   userId,
+  hasSession,
   profileId,
 }: {
   feed: SongsFeedParams;
   // session.user.id, or null for anonymous visitors, kid-locked
   // devices, and kid sessions.
   userId: string | null;
+  // Any signed-in session — suppresses the "Sign up free" CTAs that
+  // only bounce a kid session back to its feed.
+  hasSession: boolean;
   // The reacting profile — kid session's own, or the kid-lock cookie;
   // null for anonymous visitors and lockless parents.
   profileId: string | null;
@@ -33,6 +37,11 @@ export function FeedContent({
   // "songs" (including the ?video= compilation drill-in) and the
   // signed-in "mine" both render the song grid.
   return (
-    <SongsView feed={feed} userId={userId} profileId={profileId} />
+    <SongsView
+      feed={feed}
+      userId={userId}
+      hasSession={hasSession}
+      profileId={profileId}
+    />
   );
 }

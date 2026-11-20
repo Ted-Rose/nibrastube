@@ -110,6 +110,7 @@ export default async function SongsPage({ searchParams }: SongsPageProps) {
         feed={feed}
         tabs={tabs}
         signedIn={!!parent}
+        hasSession={!!session}
         kidsHref={kidsHref}
       />
 

@@ -240,6 +240,7 @@ function feedOrderBy(
     return [
       feed.dir === "asc" ? asc(songs.title) : desc(songs.title),
       asc(songs.startSeconds),
+      asc(songs.id),
     ];
   }
   if (feed.sort === "length") {
@@ -248,11 +249,13 @@ function feedOrderBy(
         ? sql`${songLength} asc nulls last`
         : sql`${songLength} desc nulls last`,
       asc(songs.startSeconds),
+      asc(songs.id),
     ];
   }
   return [
     feed.dir === "asc" ? asc(recent) : desc(recent),
     asc(songs.startSeconds),
+    asc(songs.id),
   ];
 }
 

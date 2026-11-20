@@ -71,19 +71,25 @@ export function SongPlayerOverlay({
   // this ref surfaces it to the player events created above.
   const finishRef = useRef<((code?: number) => void) | null>(null);
 
-  // A router.refresh() (fired after each reaction write) lands with
-  // a rebuilt, content-identical queue prop — hand the player a list
-  // stabilized on the id sequence, not prop identity, so the refresh
-  // can't tear the iframe down and rebuild it. Reaction values live
-  // in the local map below, so the signature only needs the ids; a
-  // stale startSeconds/title snapshot wins, same accepted trade-off
-  // as WatchExperience's playlist signature.
+  // Any server-driven re-render can land a rebuilt, content-
+  // identical queue prop — hand the player a list stabilized on the
+  // id sequence, not prop identity, so a refresh can't tear the
+  // iframe down and rebuild it. Reaction values live in the local
+  // map below, so the signature only needs the ids; a stale
+  // startSeconds/title snapshot wins, same accepted trade-off as
+  // WatchExperience's playlist signature.
   const signature = queue.map((s) => s.id).join("|");
   const [stable, setStable] = useState({ signature, list: queue });
   if (stable.signature !== signature) {
     setStable({ signature, list: queue });
   }
   const stableQueue = stable.list;
+
+  // The actually-playing song, tracked BY ID — a refreshed queue can
+  // reorder or drop rows (disliking on the Liked tab removes the
+  // playing row), and indexRef alone would then point at the wrong
+  // slot or past the new end.
+  const playingIdRef = useRef(stableQueue[startIndex]?.id);
 
   // Per-song reaction keyed by song id — seeded from the queue and
   // optimistically updated on tap. `committed` tracks the last
@@ -101,20 +107,62 @@ export function SongPlayerOverlay({
   // the server in tap order (last-arrival wins) and must not revert
   // each other's optimistic state.
   const writeChainRef = useRef(new Map<string, Promise<void>>());
+  // Committed writes mark the feed data stale — but refreshing mid-
+  // playback re-renders the RSC tree for the current ?song= URL,
+  // which auto-advance already moved past the mounted key: the keyed
+  // remount would destroy the player and restart the song paused.
+  // The grid is invisible until the overlay closes anyway, so the
+  // refresh is flushed on close/unmount instead.
+  const pendingRefreshRef = useRef(false);
+  const flushPendingRefresh = useCallback(() => {
+    if (pendingRefreshRef.current) {
+      pendingRefreshRef.current = false;
+      router.refresh();
+    }
+  }, [router]);
+  // Exits that don't pass through close() — Back/Forward to a
+  // non-song URL, a tab link, a keyed remount — unmount the overlay
+  // and flush the refresh here.
+  useEffect(() => () => flushPendingRefresh(), [flushPendingRefresh]);
 
-  // A server-driven queue change merges only NEW ids — preserving an
-  // optimistic tap whose write is still in flight (or whose response
-  // hasn't re-rendered yet).
+  // A server-driven queue change merges rows by id: NEW ids seed
+  // both maps, and rows with no pending optimistic write take the
+  // server's value — a reaction tapped on another device reaches us
+  // through a refresh. A locally-pending tap (optimistic value not
+  // yet committed) keeps its state either way.
   useEffect(() => {
     let changed = false;
     for (const s of stableQueue) {
-      if (!reactionsRef.current.has(s.id)) {
+      const local = reactionsRef.current.get(s.id);
+      const pending = local !== committedRef.current.get(s.id);
+      if (!pending && local !== s.reaction) {
         reactionsRef.current.set(s.id, s.reaction);
         committedRef.current.set(s.id, s.reaction);
         changed = true;
       }
     }
     if (changed) setReactions(new Map(reactionsRef.current));
+  }, [stableQueue]);
+
+  // Re-follow the playing song when the queue's contents shift —
+  // otherwise a refresh that reorders or shrinks the queue leaves
+  // indexRef pointing at the wrong row (or past the end, where no
+  // player would ever be created). Same pattern as the watch page's
+  // playlist re-follow.
+  useEffect(() => {
+    const idx = stableQueue.findIndex(
+      (s) => s.id === playingIdRef.current
+    );
+    if (idx !== -1) {
+      indexRef.current = idx;
+    } else {
+      // The playing song left the queue entirely — clamp to the
+      // last reachable row; the loaded audio keeps playing, the
+      // display just follows the nearest entry.
+      indexRef.current = Math.max(0, stableQueue.length - 1);
+      playingIdRef.current = stableQueue[indexRef.current]?.id;
+    }
+    setIndex(indexRef.current);
   }, [stableQueue]);
 
   const events = useMemo<PlayerEvents>(
@@ -173,7 +221,12 @@ export function SongPlayerOverlay({
   useEffect(() => {
     const joiner = closeHref.includes("?") ? "&" : "?";
     const urlFor = (id: string) => `${closeHref}${joiner}song=${id}`;
-    const close = () => router.push(closeHref, { scroll: false });
+    const close = () => {
+      // Flush before navigating so the push can't land on the stale
+      // cached payload the write(s) invalidated.
+      flushPendingRefresh();
+      router.push(closeHref, { scroll: false });
+    };
 
     // Switch to another queue position by loading it into the SAME
     // player instead of navigating — keeps the element (and
@@ -183,6 +236,7 @@ export function SongPlayerOverlay({
       if (!s) return;
       indexRef.current = next;
       setIndex(next);
+      playingIdRef.current = s.id;
       playerRef.current?.loadVideoById({
         videoId: s.videoId,
         startSeconds: s.startSeconds,
@@ -270,7 +324,7 @@ export function SongPlayerOverlay({
       document.body.style.overflow = prevOverflow;
       finishRef.current = null;
     };
-  }, [stableQueue, closeHref, router, playerRef]);
+  }, [stableQueue, closeHref, router, playerRef, flushPendingRefresh]);
 
   // Clamp at render too: a server-driven queue change can leave
   // `index` pointing past the new end until the effect re-seeds.
@@ -295,11 +349,9 @@ export function SongPlayerOverlay({
     // Route handler, not a server action: an action's revalidation
     // re-renders this route, which would destroy and recreate the
     // YouTube player on every tap. Writes chain per song so rapid
-    // taps reach the server in order; the refresh on success busts
-    // the client router cache revalidatePath can't reach (the
-    // catalog behind the overlay and the Liked tab would otherwise
-    // serve a stale payload for staleTimes.dynamic's 300s), and the
-    // signature-stabilized queue keeps it from restarting playback.
+    // taps reach the server in order; success flags the feed data
+    // stale — router.refresh() can't run mid-playback (see
+    // pendingRefreshRef above), so it's deferred to close/unmount.
     const prior = writeChainRef.current.get(songId) ?? Promise.resolve();
     const write = prior
       .then(() =>
@@ -316,7 +368,7 @@ export function SongPlayerOverlay({
       .then((res) => {
         if (!res.ok) throw new Error(`reaction failed: ${res.status}`);
         committedRef.current.set(songId, next);
-        router.refresh();
+        pendingRefreshRef.current = true;
       })
       .catch(() => {
         if (reactionsRef.current.get(songId) === next) {
@@ -405,6 +457,7 @@ export function SongPlayerOverlay({
               <button
                 onClick={() => react("like")}
                 aria-label="Like song"
+                aria-pressed={currentReaction === "like"}
                 className={cn(
                   "flex h-12 w-12 items-center justify-center",
                   "rounded-full bg-black/60 transition-colors",
@@ -426,6 +479,7 @@ export function SongPlayerOverlay({
               <button
                 onClick={() => react("dislike")}
                 aria-label="Dislike song"
+                aria-pressed={currentReaction === "dislike"}
                 className={cn(
                   "flex h-12 w-12 items-center justify-center",
                   "rounded-full bg-black/60 transition-colors",

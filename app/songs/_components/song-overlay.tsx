@@ -40,14 +40,15 @@ export async function SongOverlay({
   profileId: string | null;
   closeHref: string;
 }) {
-  // Only a ?video= drill-in or the "mine" scope narrows the feed's
-  // rows below the full catalog — everywhere else those rows already
-  // ARE the continuation, so reuse the same params object and let
-  // getSongs' React cache() fold this into the first call. On "liked"
-  // the feed rows come from getLikedSongs and the same params then
-  // still read as the plain catalog (getSongs ignores the view).
+  // Only a ?video= drill-in or the "mine"/"liked" scopes narrow the
+  // feed's rows below the full catalog — everywhere else those rows
+  // already ARE the continuation, so reuse the same params object
+  // and let getSongs' React cache() fold this into the first call.
+  // "liked" is coerced explicitly rather than relying on getSongs
+  // ignoring the view.
   const catalogFeed: SongsFeedParams =
-    feed.video !== null || feed.view === "mine"
+    feed.video !== null || feed.view === "mine" ||
+    feed.view === "liked"
       ? { ...feed, view: "songs", video: null }
       : feed;
   const [song, rows, catalogRows] = await Promise.all([

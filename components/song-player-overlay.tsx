@@ -71,8 +71,24 @@ export function SongPlayerOverlay({
   // this ref surfaces it to the player events created above.
   const finishRef = useRef<((code?: number) => void) | null>(null);
 
+  // A router.refresh() (fired after each reaction write) lands with
+  // a rebuilt, content-identical queue prop — hand the player a list
+  // stabilized on the id sequence, not prop identity, so the refresh
+  // can't tear the iframe down and rebuild it. Reaction values live
+  // in the local map below, so the signature only needs the ids; a
+  // stale startSeconds/title snapshot wins, same accepted trade-off
+  // as WatchExperience's playlist signature.
+  const signature = queue.map((s) => s.id).join("|");
+  const [stable, setStable] = useState({ signature, list: queue });
+  if (stable.signature !== signature) {
+    setStable({ signature, list: queue });
+  }
+  const stableQueue = stable.list;
+
   // Per-song reaction keyed by song id — seeded from the queue and
-  // optimistically updated on tap (reverted on a failed write).
+  // optimistically updated on tap. `committed` tracks the last
+  // server-acknowledged value so a failed write reverts to what the
+  // DB actually holds, not to an equally-unconfirmed earlier tap.
   const [reactions, setReactions] = useState(
     () =>
       new Map<string, SongReaction | null>(
@@ -80,20 +96,26 @@ export function SongPlayerOverlay({
       )
   );
   const reactionsRef = useRef(reactions);
+  const committedRef = useRef(new Map(reactions));
+  // Reaction writes serialize per song: two rapid taps must reach
+  // the server in tap order (last-arrival wins) and must not revert
+  // each other's optimistic state.
+  const writeChainRef = useRef(new Map<string, Promise<void>>());
 
   // A server-driven queue change merges only NEW ids — preserving an
   // optimistic tap whose write is still in flight (or whose response
   // hasn't re-rendered yet).
   useEffect(() => {
     let changed = false;
-    for (const s of queue) {
+    for (const s of stableQueue) {
       if (!reactionsRef.current.has(s.id)) {
         reactionsRef.current.set(s.id, s.reaction);
+        committedRef.current.set(s.id, s.reaction);
         changed = true;
       }
     }
     if (changed) setReactions(new Map(reactionsRef.current));
-  }, [queue]);
+  }, [stableQueue]);
 
   const events = useMemo<PlayerEvents>(
     () => ({
@@ -116,7 +138,7 @@ export function SongPlayerOverlay({
     []
   );
   const getInitialLoad = useCallback((): PlayerLoad | null => {
-    const cur = queue[indexRef.current];
+    const cur = stableQueue[indexRef.current];
     if (!cur) return null;
     return {
       key: cur.id,
@@ -124,12 +146,12 @@ export function SongPlayerOverlay({
       startSeconds: cur.startSeconds,
       endSeconds: cur.endSeconds ?? undefined,
     };
-  }, [queue]);
+  }, [stableQueue]);
   // A finishSong() during init skipped its loadVideoById (the ref
   // was still null) — catch up if the index moved meanwhile.
   const getCatchUpLoad = useCallback(
     (initial: PlayerLoad): PlayerLoad | null => {
-      const want = queue[indexRef.current];
+      const want = stableQueue[indexRef.current];
       if (!want || want.id === initial.key) return null;
       return {
         key: want.id,
@@ -138,7 +160,7 @@ export function SongPlayerOverlay({
         endSeconds: want.endSeconds ?? undefined,
       };
     },
-    [queue]
+    [stableQueue]
   );
   const { playerRef, loadFailed } = useYouTubePlayer({
     containerRef,
@@ -157,7 +179,7 @@ export function SongPlayerOverlay({
     // player instead of navigating — keeps the element (and
     // fullscreen mode) mounted. Shared by autoplay and the end poll.
     const goTo = (next: number) => {
-      const s = queue[next];
+      const s = stableQueue[next];
       if (!s) return;
       indexRef.current = next;
       setIndex(next);
@@ -183,7 +205,7 @@ export function SongPlayerOverlay({
         const p = playerRef.current;
         const videoId =
           (p ? loadedVideoId(p) : undefined) ??
-          queue[indexRef.current]?.videoId;
+          stableQueue[indexRef.current]?.videoId;
         if (videoId) {
           fetch("/api/video-errors", {
             method: "POST",
@@ -194,7 +216,7 @@ export function SongPlayerOverlay({
       }
       if (advancingRef.current) return;
       advancingRef.current = true;
-      if (indexRef.current + 1 < queue.length) {
+      if (indexRef.current + 1 < stableQueue.length) {
         goTo(indexRef.current + 1);
       } else {
         close();
@@ -210,7 +232,7 @@ export function SongPlayerOverlay({
     const tick = window.setInterval(() => {
       const p = playerRef.current;
       if (!p) return;
-      const cur = queue[indexRef.current];
+      const cur = stableQueue[indexRef.current];
       if (!cur) return;
       const loadedId = loadedVideoId(p);
       if (loadedId && loadedId !== cur.videoId) {
@@ -248,21 +270,23 @@ export function SongPlayerOverlay({
       document.body.style.overflow = prevOverflow;
       finishRef.current = null;
     };
-  }, [queue, closeHref, router, playerRef]);
+  }, [stableQueue, closeHref, router, playerRef]);
 
   // Clamp at render too: a server-driven queue change can leave
   // `index` pointing past the new end until the effect re-seeds.
-  const curIndex = Math.min(index, queue.length - 1);
-  const current = queue[curIndex];
+  const curIndex = Math.min(index, stableQueue.length - 1);
+  const current = stableQueue[curIndex];
 
   // Toggle a reaction on the song at the queue's playing position —
   // indexRef leads the render `index` in the ~one-render gap after
   // goTo, so the write targets the song the player actually loaded
   // (same reason the watch page reacts on latestRef, not current).
-  // Optimistic update, reverted on a failed write.
+  // Optimistic update; a failed write reverts to the last committed
+  // value, and only if this tap's optimistic value is still current
+  // (a newer tap may have landed while the write was in flight).
   const react = (dir: SongReaction) => {
     if (!profileId) return;
-    const songId = queue[indexRef.current]?.id;
+    const songId = stableQueue[indexRef.current]?.id;
     if (!songId) return;
     const prev = reactionsRef.current.get(songId) ?? null;
     const next = prev === dir ? null : dir;
@@ -270,27 +294,42 @@ export function SongPlayerOverlay({
     setReactions(new Map(reactionsRef.current));
     // Route handler, not a server action: an action's revalidation
     // re-renders this route, which would destroy and recreate the
-    // YouTube player on every tap.
-    fetch("/api/song-reactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        profileId,
-        songId,
-        reaction: next,
-      }),
-    })
+    // YouTube player on every tap. Writes chain per song so rapid
+    // taps reach the server in order; the refresh on success busts
+    // the client router cache revalidatePath can't reach (the
+    // catalog behind the overlay and the Liked tab would otherwise
+    // serve a stale payload for staleTimes.dynamic's 300s), and the
+    // signature-stabilized queue keeps it from restarting playback.
+    const prior = writeChainRef.current.get(songId) ?? Promise.resolve();
+    const write = prior
+      .then(() =>
+        fetch("/api/song-reactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileId,
+            songId,
+            reaction: next,
+          }),
+        })
+      )
       .then((res) => {
         if (!res.ok) throw new Error(`reaction failed: ${res.status}`);
+        committedRef.current.set(songId, next);
+        router.refresh();
       })
       .catch(() => {
-        reactionsRef.current.set(songId, prev);
-        setReactions(new Map(reactionsRef.current));
+        if (reactionsRef.current.get(songId) === next) {
+          const committed = committedRef.current.get(songId) ?? null;
+          reactionsRef.current.set(songId, committed);
+          setReactions(new Map(reactionsRef.current));
+        }
       });
+    writeChainRef.current.set(songId, write);
   };
 
   if (!current) return null;
-  const next = queue[curIndex + 1];
+  const next = stableQueue[curIndex + 1];
   const currentReaction = reactions.get(current.id) ?? null;
 
   const start = formatDuration(current.startSeconds) ?? "0:00";

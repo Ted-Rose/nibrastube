@@ -5,7 +5,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession, isKidSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { songReactions, songs, videos } from "@/lib/db/schema";
+import {
+  profiles,
+  songReactions,
+  songs,
+  videos,
+} from "@/lib/db/schema";
 import {
   assertCanManageProfile,
   ProfileAccessError,
@@ -52,14 +57,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Reactions only on songs the catalog could actually surface: the
-  // row exists and its compilation passes the same visibleVideo
-  // (made-for-kids) + suitableVideo (18+/playback-block) gate every
-  // /songs read applies.
+  // Gate the write on both FK targets in one query: the profile row
+  // must exist (the auth chain verifies authority, not existence —
+  // a forged activeProfileId cookie or a JWT outliving a deleted
+  // profile would otherwise reach the insert and die on the FK),
+  // and the song must be one the catalog could actually surface
+  // (visibleVideo made-for-kids + suitableVideo 18+/playback-block,
+  // the same gate every /songs read applies).
   const visible = await db
     .select({ songId: songs.id })
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
+    .innerJoin(profiles, eq(profiles.id, profileId))
     .where(
       and(eq(songs.id, songId), visibleVideo, suitableVideo)
     )

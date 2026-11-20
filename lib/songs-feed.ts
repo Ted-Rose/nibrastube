@@ -308,7 +308,7 @@ export const getSongs = cache(async function getSongs(
 // "mine", so mightNotBeSong rows stay visible (badged). The inner
 // joins mean an unplayable compilation's likes hide while its video
 // row stays unsuitable.
-export async function getLikedSongs(
+export const getLikedSongs = cache(async function getLikedSongs(
   profileId: string,
   feed: Pick<SongsFeedParams, "sort" | "dir" | "q">,
   viewerId?: string,
@@ -337,7 +337,7 @@ export async function getLikedSongs(
     .limit(limit);
 
   return rows.map((row) => toFeedSong(row, viewerId));
-}
+});
 
 export interface FeedCompilation {
   id: string;

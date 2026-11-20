@@ -273,6 +273,29 @@ export const videoReactions = pgTable(
   })
 );
 
+// Kid reactions per (profile, song): one row, latest wins — same
+// model as video_reactions but keyed on the shared songs registry.
+// "like" feeds the Liked tab/shelf on /songs; "dislike" is a badge
+// only (the catalog has no ranking to downrank into).
+export const songReactions = pgTable(
+  "song_reactions",
+  {
+    profileId: uuid("profile_id")
+      .references(() => profiles.id, { onDelete: "cascade" })
+      .notNull(),
+    songId: uuid("song_id")
+      .references(() => songs.id, { onDelete: "cascade" })
+      .notNull(),
+    reaction: text("reaction").notNull(), // "like" | "dislike"
+    reactedAt: timestamp("reacted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.profileId, table.songId] }),
+  })
+);
+
 // "Shown but ignored" feed impressions per (profile, video): a grid
 // card ≥50% visible for ≥1s (tapped or not — the ranking masks the
 // penalty once the video has watch progress). A weak negative ranking

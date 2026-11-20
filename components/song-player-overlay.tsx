@@ -9,7 +9,13 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MusicNotes, X } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  MusicNotes,
+  ThumbsDown,
+  ThumbsUp,
+  X,
+} from "@phosphor-icons/react";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
 import {
   useYouTubePlayer,
@@ -19,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { SongQueueEntry } from "@/lib/songs-feed";
+import type { SongQueueEntry, SongReaction } from "@/lib/songs-feed";
 import { loadedVideoId } from "@/lib/yt-player";
 
 // In-app segment player for ?song=<uuid> — same chrome and playback
@@ -36,6 +42,7 @@ import { loadedVideoId } from "@/lib/yt-player";
 export function SongPlayerOverlay({
   queue,
   startIndex,
+  profileId,
   closeHref,
 }: {
   // Feed-order songs, trimmed to playback fields by the server
@@ -45,6 +52,10 @@ export function SongPlayerOverlay({
   // server wrapper keys this component by song id, so another ?song=
   // (Back/Forward, a fresh link) remounts with a new startIndex.
   startIndex: number;
+  // The profile reaction writes attach to (kid session or lock
+  // cookie). Null hides the like/dislike buttons — anonymous visitors
+  // and lockless parents have nothing to write against.
+  profileId: string | null;
   // The feed URL without ?song= — closing is a deterministic
   // navigation, not history.back(), so a shared ?song= link can't
   // strand the visitor on a site exit.
@@ -59,6 +70,30 @@ export function SongPlayerOverlay({
   // finishSong lives inside the effect (it closes over goTo/close);
   // this ref surfaces it to the player events created above.
   const finishRef = useRef<((code?: number) => void) | null>(null);
+
+  // Per-song reaction keyed by song id — seeded from the queue and
+  // optimistically updated on tap (reverted on a failed write).
+  const [reactions, setReactions] = useState(
+    () =>
+      new Map<string, SongReaction | null>(
+        queue.map((s) => [s.id, s.reaction])
+      )
+  );
+  const reactionsRef = useRef(reactions);
+
+  // A server-driven queue change merges only NEW ids — preserving an
+  // optimistic tap whose write is still in flight (or whose response
+  // hasn't re-rendered yet).
+  useEffect(() => {
+    let changed = false;
+    for (const s of queue) {
+      if (!reactionsRef.current.has(s.id)) {
+        reactionsRef.current.set(s.id, s.reaction);
+        changed = true;
+      }
+    }
+    if (changed) setReactions(new Map(reactionsRef.current));
+  }, [queue]);
 
   const events = useMemo<PlayerEvents>(
     () => ({
@@ -219,8 +254,44 @@ export function SongPlayerOverlay({
   // `index` pointing past the new end until the effect re-seeds.
   const curIndex = Math.min(index, queue.length - 1);
   const current = queue[curIndex];
+
+  // Toggle a reaction on the song at the queue's playing position —
+  // indexRef leads the render `index` in the ~one-render gap after
+  // goTo, so the write targets the song the player actually loaded
+  // (same reason the watch page reacts on latestRef, not current).
+  // Optimistic update, reverted on a failed write.
+  const react = (dir: SongReaction) => {
+    if (!profileId) return;
+    const songId = queue[indexRef.current]?.id;
+    if (!songId) return;
+    const prev = reactionsRef.current.get(songId) ?? null;
+    const next = prev === dir ? null : dir;
+    reactionsRef.current.set(songId, next);
+    setReactions(new Map(reactionsRef.current));
+    // Route handler, not a server action: an action's revalidation
+    // re-renders this route, which would destroy and recreate the
+    // YouTube player on every tap.
+    fetch("/api/song-reactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId,
+        songId,
+        reaction: next,
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`reaction failed: ${res.status}`);
+      })
+      .catch(() => {
+        reactionsRef.current.set(songId, prev);
+        setReactions(new Map(reactionsRef.current));
+      });
+  };
+
   if (!current) return null;
   const next = queue[curIndex + 1];
+  const currentReaction = reactions.get(current.id) ?? null;
 
   const start = formatDuration(current.startSeconds) ?? "0:00";
   const endLabel =
@@ -287,6 +358,55 @@ export function SongPlayerOverlay({
           <div ref={containerRef} className="h-full w-full">
             <div ref={mountRef} className="h-full w-full" />
           </div>
+          {/* Reaction overlay must live inside FullscreenPlayer —
+              in native fullscreen only descendants of the fullscreen
+              element render (same technique as the watch page). */}
+          {profileId && (
+            <div className="absolute top-3 right-3 z-50 flex gap-3">
+              <button
+                onClick={() => react("like")}
+                aria-label="Like song"
+                className={cn(
+                  "flex h-12 w-12 items-center justify-center",
+                  "rounded-full bg-black/60 transition-colors",
+                  "hover:bg-black/80"
+                )}
+              >
+                <ThumbsUp
+                  size={24}
+                  weight={
+                    currentReaction === "like" ? "fill" : "regular"
+                  }
+                  className={
+                    currentReaction === "like"
+                      ? "text-primary"
+                      : "text-white"
+                  }
+                />
+              </button>
+              <button
+                onClick={() => react("dislike")}
+                aria-label="Dislike song"
+                className={cn(
+                  "flex h-12 w-12 items-center justify-center",
+                  "rounded-full bg-black/60 transition-colors",
+                  "hover:bg-black/80"
+                )}
+              >
+                <ThumbsDown
+                  size={24}
+                  weight={
+                    currentReaction === "dislike" ? "fill" : "regular"
+                  }
+                  className={
+                    currentReaction === "dislike"
+                      ? "text-red-500"
+                      : "text-white"
+                  }
+                />
+              </button>
+            </div>
+          )}
           {/* Opaque notice OVER the player, not a swap — unmounting
               containerRef would null the ref and make the timeout's
               onReady self-clear unreachable. */}

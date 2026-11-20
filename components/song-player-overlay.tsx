@@ -165,8 +165,8 @@ export function SongPlayerOverlay({
       indexRef.current = idx;
     } else {
       // The playing song left the queue entirely — clamp to the
-      // last reachable row; the loaded audio keeps playing, the
-      // display just follows the nearest entry.
+      // last reachable row; the display (and within ~500ms, via the
+      // rogue-load tick, playback) just follows the nearest entry.
       indexRef.current = Math.max(0, stableQueue.length - 1);
       playingIdRef.current = stableQueue[indexRef.current]?.id;
     }

@@ -21,11 +21,15 @@ export function CatalogHeader({
   feed,
   tabs,
   signedIn,
+  hasSession,
   kidsHref,
 }: {
   feed: SongsFeedParams;
   tabs: KidsViewTab[];
   signedIn: boolean;
+  // Any signed-in session — kid sessions suppress the signup link
+  // (it only redirects them back to their feed anyway).
+  hasSession: boolean;
   // /kids/<activeProfileId> for locked kid devices, null otherwise.
   kidsHref: string | null;
 }) {
@@ -86,12 +90,14 @@ export function CatalogHeader({
                   Log in
                 </Link>
               )}
-              <Link
-                href="/signup"
-                className="inline-flex h-11 shrink-0 items-center rounded-full bg-primary px-5 text-base font-black text-white shadow-md transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40 motion-safe:hover:scale-105"
-              >
-                Sign up free
-              </Link>
+              {!hasSession && (
+                <Link
+                  href="/signup"
+                  className="inline-flex h-11 shrink-0 items-center rounded-full bg-primary px-5 text-base font-black text-white shadow-md transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/40 motion-safe:hover:scale-105"
+                >
+                  Sign up free
+                </Link>
+              )}
             </>
           )}
         </>

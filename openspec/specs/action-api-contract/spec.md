@@ -4,7 +4,7 @@
 
 Defines the guard and response-shape contract every mutation path
 follows: how `app/actions/*` server actions order their auth
-checks, how the three `/api/*` routes validate and answer
+checks, how the mutating `/api/*` routes validate and answer
 requests, and how caught failures reach Sentry through the
 `lib/report.ts` chokepoint.
 
@@ -43,11 +43,11 @@ exception: the invite token itself is the credential.
 ### Requirement: Kid-scope writes use the kid-data guard
 
 Actions writing kid-side data (playlists — `/api/video-reactions`
-inlines the same gate) SHALL gate via `assertCanEditKidData` —
-which accepts a matching kid session, a matching `activeProfileId`
-lock, or a managing parent — and SHALL NOT call
-`requireParentUnlocked`, so a locked kid device can keep using
-them. Kid-scope read actions SHALL gate via the boolean
+and `/api/song-reactions` inline the same gate) SHALL gate via
+`assertCanEditKidData` — which accepts a matching kid session, a
+matching `activeProfileId` lock, or a managing parent — and SHALL
+NOT call `requireParentUnlocked`, so a locked kid device can keep
+using them. Kid-scope read actions SHALL gate via the boolean
 `canViewProfile`; dashboard paging reads keep the unlocked-parent
 + `assertCanManageProfile` gate.
 
@@ -65,11 +65,13 @@ them. Kid-scope read actions SHALL gate via the boolean
 
 ### Requirement: API routes share the ok/status envelope
 
-`/api/watch-progress` and `/api/video-reactions` SHALL parse the
-JSON body with zod and respond `{ ok: false }` with a status — 400
-for invalid bodies, 403 for auth or whitelist failures — and
-`{ ok: true }` on success. `/api/sync-channels` SHALL answer
-`{ ok: true, alreadyDone: boolean }` on GET and POST alike.
+`/api/watch-progress`, `/api/video-reactions` and
+`/api/song-reactions` SHALL parse the JSON body with zod and
+respond `{ ok: false }` with a status — 400 for invalid bodies, 403
+for auth or content-gate failures (whitelist membership for videos,
+catalog visibility for songs) — and `{ ok: true }` on success.
+`/api/sync-channels` SHALL answer `{ ok: true, alreadyDone:
+boolean }` on GET and POST alike.
 
 #### Scenario: Malformed body is a 400
 

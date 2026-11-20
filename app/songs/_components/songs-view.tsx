@@ -18,27 +18,7 @@ import {
   VideoGridSkeleton,
 } from "@/components/video-grid-skeleton";
 import { HomeShelves } from "./home-shelves";
-import { feedTitle, SONGS_VIEWS } from "./view-config";
-
-// Sort chip order — default (recent:desc = Newest) first. songsFeedQuery
-// drops default sort/dir values, so the default chip's href stays clean.
-const SORT_OPTIONS = [
-  { sort: "recent", dir: "desc", label: "Newest" },
-  { sort: "recent", dir: "asc", label: "Oldest" },
-  { sort: "title", dir: "asc", label: "A–Z" },
-  { sort: "title", dir: "desc", label: "Z–A" },
-  { sort: "length", dir: "asc", label: "Shortest" },
-  { sort: "length", dir: "desc", label: "Longest" },
-] as const;
-
-function sortOptions(feed: SongsFeedParams) {
-  return SORT_OPTIONS.map((o) => ({
-    key: `${o.sort}:${o.dir}`,
-    label: o.label,
-    href: songsCatalogUrl(feed, { sort: o.sort, dir: o.dir }),
-    active: o.sort === feed.sort && o.dir === feed.dir,
-  }));
-}
+import { feedTitle, sortOptions, SONGS_VIEWS } from "./view-config";
 
 // The Songs tab (and the signed-in Yours tab) plus the ?video=
 // compilation drill-in — all render the song grid. The plain Songs tab
@@ -47,9 +27,15 @@ function sortOptions(feed: SongsFeedParams) {
 export async function SongsView({
   feed,
   userId,
+  hasSession,
+  profileId,
 }: {
   feed: SongsFeedParams;
   userId: string | null;
+  // Any signed-in session — suppresses the "Sign up free" CTA that
+  // only bounces a kid session back to its feed.
+  hasSession: boolean;
+  profileId: string | null;
 }) {
   const { video, q: query } = feed;
   const drilledIn = feed.view === "songs" && video !== null;
@@ -58,16 +44,29 @@ export async function SongsView({
     return (
       <>
         <Suspense fallback={<ShelfSkeleton />}>
-          <HomeShelves feed={feed} userId={userId} />
+          <HomeShelves
+            feed={feed}
+            userId={userId}
+            profileId={profileId}
+          />
         </Suspense>
         <Suspense fallback={<VideoGridSkeleton />}>
-          <AllSongsGrid feed={feed} userId={userId} />
+          <AllSongsGrid
+            feed={feed}
+            userId={userId}
+            hasSession={hasSession}
+            profileId={profileId}
+          />
         </Suspense>
       </>
     );
   }
 
-  const rows = await getSongs(feed, userId ?? undefined);
+  const rows = await getSongs(
+    feed,
+    userId ?? undefined,
+    profileId ?? undefined
+  );
 
   let videoTitle: string | null = null;
   if (drilledIn) {
@@ -107,10 +106,14 @@ export async function SongsView({
             href: "/parent/dashboard",
             prefetch: false,
           }
-        : {
-            label: "Sign up free",
-            href: "/signup",
-          };
+        : hasSession
+          ? // Kid session on an empty grid — signup is a dead-end
+            // redirect back to their feed, and they can't import.
+            undefined
+          : {
+              label: "Sign up free",
+              href: "/signup",
+            };
 
   return (
     <>
@@ -149,11 +152,19 @@ export async function SongsView({
 async function AllSongsGrid({
   feed,
   userId,
+  hasSession,
+  profileId,
 }: {
   feed: SongsFeedParams;
   userId: string | null;
+  hasSession: boolean;
+  profileId: string | null;
 }) {
-  const rows = await getSongs(feed, userId ?? undefined);
+  const rows = await getSongs(
+    feed,
+    userId ?? undefined,
+    profileId ?? undefined
+  );
 
   return (
     <>
@@ -175,10 +186,13 @@ async function AllSongsGrid({
                   href: "/parent/dashboard",
                   prefetch: false,
                 }
-              : {
-                  label: "Sign up free",
-                  href: "/signup",
-                }
+              : hasSession
+                ? // Kid session — signup would just redirect back.
+                  undefined
+                : {
+                    label: "Sign up free",
+                    href: "/signup",
+                  }
           }
         />
       ) : (

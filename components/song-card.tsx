@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { Play } from "@phosphor-icons/react/dist/ssr";
+import {
+  Heart,
+  Play,
+  ThumbsDown,
+} from "@phosphor-icons/react/dist/ssr";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDuration } from "@/lib/format";
 import type { FeedSong } from "@/lib/songs-feed";
@@ -66,6 +70,31 @@ export function SongCard({
               loading={eager ? "eager" : "lazy"}
               decoding="async"
             />
+            {song.reaction && (
+              <div
+                className={cn(
+                  "absolute top-3 left-3 flex h-9 w-9 items-center",
+                  "justify-center rounded-full bg-white/90 shadow"
+                )}
+              >
+                <span className="sr-only">
+                  {song.reaction === "like" ? "Liked" : "Disliked"}
+                </span>
+                {song.reaction === "like" ? (
+                  <Heart
+                    weight="fill"
+                    className="text-primary"
+                    size={20}
+                  />
+                ) : (
+                  <ThumbsDown
+                    weight="fill"
+                    className="text-red-500"
+                    size={20}
+                  />
+                )}
+              </div>
+            )}
             <div
               className={cn(
                 "absolute inset-0 flex items-center justify-center",

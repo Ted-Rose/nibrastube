@@ -9,7 +9,13 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MusicNotes, X } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  MusicNotes,
+  ThumbsDown,
+  ThumbsUp,
+  X,
+} from "@phosphor-icons/react";
 import { FullscreenPlayer } from "@/components/fullscreen-player";
 import {
   useYouTubePlayer,
@@ -19,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { SongQueueEntry } from "@/lib/songs-feed";
+import type { SongQueueEntry, SongReaction } from "@/lib/songs-feed";
 import { loadedVideoId } from "@/lib/yt-player";
 
 // In-app segment player for ?song=<uuid> — same chrome and playback
@@ -36,6 +42,7 @@ import { loadedVideoId } from "@/lib/yt-player";
 export function SongPlayerOverlay({
   queue,
   startIndex,
+  profileId,
   closeHref,
 }: {
   // Feed-order songs, trimmed to playback fields by the server
@@ -45,6 +52,10 @@ export function SongPlayerOverlay({
   // server wrapper keys this component by song id, so another ?song=
   // (Back/Forward, a fresh link) remounts with a new startIndex.
   startIndex: number;
+  // The profile reaction writes attach to (kid session or lock
+  // cookie). Null hides the like/dislike buttons — anonymous visitors
+  // and lockless parents have nothing to write against.
+  profileId: string | null;
   // The feed URL without ?song= — closing is a deterministic
   // navigation, not history.back(), so a shared ?song= link can't
   // strand the visitor on a site exit.
@@ -59,6 +70,108 @@ export function SongPlayerOverlay({
   // finishSong lives inside the effect (it closes over goTo/close);
   // this ref surfaces it to the player events created above.
   const finishRef = useRef<((code?: number) => void) | null>(null);
+
+  // Any server-driven re-render can land a rebuilt, content-
+  // identical queue prop — hand the player a list stabilized on the
+  // id sequence, not prop identity, so a refresh can't tear the
+  // iframe down and rebuild it. Reaction values live in the local
+  // map below, so the signature only needs the ids; a stale
+  // startSeconds/title snapshot wins, same accepted trade-off as
+  // WatchExperience's playlist signature.
+  const signature = queue.map((s) => s.id).join("|");
+  const [stable, setStable] = useState({ signature, list: queue });
+  if (stable.signature !== signature) {
+    setStable({ signature, list: queue });
+  }
+  const stableQueue = stable.list;
+
+  // The actually-playing song, tracked BY ID — a refreshed queue can
+  // reorder or drop rows (disliking on the Liked tab removes the
+  // playing row), and indexRef alone would then point at the wrong
+  // slot or past the new end.
+  const playingIdRef = useRef(stableQueue[startIndex]?.id);
+
+  // Per-song reaction keyed by song id — seeded from the queue and
+  // optimistically updated on tap. `committed` tracks the last
+  // server-acknowledged value so a failed write reverts to what the
+  // DB actually holds, not to an equally-unconfirmed earlier tap.
+  const [reactions, setReactions] = useState(
+    () =>
+      new Map<string, SongReaction | null>(
+        queue.map((s) => [s.id, s.reaction])
+      )
+  );
+  const reactionsRef = useRef(reactions);
+  const committedRef = useRef(new Map(reactions));
+  // Reaction writes serialize per song: two rapid taps must reach
+  // the server in tap order (last-arrival wins) and must not revert
+  // each other's optimistic state.
+  const writeChainRef = useRef(new Map<string, Promise<void>>());
+  // Committed writes mark the feed data stale — but refreshing mid-
+  // playback re-renders the RSC tree for the current ?song= URL,
+  // which auto-advance already moved past the mounted key: the keyed
+  // remount would destroy the player and restart the song paused.
+  // The grid is invisible until the overlay closes anyway, so the
+  // refresh is flushed on close/unmount instead.
+  const pendingRefreshRef = useRef(false);
+  const flushPendingRefresh = useCallback(() => {
+    if (pendingRefreshRef.current) {
+      pendingRefreshRef.current = false;
+      router.refresh();
+    }
+  }, [router]);
+  // Exits that don't pass through close() — Back/Forward to a
+  // non-song URL, a tab link, a keyed remount — unmount the overlay
+  // and flush the refresh here.
+  useEffect(() => () => flushPendingRefresh(), [flushPendingRefresh]);
+
+  // A server-driven queue change merges rows by id: NEW ids seed
+  // both maps, and rows with no pending optimistic write take the
+  // server's value — a reaction tapped on another device reaches us
+  // through a refresh. A locally-pending tap (optimistic value not
+  // yet committed) keeps its state either way. This reads the RAW
+  // queue prop, not stableQueue: the id signature hides reaction-
+  // only diffs, which are exactly what this merge exists to pick up
+  // — and reaction merging feeds no player-facing callback, so it
+  // doesn't need the stability guarantee.
+  useEffect(() => {
+    let changed = false;
+    for (const s of queue) {
+      const local = reactionsRef.current.get(s.id);
+      const pending = local !== committedRef.current.get(s.id);
+      if (!pending && local !== s.reaction) {
+        reactionsRef.current.set(s.id, s.reaction);
+        committedRef.current.set(s.id, s.reaction);
+        changed = true;
+      }
+    }
+    if (changed) setReactions(new Map(reactionsRef.current));
+  }, [queue]);
+
+  // Re-follow the playing song when the queue's contents shift —
+  // otherwise a refresh that reorders or shrinks the queue leaves
+  // indexRef pointing at the wrong row (or past the end, where no
+  // player would ever be created). Same pattern as the watch page's
+  // playlist re-follow. Defensive today — the deferred refresh
+  // means a mounted instance's queue can't change — but if a live
+  // queue change ever becomes reachable, note the recreated player
+  // would restart the current segment (no resumeAt equivalent like
+  // watch-experience's).
+  useEffect(() => {
+    const idx = stableQueue.findIndex(
+      (s) => s.id === playingIdRef.current
+    );
+    if (idx !== -1) {
+      indexRef.current = idx;
+    } else {
+      // The playing song left the queue entirely — clamp to the
+      // last reachable row; the display (and within ~500ms, via the
+      // rogue-load tick, playback) just follows the nearest entry.
+      indexRef.current = Math.max(0, stableQueue.length - 1);
+      playingIdRef.current = stableQueue[indexRef.current]?.id;
+    }
+    setIndex(indexRef.current);
+  }, [stableQueue]);
 
   const events = useMemo<PlayerEvents>(
     () => ({
@@ -81,7 +194,7 @@ export function SongPlayerOverlay({
     []
   );
   const getInitialLoad = useCallback((): PlayerLoad | null => {
-    const cur = queue[indexRef.current];
+    const cur = stableQueue[indexRef.current];
     if (!cur) return null;
     return {
       key: cur.id,
@@ -89,12 +202,12 @@ export function SongPlayerOverlay({
       startSeconds: cur.startSeconds,
       endSeconds: cur.endSeconds ?? undefined,
     };
-  }, [queue]);
+  }, [stableQueue]);
   // A finishSong() during init skipped its loadVideoById (the ref
   // was still null) — catch up if the index moved meanwhile.
   const getCatchUpLoad = useCallback(
     (initial: PlayerLoad): PlayerLoad | null => {
-      const want = queue[indexRef.current];
+      const want = stableQueue[indexRef.current];
       if (!want || want.id === initial.key) return null;
       return {
         key: want.id,
@@ -103,7 +216,7 @@ export function SongPlayerOverlay({
         endSeconds: want.endSeconds ?? undefined,
       };
     },
-    [queue]
+    [stableQueue]
   );
   const { playerRef, loadFailed } = useYouTubePlayer({
     containerRef,
@@ -116,16 +229,22 @@ export function SongPlayerOverlay({
   useEffect(() => {
     const joiner = closeHref.includes("?") ? "&" : "?";
     const urlFor = (id: string) => `${closeHref}${joiner}song=${id}`;
-    const close = () => router.push(closeHref, { scroll: false });
+    const close = () => {
+      // Flush before navigating so the push can't land on the stale
+      // cached payload the write(s) invalidated.
+      flushPendingRefresh();
+      router.push(closeHref, { scroll: false });
+    };
 
     // Switch to another queue position by loading it into the SAME
     // player instead of navigating — keeps the element (and
     // fullscreen mode) mounted. Shared by autoplay and the end poll.
     const goTo = (next: number) => {
-      const s = queue[next];
+      const s = stableQueue[next];
       if (!s) return;
       indexRef.current = next;
       setIndex(next);
+      playingIdRef.current = s.id;
       playerRef.current?.loadVideoById({
         videoId: s.videoId,
         startSeconds: s.startSeconds,
@@ -148,7 +267,7 @@ export function SongPlayerOverlay({
         const p = playerRef.current;
         const videoId =
           (p ? loadedVideoId(p) : undefined) ??
-          queue[indexRef.current]?.videoId;
+          stableQueue[indexRef.current]?.videoId;
         if (videoId) {
           fetch("/api/video-errors", {
             method: "POST",
@@ -159,7 +278,7 @@ export function SongPlayerOverlay({
       }
       if (advancingRef.current) return;
       advancingRef.current = true;
-      if (indexRef.current + 1 < queue.length) {
+      if (indexRef.current + 1 < stableQueue.length) {
         goTo(indexRef.current + 1);
       } else {
         close();
@@ -175,7 +294,7 @@ export function SongPlayerOverlay({
     const tick = window.setInterval(() => {
       const p = playerRef.current;
       if (!p) return;
-      const cur = queue[indexRef.current];
+      const cur = stableQueue[indexRef.current];
       if (!cur) return;
       const loadedId = loadedVideoId(p);
       if (loadedId && loadedId !== cur.videoId) {
@@ -213,14 +332,65 @@ export function SongPlayerOverlay({
       document.body.style.overflow = prevOverflow;
       finishRef.current = null;
     };
-  }, [queue, closeHref, router, playerRef]);
+  }, [stableQueue, closeHref, router, playerRef, flushPendingRefresh]);
 
   // Clamp at render too: a server-driven queue change can leave
   // `index` pointing past the new end until the effect re-seeds.
-  const curIndex = Math.min(index, queue.length - 1);
-  const current = queue[curIndex];
+  const curIndex = Math.min(index, stableQueue.length - 1);
+  const current = stableQueue[curIndex];
+
+  // Toggle a reaction on the song at the queue's playing position —
+  // indexRef leads the render `index` in the ~one-render gap after
+  // goTo, so the write targets the song the player actually loaded
+  // (same reason the watch page reacts on latestRef, not current).
+  // Optimistic update; a failed write reverts to the last committed
+  // value, and only if this tap's optimistic value is still current
+  // (a newer tap may have landed while the write was in flight).
+  const react = (dir: SongReaction) => {
+    if (!profileId) return;
+    const songId = stableQueue[indexRef.current]?.id;
+    if (!songId) return;
+    const prev = reactionsRef.current.get(songId) ?? null;
+    const next = prev === dir ? null : dir;
+    reactionsRef.current.set(songId, next);
+    setReactions(new Map(reactionsRef.current));
+    // Route handler, not a server action: an action's revalidation
+    // re-renders this route, which would destroy and recreate the
+    // YouTube player on every tap. Writes chain per song so rapid
+    // taps reach the server in order; success flags the feed data
+    // stale — router.refresh() can't run mid-playback (see
+    // pendingRefreshRef above), so it's deferred to close/unmount.
+    const prior = writeChainRef.current.get(songId) ?? Promise.resolve();
+    const write = prior
+      .then(() =>
+        fetch("/api/song-reactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileId,
+            songId,
+            reaction: next,
+          }),
+        })
+      )
+      .then((res) => {
+        if (!res.ok) throw new Error(`reaction failed: ${res.status}`);
+        committedRef.current.set(songId, next);
+        pendingRefreshRef.current = true;
+      })
+      .catch(() => {
+        if (reactionsRef.current.get(songId) === next) {
+          const committed = committedRef.current.get(songId) ?? null;
+          reactionsRef.current.set(songId, committed);
+          setReactions(new Map(reactionsRef.current));
+        }
+      });
+    writeChainRef.current.set(songId, write);
+  };
+
   if (!current) return null;
-  const next = queue[curIndex + 1];
+  const next = stableQueue[curIndex + 1];
+  const currentReaction = reactions.get(current.id) ?? null;
 
   const start = formatDuration(current.startSeconds) ?? "0:00";
   const endLabel =
@@ -287,6 +457,57 @@ export function SongPlayerOverlay({
           <div ref={containerRef} className="h-full w-full">
             <div ref={mountRef} className="h-full w-full" />
           </div>
+          {/* Reaction overlay must live inside FullscreenPlayer —
+              in native fullscreen only descendants of the fullscreen
+              element render (same technique as the watch page). */}
+          {profileId && (
+            <div className="absolute top-3 right-3 z-50 flex gap-3">
+              <button
+                onClick={() => react("like")}
+                aria-label="Like song"
+                aria-pressed={currentReaction === "like"}
+                className={cn(
+                  "flex h-12 w-12 items-center justify-center",
+                  "rounded-full bg-black/60 transition-colors",
+                  "hover:bg-black/80"
+                )}
+              >
+                <ThumbsUp
+                  size={24}
+                  weight={
+                    currentReaction === "like" ? "fill" : "regular"
+                  }
+                  className={
+                    currentReaction === "like"
+                      ? "text-primary"
+                      : "text-white"
+                  }
+                />
+              </button>
+              <button
+                onClick={() => react("dislike")}
+                aria-label="Dislike song"
+                aria-pressed={currentReaction === "dislike"}
+                className={cn(
+                  "flex h-12 w-12 items-center justify-center",
+                  "rounded-full bg-black/60 transition-colors",
+                  "hover:bg-black/80"
+                )}
+              >
+                <ThumbsDown
+                  size={24}
+                  weight={
+                    currentReaction === "dislike" ? "fill" : "regular"
+                  }
+                  className={
+                    currentReaction === "dislike"
+                      ? "text-red-500"
+                      : "text-white"
+                  }
+                />
+              </button>
+            </div>
+          )}
           {/* Opaque notice OVER the player, not a swap — unmounting
               containerRef would null the ref and make the timeout's
               onReady self-clear unreachable. */}

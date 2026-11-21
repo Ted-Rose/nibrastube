@@ -127,14 +127,12 @@ required check (`.github/workflows/require-staging.yml`) fails
   ran red before the staging merge, re-run the failed job
   after it (`gh run rerun <run-id> --failed` or a push).
 
-**Deployments**: `vercel.json`'s `git.deploymentEnabled`
-whitelists `main` + `staging` only — PRs and feature
-branches get no preview deployment (quota saving), so UI
-verification happens on the staging preview after merge,
-not per-PR. Caveat: Vercel reads the config from the
-pushed commit, so the whitelist only applies to pushes
-that already carry it. `deploy.yml` stays `main`-only —
-Cloud Run tracks production, not staging.
+**Deployments**: Vercel deploys every pushed branch —
+`main` to production, everything else (including PR head
+branches) as a preview, so per-PR UI verification can use
+the branch preview URL before the staging merge.
+`deploy.yml` stays `main`-only — Cloud Run tracks
+production, not staging.
 
 ## Layout
 

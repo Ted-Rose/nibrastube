@@ -130,9 +130,12 @@ required check (`.github/workflows/require-staging.yml`) fails
 **Deployments**: Vercel deploys every pushed branch —
 `main` to production, everything else (including PR head
 branches) as a preview, so per-PR UI verification can use
-the branch preview URL before the staging merge.
-`deploy.yml` stays `main`-only — Cloud Run tracks
-production, not staging.
+the branch preview URL before the staging merge. Caveat:
+Vercel reads `vercel.json` from the pushed commit, so
+branches cut before this change still carry the old
+`git.deploymentEnabled` block — rebase or merge `main` to
+get previews. `deploy.yml` stays `main`-only — Cloud Run
+tracks production, not staging.
 
 ## Layout
 

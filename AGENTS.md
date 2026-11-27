@@ -71,8 +71,9 @@ auto-deletes the head branch on merge; expected.
 `STAGING_DATABASE_URL` whenever `VERCEL_ENV=preview`, so
 preview deploys can never touch prod data.
 `STAGING_DATABASE_URL` / `STAGING_DATABASE_URL_UNPOOLED`
-must exist in the Vercel project env (Preview scope); apply
-schema changes to it with `npm run db:migrate:staging`.
+must exist in the Vercel project env (Preview scope) —
+preview builds migrate it automatically; `npm run
+db:migrate:staging` is only for local/manual runs.
 
 **Deployments**: Vercel deploys every pushed branch —
 `main` to production, everything else (including PR head
@@ -749,12 +750,26 @@ npx tsx scripts/test-song-parser.ts   # ad-hoc checks for the song
 ```
 
 DB schema changes: edit `lib/db/schema.ts`, then `npm run
-db:generate` (commit the generated `drizzle/` files); applying
-via `npm run db:migrate` is user-run only — agents hand the
-command off (see "Dangerous commands"). Vercel builds apply
-merged migrations automatically (`vercel-build` — see
-"Deployments"), so do not edit a migration `.sql` after it
-has merged.
+db:generate` (commit the generated `drizzle/` files).
+**Merging to `main` IS the apply step** — Vercel builds run
+`drizzle-kit migrate` before `next build` (`vercel-build` —
+see "Deployments"), and preview builds migrate the staging DB
+the same way, so do not edit a migration `.sql` after it has
+merged and never tell the user to run `db:migrate` just to
+deploy a schema change. Running `npm run db:migrate` manually
+is user-run only (a prod write — see "Dangerous commands");
+`npm run db:migrate:staging` stays agent-safe for local
+checks against the staging DB.
+
+Vercel env vars are managed individually via the authed
+`vercel` CLI (account `industry-analyser`; repo is linked at
+`.vercel/` — there is NO single bundled dotenv var; that
+`ENV_FILE` pattern is Cloud Run only). Useful:
+`vercel env ls`, `vercel env add <NAME> production` (reads
+the value from stdin — pipe it from `.env`, never paste
+secrets into chat/logs),
+`vercel inspect <deployment-url> --logs` (build logs),
+`vercel ls` (recent deploys).
 
 ## Android APK
 
@@ -900,10 +915,14 @@ Repo-local style:
 - Path alias `@/*` → repo root (`tsconfig.json`).
 - Env vars needed: `DATABASE_URL` (Neon pooled endpoint),
   `DATABASE_URL_UNPOOLED` (direct endpoint — used by drizzle-kit
-  migrate), `STAGING_DATABASE_URL` +
+  migrate; must exist at **Production** scope in the Vercel
+  project env because the build itself migrates),
+  `STAGING_DATABASE_URL` +
   `STAGING_DATABASE_URL_UNPOOLED` (the `nibrastube_staging`
   Neon DB — used by every `VERCEL_ENV=preview` deploy and by
-  `npm run db:migrate:staging`), `JWT_SECRET`, `YOUTUBE_API_KEY`,
+  `npm run db:migrate:staging`; the unpooled one must exist at
+  **Preview** scope or preview builds fail at migrate),
+  `JWT_SECRET`, `YOUTUBE_API_KEY`,
   `PUSHER_APP_ID`,
   `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER` (see `.env`,
   never commit it). Sentry: `NEXT_PUBLIC_SENTRY_DSN` enables
@@ -1008,8 +1027,12 @@ Universal rules — follow exactly:
 
 - **Dangerous commands — never run**:
   - `npm run db:migrate` — agents never run it (a production
-    Neon write); tell the user the command instead. For the
-    user: `drizzle.config.ts` prefers `DATABASE_URL_UNPOOLED`,
+    Neon write), and normally don't need to: merged
+    migrations apply automatically on the Vercel build
+    (`vercel-build`). Reserve manual runs for local/dev DBs
+    or emergencies; tell the user the command instead. For
+    the user: `drizzle.config.ts` prefers
+    `DATABASE_URL_UNPOOLED`,
     so the plain command is the right one — never run it
     against the pooled `DATABASE_URL` (PgBouncer breaks
     migrate's session behavior). `npm run db:migrate:staging`

@@ -71,8 +71,9 @@ auto-deletes the head branch on merge; expected.
 `STAGING_DATABASE_URL` whenever `VERCEL_ENV=preview`, so
 preview deploys can never touch prod data.
 `STAGING_DATABASE_URL` / `STAGING_DATABASE_URL_UNPOOLED`
-must exist in the Vercel project env (Preview scope); apply
-schema changes to it with `npm run db:migrate:staging`.
+must exist in the Vercel project env (Preview scope) —
+preview builds migrate it automatically; `npm run
+db:migrate:staging` is only for local/manual runs.
 
 **Deployments**: Vercel deploys every pushed branch —
 `main` to production, everything else (including PR head

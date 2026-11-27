@@ -68,6 +68,7 @@ export async function SongOverlay({
     videoDuration: s.videoDuration,
     startSeconds: s.startSeconds,
     endSeconds: s.endSeconds,
+    artists: s.artists,
     reaction: s.reaction,
   });
 

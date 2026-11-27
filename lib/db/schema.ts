@@ -132,6 +132,10 @@ export const songs = pgTable(
     // imports)
     sourceCommentId: text("source_comment_id"),
     sourceHandle: text("source_handle"), // normalized handle, no "@"
+    // Who is singing — the "Slavēšanu vada:" credit line parsed from
+    // the source video's description (lib/song-artists.ts). Shared by
+    // every song of that video; NULL = no credit line found.
+    artists: text("artists").array(),
     // Post-sermon description-chapter imports: probably not songs,
     // hidden from shared catalog surfaces, visible to the importer.
     mightNotBeSong: boolean("might_not_be_song").default(false).notNull(),

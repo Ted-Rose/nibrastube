@@ -28,6 +28,7 @@ import {
   parseTracklist,
   type ParsedSong,
 } from "@/lib/song-timestamps";
+import { parseSongArtists } from "@/lib/song-artists";
 import axios from "axios";
 
 export interface SongImportVideo {
@@ -50,6 +51,10 @@ export type SongImportState =
       // description-chapters import.
       handle: string | null;
       songs: ParsedSong[];
+      // Singers parsed from the description's credit line — shown in
+      // the preview so a parent can eyeball them alongside the
+      // tracklist; [] when no credit line parsed.
+      artists: string[];
       sourceCommentId: string;
       source: "comment" | "description";
     }
@@ -180,6 +185,9 @@ type PipelineResult =
   | {
       video: SongImportVideo;
       songs: ParsedSong[];
+      // Singers from the description's credit line — shared by every
+      // song of the video; [] = no credit line found.
+      artists: string[];
       // YT comment id, or the "description" sentinel on chapter
       // imports — importSongs' stale-row delete keys on it either way.
       sourceCommentId: string;
@@ -208,6 +216,11 @@ async function runSongImport(
   if (!details) {
     return { error: "Couldn't load that video (removed or private?)." };
   }
+
+  // The singers credit lives in the uploader's own description, so
+  // both import paths — comment tracklists and description chapters —
+  // get the same artist list.
+  const artists = parseSongArtists(details.description ?? "");
 
   // Why the comment path found nothing — folds into the error when
   // the chapters fallback also misses.
@@ -270,6 +283,7 @@ async function runSongImport(
         return {
           video: details,
           songs: best.songs,
+          artists,
           sourceCommentId: best.comment.id,
           sourceHandle: handle,
           source: "comment",
@@ -295,6 +309,7 @@ async function runSongImport(
   return {
     video: details,
     songs: chapters,
+    artists,
     sourceCommentId: "description",
     sourceHandle: null,
     source: "description",
@@ -374,6 +389,7 @@ export async function previewSongImport(
     video: { id, title, thumbnail, durationSeconds },
     handle: result.sourceHandle,
     songs: result.songs,
+    artists: result.artists,
     sourceCommentId: result.sourceCommentId,
     source: result.source,
   };
@@ -435,6 +451,9 @@ export async function importSongs(
         endSeconds: s.endSeconds,
         sourceCommentId: result.sourceCommentId,
         sourceHandle: result.sourceHandle,
+        // NULL = "no credit line found", not "no singers" — an empty
+        // array would say we looked and found nobody.
+        artists: result.artists.length ? result.artists : null,
         // The parent's preview toggle wins; otherwise the parser's
         // flag (chapter imports mark the sermon cut onward, comment
         // imports default to false).
@@ -450,6 +469,7 @@ export async function importSongs(
         endSeconds: sql`excluded.end_seconds`,
         sourceCommentId: sql`excluded.source_comment_id`,
         sourceHandle: sql`excluded.source_handle`,
+        artists: sql`excluded.artists`,
         mightNotBeSong: sql`excluded.might_not_be_song`,
         importedBy: sql`excluded.imported_by`,
       },

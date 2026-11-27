@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   Heart,
+  Microphone,
   Play,
   ThumbsDown,
 } from "@phosphor-icons/react/dist/ssr";
@@ -129,6 +130,25 @@ export function SongCard({
             >
               {song.title}
             </h3>
+            {/* Singers from the video's "Slavēšanu vada" credit
+                line — absent rows just don't render it. */}
+            {song.artists && song.artists.length > 0 && (
+              <p
+                className={cn(
+                  "mt-1.5 flex items-center gap-1.5 font-medium",
+                  "text-slate-500",
+                  compact ? "text-xs" : "text-sm"
+                )}
+              >
+                <Microphone
+                  size={compact ? 13 : 15}
+                  className="shrink-0 text-slate-400"
+                />
+                <span className="truncate">
+                  {song.artists.join(", ")}
+                </span>
+              </p>
+            )}
             <div className="mt-2 flex items-center gap-2">
               <p
                 className={cn(

@@ -14,6 +14,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:staging": "DB_TARGET=staging drizzle-kit migrate",
     "videos:refresh": "tsx --env-file=.env scripts/refresh-videos.ts",
+    "songs:backfill-artists":
+      "tsx --env-file=.env scripts/backfill-song-artists.ts",
     "cap:sync": "cap sync android"
   },
   "dependencies": {

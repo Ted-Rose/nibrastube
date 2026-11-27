@@ -571,6 +571,16 @@ export function SongPlayerOverlay({
               >
                 {current.title}
               </p>
+              {current.artists && current.artists.length > 0 && (
+                <p
+                  className={cn(
+                    "max-w-[52vw] truncate text-xs font-medium",
+                    "text-slate-400 sm:text-sm"
+                  )}
+                >
+                  {current.artists.join(", ")}
+                </p>
+              )}
             </div>
           </div>
 

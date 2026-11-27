@@ -118,6 +118,9 @@ export interface FeedSong {
   videoDuration: number | null; // fills the range badge's open end
   thumbnail: string; // compilation thumbnail
   channelTitle: string;
+  // Singers from the video's "Slavēšanu vada" credit line — null when
+  // the description carried none (or the song predates the column).
+  artists: string[] | null;
   // Owner-only ⋮ delete menu, stamped server-side — rows serialize to
   // the public route's client components, so the raw importedBy user
   // id never ships; deleteSong re-verifies ownership regardless.
@@ -146,6 +149,7 @@ export type SongQueueEntry = Pick<
   | "videoDuration"
   | "startSeconds"
   | "endSeconds"
+  | "artists"
   | "reaction"
 >;
 
@@ -169,6 +173,7 @@ const feedSongCols = {
   videoDuration: videos.durationSeconds,
   thumbnail: videos.thumbnail,
   channelTitle: videos.channelTitle,
+  artists: songs.artists,
   importedBy: songs.importedBy,
   mightNotBeSong: songs.mightNotBeSong,
 };
@@ -200,6 +205,7 @@ function toFeedSong(row: SongRow, viewerId?: string): FeedSong {
     videoDuration: row.videoDuration,
     thumbnail: row.thumbnail,
     channelTitle: row.channelTitle,
+    artists: row.artists,
     canDelete: viewerId != null && row.importedBy === viewerId,
     mightNotBeSong: row.mightNotBeSong,
     reaction: row.reaction,

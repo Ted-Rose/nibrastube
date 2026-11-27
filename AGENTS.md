@@ -136,14 +136,15 @@ env (Preview scope); apply schema changes to staging with
   ran red before the staging merge, re-run the failed job
   after it (`gh run rerun <run-id> --failed` or a push).
 
-**Deployments**: `vercel.json`'s `git.deploymentEnabled`
-whitelists `main` + `staging` only — PRs and feature
-branches get no preview deployment (quota saving), so UI
-verification happens on the staging preview after merge,
-not per-PR. Caveat: Vercel reads the config from the
-pushed commit, so the whitelist only applies to pushes
-that already carry it. `deploy.yml` stays `main`-only —
-Cloud Run tracks production, not staging.
+**Deployments**: Vercel deploys every pushed branch —
+`main` to production, everything else (including PR head
+branches) as a preview, so per-PR UI verification can use
+the branch preview URL before the staging merge. Caveat:
+Vercel reads `vercel.json` from the pushed commit, so
+branches cut before this change still carry the old
+`git.deploymentEnabled` block — rebase or merge `main` to
+get previews. `deploy.yml` stays `main`-only — Cloud Run
+tracks production, not staging.
 
 ## Layout
 

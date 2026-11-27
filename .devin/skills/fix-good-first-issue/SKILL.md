@@ -104,13 +104,15 @@ work always gets a fresh worktree, per AGENTS.md.)
       git push -u origin fix/issue-<N>-<short-slug>
 
 - Create the PR ready for review (never a draft) targeting the
-  fork's `main`. Follow `.devin/skills/create-pr/`: write the
+  fork's `staging` — the staging-first gate on `main` rejects
+  anything not soaked there first. Follow
+  `.devin/skills/create-pr/`: write the
   body to a temp file and use `--body-file` (never inline
   `--body`):
 
       gh pr create --repo Ted-Rose/nibrastube \
         --title "Type: Capitalized message" \
-        --base main --head fix/issue-<N>-<short-slug> \
+        --base staging --head fix/issue-<N>-<short-slug> \
         --body-file pr-body.md
       rm pr-body.md
 

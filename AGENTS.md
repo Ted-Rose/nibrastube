@@ -68,6 +68,15 @@ code that has already soaked on staging. The `staging-first`
 required check (`.github/workflows/require-staging.yml`) fails
 `main` PRs whose head SHA was never merged into `staging`, and
 `main` allows squash merges only.
+  The staging environment uses a **separate Neon database**,
+`nibrastube_staging`, owned by the read/write role
+`nibrastube_staging`: `lib/db/index.ts` picks
+`STAGING_DATABASE_URL` whenever `VERCEL_ENV=preview` (the staging
+branch deploys as a preview), so staging soak testing can never
+touch prod data. `STAGING_DATABASE_URL` /
+`STAGING_DATABASE_URL_UNPOOLED` must exist in the Vercel project
+env (Preview scope); apply schema changes to staging with
+`npm run db:migrate:staging`.
 
 - **Features/fixes**: branch off `origin/main` — never
   `staging`; the branch must carry no unverified staging
@@ -744,6 +753,9 @@ npm run db:generate # drizzle-kit generate → new migration in
                     # drizzle/ — safe, touches files only
 npm run db:migrate  # drizzle-kit migrate — runs against
                     # DATABASE_URL_UNPOOLED (Neon's direct endpoint)
+npm run db:migrate:staging  # same, but targets
+                    # STAGING_DATABASE_URL_UNPOOLED (the
+                    # nibrastube_staging Neon DB) — safe for agents
                     # via drizzle.config.ts; the pooled URL breaks
                     # migrate's session behavior
 npm run videos:refresh -- --dry-run   # re-fetch videos rows missing
@@ -904,7 +916,11 @@ Repo-local style:
 - Path alias `@/*` → repo root (`tsconfig.json`).
 - Env vars needed: `DATABASE_URL` (Neon pooled endpoint),
   `DATABASE_URL_UNPOOLED` (direct endpoint — used by drizzle-kit
-  migrate), `JWT_SECRET`, `YOUTUBE_API_KEY`, `PUSHER_APP_ID`,
+  migrate), `STAGING_DATABASE_URL` +
+  `STAGING_DATABASE_URL_UNPOOLED` (the `nibrastube_staging`
+  Neon DB — used by every `VERCEL_ENV=preview` deploy and by
+  `npm run db:migrate:staging`), `JWT_SECRET`, `YOUTUBE_API_KEY`,
+  `PUSHER_APP_ID`,
   `PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER` (see `.env`,
   never commit it). Sentry: `NEXT_PUBLIC_SENTRY_DSN` enables
   monitoring (reaches the browser bundle AND the Node runtime —
@@ -1012,7 +1028,9 @@ Universal rules — follow exactly:
     user: `drizzle.config.ts` prefers `DATABASE_URL_UNPOOLED`,
     so the plain command is the right one — never run it
     against the pooled `DATABASE_URL` (PgBouncer breaks
-    migrate's session behavior). Generating migration files
+    migrate's session behavior). `npm run db:migrate:staging`
+    is agent-safe — it targets the `nibrastube_staging`
+    database. Generating migration files
     (`npm run db:generate`) is always safe.
   - `npx drizzle-kit push` — bypasses migration files; README's
     mention is stale.

@@ -390,17 +390,9 @@ export async function getCompilations({
           ? or(
               ilike(videos.title, `%${q}%`),
               // Singer names live on song rows — a compilation
-              // matches when a visible song of its credits the
+              // matches when any of its visible songs credits the
               // searched artist.
-              sql`exists (
-                select 1 from songs s
-                where s.video_id = ${videos.id}
-                  and s.might_not_be_song = false
-                  and exists (
-                    select 1 from unnest(s.artists) a
-                    where a ilike ${`%${q}%`}
-                  )
-              )`
+              artistMatch(q)
             )
           : undefined
       )

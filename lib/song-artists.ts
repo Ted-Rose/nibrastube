@@ -40,6 +40,8 @@ const MAX_NAME_LEN = 60;
 // ("A | Sludina:" → "Sludina") is not a person either.
 const LABEL_WORDS = new Set([
   "sludina",
+  "sprediķis",
+  "spriedikis",
   "tēma",
   "tema",
   "preacher",
@@ -49,6 +51,10 @@ const LABEL_WORDS = new Set([
   "worship leaders",
   "slavēšanu vada",
   "slavesanu vada",
+  // A stray separator can leave the bare conjunction as a segment
+  // ("A, un, B") — it is nobody's name.
+  "un",
+  "and",
 ]);
 
 export function parseSongArtists(description: string): string[] {
@@ -65,9 +71,9 @@ export function parseSongArtists(description: string): string[] {
           // "(Anna) un" needs all three passes to land on "Anna";
           // a leading "and" survives the ", " split of an Oxford
           // comma ("A, B, and C").
-          .replace(/^[\p{P}\s]+|[\p{P}\s]+$/gu, "")
+          .replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, "")
           .replace(/^(?:un|and)\s+|\s+(?:un|and)$/gi, "")
-          .replace(/^[\p{P}\s]+|[\p{P}\s]+$/gu, "")
+          .replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, "")
           .trim()
       )
       .filter((name) => {

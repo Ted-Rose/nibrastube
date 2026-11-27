@@ -225,6 +225,12 @@ check(
 );
 
 check(
+  "artists: 'and'/'un' inside names does not split",
+  parseSongArtists("Slavēšanu vada: Aleksandrs un Bruno"),
+  ["Aleksandrs", "Bruno"]
+);
+
+check(
   "artists: preacher line alone is not singers",
   parseSongArtists(
     "Tēma: Tēma\nSludina: Mārcis Kārkliņš\nAtbalsti draudzi"

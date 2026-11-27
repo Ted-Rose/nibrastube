@@ -1,7 +1,7 @@
 name: OpenSpec validate
 
 # Runs `openspec validate --all --strict` from the repo root on every
-# pull request and every push to `main`/`staging` (plus manual
+# pull request and every push to `main` (plus manual
 # dispatch), so spec drift — malformed specs/changes, >500-char
 # requirement bodies, unsynced deltas — fails CI instead of landing
 # on a tracked branch. The CLI is pinned to the exact version used
@@ -12,7 +12,6 @@ on:
   push:
     branches:
       - main
-      - staging
 
 permissions:
   contents: read

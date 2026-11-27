@@ -118,6 +118,9 @@ export interface FeedSong {
   videoDuration: number | null; // fills the range badge's open end
   thumbnail: string; // compilation thumbnail
   channelTitle: string;
+  // Singers from the video's "Slavēšanu vada" credit line — null when
+  // the description carried none (or the song predates the column).
+  artists: string[] | null;
   // Owner-only ⋮ delete menu, stamped server-side — rows serialize to
   // the public route's client components, so the raw importedBy user
   // id never ships; deleteSong re-verifies ownership regardless.
@@ -146,6 +149,7 @@ export type SongQueueEntry = Pick<
   | "videoDuration"
   | "startSeconds"
   | "endSeconds"
+  | "artists"
   | "reaction"
 >;
 
@@ -169,6 +173,7 @@ const feedSongCols = {
   videoDuration: videos.durationSeconds,
   thumbnail: videos.thumbnail,
   channelTitle: videos.channelTitle,
+  artists: songs.artists,
   importedBy: songs.importedBy,
   mightNotBeSong: songs.mightNotBeSong,
 };
@@ -200,6 +205,7 @@ function toFeedSong(row: SongRow, viewerId?: string): FeedSong {
     videoDuration: row.videoDuration,
     thumbnail: row.thumbnail,
     channelTitle: row.channelTitle,
+    artists: row.artists,
     canDelete: viewerId != null && row.importedBy === viewerId,
     mightNotBeSong: row.mightNotBeSong,
     reaction: row.reaction,
@@ -229,6 +235,24 @@ const songLength = sql<number | null>`
 // the grid windows client-side, so this cap is about payload, not
 // page size. Cursor pagination is a documented seam.
 const SONGS_LIMIT = 240;
+
+// Singer-name match on a song row: artists is NULL when no credit
+// line parsed, and unnest(NULL) yields zero rows, so the EXISTS
+// just misses there.
+const artistMatch = (q: string) =>
+  sql`exists (
+    select 1 from unnest(${songs.artists}) a
+    where a ilike ${`%${q}%`}
+  )`;
+
+// Search matches a song's title, its compilation's title, or any
+// credited singer.
+const songSearch = (q: string) =>
+  or(
+    ilike(songs.title, `%${q}%`),
+    ilike(videos.title, `%${q}%`),
+    artistMatch(q)
+  );
 
 // Sort/dir → ORDER BY. "recent" means import time for the catalog and
 // reaction time for the Liked view, so the caller passes the column.
@@ -261,8 +285,9 @@ function feedOrderBy(
 
 // The catalog grid: all imported songs joined to their compilation
 // video, optionally filtered to one compilation (?video=), one
-// importer (view=mine) or a title search (q matches song OR
-// compilation title), ordered per sort/dir. Cached per request: the
+// importer (view=mine) or a search (q matches song title,
+// compilation title, or a credited singer), ordered per sort/dir.
+// Cached per request: the
 // ?song= overlay builds its play queue from the same call the grid
 // makes, so the two share one DB round trip.
 export const getSongs = cache(async function getSongs(
@@ -292,12 +317,7 @@ export const getSongs = cache(async function getSongs(
         feed.view === "mine"
           ? eq(songs.importedBy, importedByUserId ?? NIL_UUID)
           : undefined,
-        feed.q
-          ? or(
-              ilike(songs.title, `%${feed.q}%`),
-              ilike(videos.title, `%${feed.q}%`)
-            )
-          : undefined
+        feed.q ? songSearch(feed.q) : undefined
       )
     )
     .orderBy(...feedOrderBy(feed, songs.createdAt))
@@ -328,12 +348,7 @@ export const getLikedSongs = cache(async function getLikedSongs(
         eq(songReactions.reaction, "like"),
         visibleVideo,
         suitableVideo,
-        feed.q
-          ? or(
-              ilike(songs.title, `%${feed.q}%`),
-              ilike(videos.title, `%${feed.q}%`)
-            )
-          : undefined
+        feed.q ? songSearch(feed.q) : undefined
       )
     )
     .orderBy(...feedOrderBy(feed, songReactions.reactedAt))
@@ -371,7 +386,15 @@ export async function getCompilations({
         visibleVideo,
         suitableVideo,
         eq(songs.mightNotBeSong, false),
-        q ? ilike(videos.title, `%${q}%`) : undefined
+        q
+          ? or(
+              ilike(videos.title, `%${q}%`),
+              // Singer names live on song rows — a compilation
+              // matches when any of its visible songs credits the
+              // searched artist.
+              artistMatch(q)
+            )
+          : undefined
       )
     )
     .groupBy(

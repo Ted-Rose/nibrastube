@@ -309,6 +309,9 @@ lib/
                                 parseTracklist (comments),
                                 parseChapters (description fallback,
                                 SERMON_MARKERS cut)
+  song-artists.ts               parseSongArtists() — singers credit
+                                line ("Slavēšanu vada: A un B") →
+                                string[] for songs.artists
   channel-sync.ts               backfillChannel / pollChannel /
                                 syncAllChannels
   pusher.ts                     pusherServer + getPusherClient
@@ -332,6 +335,9 @@ scripts/generate-icons.mjs      Regenerates PWA icons in
                                 public/icons/
 scripts/test-song-parser.ts     Ad-hoc checks for the song parser
                                 (npx tsx …) — see "Testing"
+scripts/backfill-song-artists.ts Fills songs.artists from each
+                                compilation's description credit line
+                                (npm run songs:backfill-artists)
 android/                        Capacitor 8 Android project
                                 (generated, committed) — WebView loads
                                 server.url
@@ -387,7 +393,9 @@ docs/reviews/                   Committed Oct 2026 code audit —
   or description chapters on compilation videos (title + `videoId` +
   `startSeconds`/`endSeconds`; `endSeconds` NULL = play to video end;
   `mightNotBeSong` hides post-sermon guesses from shared catalog
-  surfaces). NOT whitelist-tied — shared by everyone
+  surfaces; `artists` text[] = the singers credit line from the
+  video's description, NULL = none found). NOT whitelist-tied —
+  shared by everyone
 - `whitelisted_videos` — (profileId, videoId) pins; `viaChannelId`
   NULL = manual pin, set = added by channel sync
 - `whitelisted_channels` — (profileId, channelId) approvals with
@@ -513,7 +521,11 @@ docs/reviews/                   Committed Oct 2026 code audit —
   `mightNotBeSong` — hidden from every shared `/songs` surface,
   badged on the importer's own views. Re-import identity =
   `sourceCommentId` ("description" sentinel for chapter imports);
-  (videoId, startSeconds) is unique.
+  (videoId, startSeconds) is unique. Either path also fills
+  `songs.artists` from the description's singers credit line
+  (`lib/song-artists.ts`) — one worship team per video, shared by
+  all its songs; `scripts/backfill-song-artists.ts` backfills older
+  rows.
 - **Kids feed memory:** leaving a feed for the watch page and
   returning restores the feed's order, mounted window depth and
   scroll position from a sessionStorage snapshot (`lib/feed-memory.ts`,
@@ -711,6 +723,10 @@ npm run db:migrate:staging  # same, but targets
                     # nibrastube_staging Neon DB) — safe for agents
                     # via drizzle.config.ts; the pooled URL breaks
                     # migrate's session behavior
+npm run songs:backfill-artists -- --dry-run  # fills songs.artists
+                    # from each compilation's description credit
+                    # line (--ids to target videos; writes prod —
+                    # see "Dangerous commands")
 npm run videos:refresh -- --dry-run   # re-fetch videos rows missing
                     # YouTube fields (filters: --stale --missing cols
                     # --ids --channel --whitelisted --all --where;

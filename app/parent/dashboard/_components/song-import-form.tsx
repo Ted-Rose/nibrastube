@@ -177,6 +177,8 @@ export function SongImportForm({
             {ready.source === "description"
               ? "Chapters from description"
               : `Tracklist by @${ready.handle}`}
+            {ready.artists.length > 0 &&
+              ` · singers: ${ready.artists.join(", ")}`}
           </p>
           <form action={importAction}>
             <input type="hidden" name="videoId" value={ready.video.id} />

@@ -5,6 +5,7 @@ import {
   parseChapters,
   normalizeHandle,
 } from "../lib/song-timestamps";
+import { parseSongArtists } from "../lib/song-artists";
 import { parseYouTubeVideoId } from "../lib/youtube";
 
 let failures = 0;
@@ -189,6 +190,108 @@ check(
     (s) => s.mightNotBeSong ?? null
   ),
   [null, null]
+);
+
+// --- parseSongArtists (description credit line) ------------------
+
+// Real credit line from the catalog (youtube s9IPNMaHI1E).
+check(
+  "artists: two names split on 'un'",
+  parseSongArtists(
+    "Tēma: Nebēdz no Dieva\n" +
+      "Sludina: Kristaps Āboltiņš\n" +
+      "Slavēšanu vada: Daniēls Oleksa un Renāte Luīze Cietvīra\n" +
+      "\n👉 Atbalsti draudzi"
+  ),
+  ["Daniēls Oleksa", "Renāte Luīze Cietvīra"]
+);
+
+check(
+  "artists: single leader",
+  parseSongArtists("Slavēšanu vada: Tomass Tomševics"),
+  ["Tomass Tomševics"]
+);
+
+check(
+  "artists: comma + ampersand separators, case-insensitive label",
+  parseSongArtists("WORSHIP LED BY: Anna Bērziņa, Jānis Kalns & Ilze"),
+  ["Anna Bērziņa", "Jānis Kalns", "Ilze"]
+);
+
+check(
+  "artists: 'and' separator needs spaces",
+  parseSongArtists("Worship leaders: Sandis and Amanda"),
+  ["Sandis", "Amanda"]
+);
+
+check(
+  "artists: 'and'/'un' inside names does not split",
+  parseSongArtists("Slavēšanu vada: Aleksandrs un Bruno"),
+  ["Aleksandrs", "Bruno"]
+);
+
+check(
+  "artists: preacher line alone is not singers",
+  parseSongArtists(
+    "Tēma: Tēma\nSludina: Mārcis Kārkliņš\nAtbalsti draudzi"
+  ),
+  []
+);
+
+check(
+  "artists: no credit line → []",
+  parseSongArtists("some description\nwith no credits"),
+  []
+);
+
+check(
+  "artists: label with empty value → []",
+  parseSongArtists("Slavēšanu vada:"),
+  []
+);
+
+check(
+  "artists: trailing punctuation + dup deduped",
+  parseSongArtists("Slavēšanu vada: Anna, Anna un  Jānis."),
+  ["Anna", "Jānis"]
+);
+
+check(
+  "artists: bullet-prefixed + diacritic-less label",
+  parseSongArtists("🎵 Slavesanu vada: Jānis Kalns"),
+  ["Jānis Kalns"]
+);
+
+check(
+  "artists: inline second credit cut off",
+  parseSongArtists("Slavēšanu vada: Anna | Sludina: Kristaps"),
+  ["Anna"]
+);
+
+check(
+  "artists: empty first line, valid second wins",
+  parseSongArtists(
+    "Slavēšanu vada:\nSlavēšanu vada: Ilze Ozola"
+  ),
+  ["Ilze Ozola"]
+);
+
+check(
+  "artists: parens + dangling conjunction stripped",
+  parseSongArtists("Slavēšanu vada: (Anna Bērziņa) un"),
+  ["Anna Bērziņa"]
+);
+
+check(
+  "artists: Oxford-comma leading 'and' stripped",
+  parseSongArtists("Worship led by: Anna, Berta, and Ciela"),
+  ["Anna", "Berta", "Ciela"]
+);
+
+check(
+  "artists: leading dash + bare label dropped",
+  parseSongArtists("Slavēšanu vada: – Anna | Sludina："),
+  ["Anna"]
 );
 
 check(

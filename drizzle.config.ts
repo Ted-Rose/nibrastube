@@ -16,10 +16,10 @@ export default defineConfig({
               !process.env.STAGING_DATABASE_URL_UNPOOLED &&
               process.env.STAGING_DATABASE_URL
             ) {
-              console.warn(
+              throw new Error(
                 "[drizzle] only the pooled STAGING_DATABASE_URL" +
                   " is set — PgBouncer breaks drizzle-kit migrate;" +
-                  " prefer STAGING_DATABASE_URL_UNPOOLED.",
+                  " set STAGING_DATABASE_URL_UNPOOLED.",
               );
             }
             // `||` so an empty var counts as unset too.

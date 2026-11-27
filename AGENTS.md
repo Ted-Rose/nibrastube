@@ -83,11 +83,14 @@ command is `vercel-build` (`scripts/vercel-build.mjs`):
 `drizzle-kit migrate` runs BEFORE `next build` —
 production builds against `DATABASE_URL_UNPOOLED`,
 preview builds with `DB_TARGET=staging` against
-`STAGING_DATABASE_URL_UNPOOLED` (fails loudly if unset —
-never falls back to prod). Merging a migration to `main`
-therefore applies it on that deploy; the Cloud Run
-standby does NOT migrate (it shares prod's already-
-migrated DB).
+`STAGING_DATABASE_URL_UNPOOLED` (fails loudly if unset or
+pooled — never falls back to prod). Merging a migration
+to `main` therefore applies it on that deploy; the Cloud
+Run standby does NOT migrate (it shares prod's already-
+migrated DB). Migrate-before-build leaves a window where
+the old deploy serves the new schema — additive
+migrations are safe, destructive ones need an
+expand→contract two-deploy sequence.
 
 ## Layout
 

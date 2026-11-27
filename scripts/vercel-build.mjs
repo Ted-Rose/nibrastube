@@ -39,6 +39,7 @@ if (process.env.VERCEL === "1") {
   const env = { ...process.env };
   const isPreview = env.VERCEL_ENV === "preview";
   if (isPreview) env.DB_TARGET = "staging";
+  else delete env.DB_TARGET;
   let status = attempt("drizzle-kit", ["migrate"], env);
   if (status !== 0) {
     // Concurrent builds race on __drizzle_migrations — retry once after a

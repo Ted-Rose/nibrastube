@@ -40,9 +40,9 @@ if (process.env.VERCEL === "1") {
   const isPreview = env.VERCEL_ENV === "preview";
   if (isPreview) env.DB_TARGET = "staging";
   let status = attempt("drizzle-kit", ["migrate"], env);
-  if (status !== 0 && isPreview) {
-    // Concurrent preview builds race on __drizzle_migrations — retry once
-    // after a short wait rather than spuriously failing the deploy.
+  if (status !== 0) {
+    // Concurrent builds race on __drizzle_migrations — retry once after a
+    // short wait rather than spuriously failing the deploy.
     await new Promise((resolve) => setTimeout(resolve, 5000));
     status = attempt("drizzle-kit", ["migrate"], env);
   }

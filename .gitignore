@@ -20,3 +20,5 @@ android/app/src/main/assets/
 .devin/config.local.json
 .devin/mcp_config.local.json
 pr-body.md
+.vercel
+.env*

@@ -1,7 +1,7 @@
 # Kids recommendation algorithm
 
 How the "For You" ranking works today. One SQL query —
-`getRecommendedVideos` in `lib/kids-feed.ts` (~lines 880-1058) —
+`getRecommendedVideos` in `lib/kids-feed.ts` (~lines 960-1206) —
 reorders the profile's `whitelisted_videos` by predicted interest.
 The whitelist is absolute: the ranking never adds content, it only
 sorts what a parent already approved. All signals come from tables
@@ -53,7 +53,8 @@ Every other tab is a mechanical sort over the same whitelist —
 - `?view=playlists` — `getPlaylistVideos`, kid-defined position.
 - `?view=history` — `getWatchHistory`, day then lastSeenAt desc.
 - "Continue watching" / "New for you" shelves —
-  `getContinueWatching` (`watchedAt` desc) / `getNewForYou`
+  `getContinueWatching` (`watchedAt` desc, meaningful starts only)
+  / `getNewForYou`
   (pin-day then `publishedAt` desc).
 
 These reads go through the per-profile feed data cache
@@ -71,9 +72,10 @@ Which tables feed which term:
 
 - `watch_history.watched_on` (one row per profile+video+day) ->
   `channel_affinity` CTE: affinityScore and the discovery slack.
-- `watch_progress.position_seconds` / `completed` -> the +8
-  in-progress flat boost, the WHERE completed exclusion, and the
-  impression-penalty mask (once watched, penalty -> 0).
+- `watch_progress.position_seconds` / `completed` / `watched_at` ->
+  the +8 resume-slot flat boost, the WHERE completed exclusion, the
+  early-abandon minus, and the impression-penalty mask (once
+  meaningfully started, penalty -> 0).
 - `video_reactions.reaction` -> `channel_flags` CTE (+5/-20), the
   +4 video-like boost, and the WHERE dislike exclusion.
 - `video_impressions.seen_days` / `last_seen_on` /
@@ -118,7 +120,7 @@ How those rows get written:
 
 ## The formula
 
-All inside `getRecommendedVideos` — one query, two CTEs:
+All inside `getRecommendedVideos` — one query, three CTEs:
 
 ```text
 channel_affinity: per watch_history row on a channel, summed —
@@ -127,18 +129,38 @@ channel_affinity: per watch_history row on a channel, summed —
     else 1                     -- history never fully decays
 channel_flags:    bool_or(reaction='like' / 'dislike') per channel
 
+meaningful    = position >= 30s
+                OR (duration > 0 AND position >= 50% of duration)
+                -- the resume bar: a seconds-long tap/autoplay landing
+                -- is not "started" (YouTube doesn't count sub-30s
+                -- plays as views either). NULL duration: only the
+                -- 30s clause can pass.
+resume_rank   = row_number() over in-progress rows
+                (meaningful, not completed,
+                 duration IS NULL or position < duration)
+                ordered by watched_at desc, video_id
+                -- feed-scoped: ranked over rows THIS feed could
+                -- show (whitelisted, suitable, matching the ?type/
+                -- ?min/?max/?q filters, not disliked) — otherwise a
+                -- slot could be spent on an invisible video and the
+                -- feed would get zero boosted rows
+
 affinityScore = coalesce(affinity, 0)
-flatScore     = + 8 if in-progress (0 < position < duration,
-                  not completed)
+flatScore     = + 8 if resume_rank <= 2   -- RESUME_SLOTS: only the
+                  two freshest unfinished videos get the slot —
+                  "Picked for you" is not a resume dump
               + 5 if the channel has any 'like'
               + 4 if this video is 'liked'
               - 20 if the channel has any 'dislike'
+              - 2 * 0.5^(days_since_watched / 7)
+                  if position > 0 and not completed
+                     and not meaningful  -- early abandon
 WHERE not coalesce(completed, false)  -- finished videos out
   AND reaction IS DISTINCT FROM 'dislike'  -- disliked videos out
 
 effDays         = max(0, seen_days
                   - (1 if last_seen_at > asOf else 0))
-impressionPenalty = 0 if position > 0 or completed   -- watched
+impressionPenalty = 0 if meaningful or completed    -- really started
                   else min(12, 4 * ln(1 + effDays))
                        * 0.5 ^ (days since last_seen_on / 14)
 
@@ -181,8 +203,26 @@ In words:
   lower a sinking row's `popularity`, grow its discovery slack,
   and partially re-float the very card being penalized. As its
   own term, −N means −N at every depth. Once the video is
-  started the penalty masks to 0 — progress is the strongest
-  signal it wasn't really "ignored".
+  meaningfully started the penalty masks to 0 — real progress is
+  the strongest signal it wasn't really "ignored" — but a
+  seconds-long bail does NOT mask it (and takes the small
+  early-abandon minus instead).
+- **Resume slots, not resume boost.** The +8 "keep watching"
+  boost is capped at the RESUME_SLOTS = 2 freshest unfinished
+  videos (most recent `watched_at`) — feed-scoped, so a Shorts
+  view or a ?q= search can't have its slots eaten by
+  long-form/off-topic rows. Previously every `position > 0` row
+  got +8 forever — autoplay landings and accidental taps pinned
+  ~100 stale videos at the top of the feed permanently. Older
+  unfinished rows now rank like untouched ones; the
+  Continue-watching shelf still lists them all (with the same
+  meaningful-start bar).
+- **"Started" is two bars on purpose.** The recommendation path
+  uses `meaningful`; `watch_status` tiers (?sort=status, the
+  card progress bar, `pickNextIndex` autoplay ordering) still
+  use `position > 0` — that's display/resume-position semantics,
+  where "has a resume point" is the honest answer for any
+  touched row. Only the interest signals tightened.
 - **Bounded affinity.** Raw affinity is unbounded — a
   hyper-watched channel would outscore discovery at any depth —
   so `40a/(a+15)` squashes it into 0-40 (a=15 -> 20, a=45 -> 30).
@@ -290,22 +330,26 @@ does not corrupt it.
 - **Impressions never hide.** The penalty only reorders For
   You/Shorts and the default `sort=status` of
   All-videos/channel drill-in — capped at 12 and masked once
-  watched, it never lifts a row above watched-channel favorites
-  it can't outscore, and never filters anything out.
+  meaningfully started, it never lifts a row above
+  watched-channel favorites it can't outscore, and never
+  filters anything out.
 
 ## Changing the algorithm
 
 The whole formula lives in `getRecommendedVideos`
-(`lib/kids-feed.ts`, ~lines 880-1058). Constants:
+(`lib/kids-feed.ts`, ~lines 960-1206). Constants:
 
 | Knob | Value | Effect |
 |---|---|---|
 | `FOR_YOU_PAGE_SIZE` | 60 | first page + loadMore page size |
 | Recency tiers | 3 / 2 / 1 at <=7d / <=30d / older | watch recency weight |
-| In-progress flat | +8 | "continue watching" boost |
+| `RESUME_SLOTS` | 2 | unfinished videos holding the +8 slot |
+| Resume bar | ≥30s or ≥50% | what counts as "started" |
+| Early-abandon minus | ≤2, ½ per week | tapped-but-bailed demerit |
 | Channel like / video like | +5 / +4 | explicit approval |
 | Channel dislike | -20 | channel suppression (not exclusion) |
-| Impression penalty | min(12, 4·ln(1+d))·0.5^(since/14) | scroll-past downrank |
+| Impression penalty | min(12, 4·ln(1+d))·0.5^(since/14) | scroll-past
+  downrank |
 | `MAX_EPOCH_AGE_MS` | 24 h | oldest accepted feed epoch for loadMore |
 | `seenDays` cap | 30 | per-(profile, video) impression counter ceiling |
 | Popularity half-life | 60 rows | depth where discovery takes over |

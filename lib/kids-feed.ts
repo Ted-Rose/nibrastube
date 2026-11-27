@@ -4,7 +4,6 @@ import {
   count,
   desc,
   eq,
-  gt,
   gte,
   ilike,
   inArray,
@@ -217,14 +216,33 @@ const lenFilter = (
     maxLen ? lte(videos.durationSeconds, maxLen) : undefined
   );
 
+// "Meaningfully started" — the bar for a resume point: ≥30s in, or
+// past halfway on a video too short to ever reach that. A seconds-long
+// tap (autoplay landing, accidental open) is NOT a resume point —
+// YouTube itself doesn't count sub-30s plays as views — so it earns no
+// continue-watching boost and must not mask the impression penalty.
+// NULL duration: the fraction half is NULL (never true), so only the
+// 30s clause can pass. duration = 0 (livestream/bad API data) would
+// make `position >= 0.5 * duration` true even at position 0, so the
+// fraction half also requires duration > 0. Used by the For-You
+// boost/abandon terms, the penalty mask below, and
+// getContinueWatching. MUST stay parenthesized — bare `A or B` inside
+// an and() would let the B branch escape the caller's other
+// conditions (e.g. the profile filter).
+const meaningfulProgress = sql`(${watchProgress.positionSeconds} >= 30
+  or (${videos.durationSeconds} > 0
+    and ${watchProgress.positionSeconds}
+      >= 0.5 * ${videos.durationSeconds}))`;
+
 // "Shown but ignored" penalty (lib/feed-impressions.ts records a grid
 // card held ≥50% visible for ≥1s, once per kid-local day — tapped
 // cards record too; the watch-progress mask below zeroes them once
 // played). It grows with ln(1 + seen_days), caps at 12 (below the −20
 // channel-dislike, so "ignored" never outweighs explicit hate),
 // halves every 14 days without a fresh impression (~6 weeks ≈ full
-// forgiveness), and is masked entirely once the kid actually watches
-// the video — a tap wins over any amount of scroll-past. Lazily
+// forgiveness), and is masked entirely once the kid meaningfully
+// starts the video — a real watch wins over any amount of scroll-past,
+// but a seconds-long bail keeps the penalty. Lazily
 // evaluated against the joined aliases, so callers must leftJoin
 // watch_progress and video_impressions on (profile_id, video_id) — a
 // PK join, no fan-out; a missing row → coalesce → ln(1) = 0.
@@ -255,7 +273,7 @@ const impressionPenalty = (asOf?: Date) => {
     : sql`0`;
   return sql<number>`
   case
-    when ${watchProgress.positionSeconds} > 0
+    when ${meaningfulProgress}
       or coalesce(${watchProgress.completed}, false) then 0
     else least(12,
       4.0 * ln(1 + greatest(0,
@@ -532,10 +550,11 @@ export async function getKidsVideos(
   return mergeProgress(rows, progress);
 }
 
-// Whitelisted videos the kid started but hasn't finished (and hasn't
-// 👎'd), most recently watched first — the home "Continue watching"
-// shelf. Same { video, progress, reaction } row shape as getKidsVideos;
-// progress is an inner join because the shelf only lists started rows.
+// Whitelisted videos the kid meaningfully started but hasn't finished
+// (and hasn't 👎'd), most recently watched first — the home "Continue
+// watching" shelf. Same { video, progress, reaction } row shape as
+// getKidsVideos; progress is an inner join because the shelf only
+// lists started rows.
 export async function getContinueWatching(
   profileId: string,
   {
@@ -578,8 +597,13 @@ export async function getContinueWatching(
         suitableVideo,
         typeFilter(type),
         lenFilter(minLen, maxLen),
-        gt(watchProgress.positionSeconds, 0),
+        meaningfulProgress,
         eq(watchProgress.completed, false),
+        or(
+          isNull(videos.durationSeconds),
+          sql`${watchProgress.positionSeconds}
+            < ${videos.durationSeconds}`
+        ),
         or(
           isNull(videoReactions.reaction),
           ne(videoReactions.reaction, "dislike")
@@ -860,6 +884,13 @@ export async function getWatchHistory(
 // infinite scroll).
 export const FOR_YOU_PAGE_SIZE = 60;
 
+// How many unfinished videos get the "+8 keep watching" slot in For
+// You — the freshest by last-watch time. Resuming is a convenience,
+// not an interest signal: 2 covers "the thing I was just watching"
+// without letting a backlog of abandoned starts squat at the top
+// forever (they used to all get +8, undying).
+const RESUME_SLOTS = 2;
+
 // "For You" — the profile's whitelisted videos ranked by predicted
 // interest. Only videos the kid hasn't finished rank at all —
 // completed watch_progress rows are filtered out in WHERE, so every
@@ -870,10 +901,16 @@ export const FOR_YOU_PAGE_SIZE = 60;
 //     3 if watched_on ≥ today−7, 2 if ≥ today−30, else 1
 //   affinity_score = affinity (0 when the channel was never watched)
 //   flat_score =
-//     + 8 if in-progress-not-completed   ("continue watching")
+//     + 8 for the RESUME_SLOTS most recently watched unfinished
+//         videos — resume slots, a convenience not an interest signal
+//         (the Continue-watching shelf owns the full resume list, so
+//         older half-watched rows rank like untouched ones)
 //     + 5 if the channel has any 'like'
 //     + 4 if the video itself is 'liked'
 //     − 20 if the channel has a 'dislike'
+//     − ≤2, decaying by half per week since last watched, for
+//         touched-but-abandoned-early rows (backed-out-fast is a
+//         signal against, not for)
 //   disliked videos are excluded entirely.
 //   impression_penalty (module-level `impressionPenalty`) = "shown
 //     but ignored": min(12, 4·ln(1 + eff_days))
@@ -991,11 +1028,71 @@ export async function getRecommendedVideos(
       .groupBy(videos.channelId)
   );
 
-  // Started, not finished, not within the tail of the video.
-  const inProgress = sql`${watchProgress.positionSeconds} > 0
+  // Started meaningfully, not finished, not within the tail.
+  const inProgress = sql`${meaningfulProgress}
     and not coalesce(${watchProgress.completed}, false)
     and (${videos.durationSeconds} is null
          or ${watchProgress.positionSeconds} < ${videos.durationSeconds})`;
+
+  // Resume candidates — the unfinished rows ranked by most recent
+  // watch, scoped to rows this feed could actually show (whitelist,
+  // suitability, the caller's ?type/?min/?max/?q filters, no
+  // dislikes): a slot spent on an invisible video would quietly give
+  // the feed zero boosted rows. Only the freshest RESUME_SLOTS get
+  // the "+8 keep watching" slot in For You; the rest of the backlog
+  // ranks like never-touched rows (Picked-for-you is not a resume
+  // dump — the Continue-watching shelf holds the whole list).
+  const resumeRank = db.$with("resume_rank").as(
+    db
+      .select({
+        videoId: watchProgress.videoId,
+        rn: sql<number>`row_number() over (
+          order by ${watchProgress.watchedAt} desc,
+                   ${watchProgress.videoId})`.as("rn"),
+      })
+      .from(watchProgress)
+      .innerJoin(
+        whitelistedVideos,
+        and(
+          eq(whitelistedVideos.videoId, watchProgress.videoId),
+          eq(whitelistedVideos.profileId, watchProgress.profileId)
+        )
+      )
+      .innerJoin(videos, eq(videos.id, watchProgress.videoId))
+      .leftJoin(
+        videoReactions,
+        and(
+          eq(videoReactions.profileId, watchProgress.profileId),
+          eq(videoReactions.videoId, watchProgress.videoId)
+        )
+      )
+      .where(
+        and(
+          eq(watchProgress.profileId, profileId),
+          inProgress,
+          suitableVideo,
+          sql`${videoReactions.reaction} is distinct from 'dislike'`,
+          typeFilter(type),
+          lenFilter(minLen, maxLen),
+          q ? ilike(videos.title, `%${q}%`) : undefined
+        )
+      )
+  );
+
+  // Early abandon — tapped but never meaningfully started: a small
+  // minus that halves every week since the last watch. YouTube/Netflix
+  // treat backed-out-fast as evidence against interest, not for it.
+  const abandonPenalty = sql<number>`
+    case
+      when ${watchProgress.positionSeconds} > 0
+        and not coalesce(${watchProgress.completed}, false)
+        and not (${meaningfulProgress})
+      then 2.0 * power(0.5,
+        greatest(0,
+          extract(epoch from (now() - ${watchProgress.watchedAt}))
+          / 86400.0) / 7.0)
+      else 0
+    end`;
 
   // Popularity signal — the part that fades with scroll depth.
   // (Completed rows are filtered out below, so no 0.25 rewatch
@@ -1004,10 +1101,11 @@ export async function getRecommendedVideos(
     coalesce(${channelAffinity.affinity}, 0)`;
   // Explicit kid signals — apply at every depth.
   const flatScore = sql<number>`
-    case when ${inProgress} then 8 else 0 end
+    case when ${resumeRank.rn} <= ${RESUME_SLOTS} then 8 else 0 end
     + case when ${channelFlags.hasLike} then 5 else 0 end
     + case when ${videoReactions.reaction} = 'like' then 4 else 0 end
-    - case when ${channelFlags.hasDislike} then 20 else 0 end`;
+    - case when ${channelFlags.hasDislike} then 20 else 0 end
+    - ${abandonPenalty}`;
 
   // Position under the plain personalized ranking — the depth dial.
   const rank = sql`row_number() over (
@@ -1040,7 +1138,7 @@ export async function getRecommendedVideos(
     - 3.0 * ln(1 + ${withinChannel})`;
 
   return db
-    .with(channelAffinity, channelFlags)
+    .with(channelAffinity, channelFlags, resumeRank)
     .select({
       video: feedVideoCols,
       progress: watchProgress,
@@ -1067,6 +1165,10 @@ export async function getRecommendedVideos(
       eq(channelAffinity.channelId, videos.channelId)
     )
     .leftJoin(channelFlags, eq(channelFlags.channelId, videos.channelId))
+    .leftJoin(
+      resumeRank,
+      eq(resumeRank.videoId, whitelistedVideos.videoId)
+    )
     .leftJoin(
       videoImpressions,
       and(

@@ -138,7 +138,7 @@ meaningful    = position >= 30s
 resume_rank   = row_number() over in-progress rows
                 (meaningful, not completed,
                  duration IS NULL or position < duration)
-                ordered by watched_at desc
+                ordered by watched_at desc, video_id
                 -- feed-scoped: ranked over rows THIS feed could
                 -- show (whitelisted, suitable, matching the ?type/
                 -- ?min/?max/?q filters, not disliked) — otherwise a
@@ -153,7 +153,8 @@ flatScore     = + 8 if resume_rank <= 2   -- RESUME_SLOTS: only the
               + 4 if this video is 'liked'
               - 20 if the channel has any 'dislike'
               - 2 * 0.5^(days_since_watched / 7)
-                  if position > 0 and not meaningful  -- early abandon
+                  if position > 0 and not completed
+                     and not meaningful  -- early abandon
 WHERE not coalesce(completed, false)  -- finished videos out
   AND reaction IS DISTINCT FROM 'dislike'  -- disliked videos out
 

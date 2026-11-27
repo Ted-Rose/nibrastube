@@ -277,6 +277,18 @@ check(
 );
 
 check(
+  "artists: Oxford-comma leading 'and' stripped",
+  parseSongArtists("Worship led by: Anna, Berta, and Ciela"),
+  ["Anna", "Berta", "Ciela"]
+);
+
+check(
+  "artists: leading dash + bare label dropped",
+  parseSongArtists("Slavēšanu vada: – Anna | Sludina："),
+  ["Anna"]
+);
+
+check(
   "normalizeHandle",
   [
     normalizeHandle("@TedisRozenfelds7630"),

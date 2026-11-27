@@ -36,6 +36,21 @@ const NAME_SEP = /\s*(?:,|&|\+|\||;|\s+un\s+|\s+and\s+)\s*/;
 // ("A | Sludina: B"), not a person.
 const MAX_NAME_LEN = 60;
 
+// Whole-segment rejects: a bare credit label inlined by a separator
+// ("A | Sludina:" → "Sludina") is not a person either.
+const LABEL_WORDS = new Set([
+  "sludina",
+  "tēma",
+  "tema",
+  "preacher",
+  "sermon",
+  "worship led by",
+  "worship leader",
+  "worship leaders",
+  "slavēšanu vada",
+  "slavesanu vada",
+]);
+
 export function parseSongArtists(description: string): string[] {
   const seen = new Set<string>();
   for (const raw of description.split(/\r?\n/)) {
@@ -46,18 +61,21 @@ export function parseSongArtists(description: string): string[] {
       .split(NAME_SEP)
       .map((name) =>
         name
-          // Punctuation → dangling conjunction → punctuation again:
-          // "(Anna) un" needs all three passes to land on "Anna".
-          .replace(/^[\s•·*(]+|[\s.,;:!?()]+$/g, "")
-          .replace(/\s+(?:un|and)$/i, "")
-          .replace(/^[\s•·*(]+|[\s.,;:!?()]+$/g, "")
+          // Punctuation → conjunctions → punctuation again:
+          // "(Anna) un" needs all three passes to land on "Anna";
+          // a leading "and" survives the ", " split of an Oxford
+          // comma ("A, B, and C").
+          .replace(/^[\p{P}\s]+|[\p{P}\s]+$/gu, "")
+          .replace(/^(?:un|and)\s+|\s+(?:un|and)$/gi, "")
+          .replace(/^[\p{P}\s]+|[\p{P}\s]+$/gu, "")
           .trim()
       )
       .filter((name) => {
         if (
           name.length === 0 ||
           name.length > MAX_NAME_LEN ||
-          name.includes(":")
+          /[:：]/.test(name) ||
+          LABEL_WORDS.has(name.toLowerCase())
         ) {
           return false;
         }

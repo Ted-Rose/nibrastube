@@ -236,17 +236,22 @@ const songLength = sql<number | null>`
 // page size. Cursor pagination is a documented seam.
 const SONGS_LIMIT = 240;
 
+// Singer-name match on a song row: artists is NULL when no credit
+// line parsed, and unnest(NULL) yields zero rows, so the EXISTS
+// just misses there.
+const artistMatch = (q: string) =>
+  sql`exists (
+    select 1 from unnest(${songs.artists}) a
+    where a ilike ${`%${q}%`}
+  )`;
+
 // Search matches a song's title, its compilation's title, or any
-// credited singer — artists is NULL when no credit line parsed, and
-// unnest(NULL) yields zero rows, so the EXISTS just misses there.
+// credited singer.
 const songSearch = (q: string) =>
   or(
     ilike(songs.title, `%${q}%`),
     ilike(videos.title, `%${q}%`),
-    sql`exists (
-      select 1 from unnest(${songs.artists}) a
-      where a ilike ${`%${q}%`}
-    )`
+    artistMatch(q)
   );
 
 // Sort/dir → ORDER BY. "recent" means import time for the catalog and
@@ -381,7 +386,23 @@ export async function getCompilations({
         visibleVideo,
         suitableVideo,
         eq(songs.mightNotBeSong, false),
-        q ? ilike(videos.title, `%${q}%`) : undefined
+        q
+          ? or(
+              ilike(videos.title, `%${q}%`),
+              // Singer names live on song rows — a compilation
+              // matches when a visible song of its credits the
+              // searched artist.
+              sql`exists (
+                select 1 from songs s
+                where s.video_id = ${videos.id}
+                  and s.might_not_be_song = false
+                  and exists (
+                    select 1 from unnest(s.artists) a
+                    where a ilike ${`%${q}%`}
+                  )
+              )`
+            )
+          : undefined
       )
     )
     .groupBy(

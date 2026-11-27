@@ -61,10 +61,12 @@ deletions, enforced for admins).
 `main` is production (`redzi.vercel.app`; the Cloud Run
 `nibrastube` standby mirror also deploys on `main` merges);
 `main` allows squash merges only. Trunk-based flow: branch
-off `origin/main`, open the PR with `--base main`, then
-squash-merge once checks are green and the reviewer loop
-is clean — agents merge without asking. GitHub
-auto-deletes the head branch on merge; expected.
+off `origin/main`, push the branch, verify it — then STOP.
+**Agents never open pull requests or merge to `main` on
+their own** — the user opens and merges PRs (GitHub
+auto-deletes the head branch on merge). Only open a PR —
+`--base main`, ready for review, per
+`.devin/skills/create-pr/` — when the user explicitly asks.
   Preview deploys use a **separate Neon database**,
 `nibrastube_staging`, owned by the read/write role
 `nibrastube_staging`: `lib/db/index.ts` picks
@@ -907,22 +909,22 @@ Repo-local style:
   uncommitted work or another agent's session; do NOT switch
   branches in it). For every task: `git fetch origin`, then
   `git worktree add ../nibrastube-wt/<name> -b <type>/<slug>
-  origin/main` and do all work — commits, push, PR — inside it.
-  Finishing a task means a green, reviewed PR — never ask the
-  user whether to open one. After pushing: open the PR ready
-  for review (NEVER a draft) per `.devin/skills/create-pr/`,
-  then run a review loop — spawn a FRESH reviewer subagent on
-  the diff, fix everything useful it reports, push, and repeat
-  with a new reviewer until a round finds nothing meaningful.
-  Once the loop is clean and the PR's checks are green, clean
-  up IMMEDIATELY — don't wait for the merge (the PR lives on
-  the remote branch; removing the local worktree/branch does not
-  touch it, and the remote branch is deleted at merge time).
-  From the main checkout: `git worktree remove --force
-  ../nibrastube-wt/<name>` + `git branch -D <type>/<slug>`
-  (`-D`, not `-d` — squash-merges leave the branch
-  "unmerged"). Abandoned/rejected work gets the same cleanup,
-  and follow-up requests get a FRESH worktree — never reuse an
+  origin/main` and do all work — commits + push — inside it.
+  Finishing a task means verified work on a pushed branch:
+  run the checks (see "Testing"), then a review loop —
+  spawn a FRESH reviewer subagent on the diff, fix everything
+  useful it reports, push, and repeat with a new reviewer
+  until a round finds nothing meaningful — then report the
+  branch and STOP. **Never open a pull request or merge to
+  `main` unless the user explicitly asks.** Once reported,
+  clean up — the work lives on the remote branch for the
+  user to PR when they choose; removing the local
+  worktree/branch doesn't touch it. From the main checkout:
+  `git worktree remove --force ../nibrastube-wt/<name>` +
+  `git branch -D <type>/<slug>` (`-D`, not `-d` —
+  squash-merges leave the branch "unmerged").
+  Abandoned/rejected work gets the same cleanup, and
+  follow-up requests get a FRESH worktree — never reuse an
   old one. Goal state: `git worktree list` shows only the main
   checkout when the task ends. Each worktree needs its own
   `npm install` + `.env` copy (both gitignored).
@@ -1047,11 +1049,11 @@ Universal rules — follow exactly:
 - `AGENTS.md` (this file) — the contract doc every agent reads;
   `CLAUDE.md` just `@`-imports it.
 - `.devin/skills/fix-good-first-issue/` — pick up a "good first
-  issue", fix it, open a PR, run the reviewer loop, watch
-  checks.
+  issue", fix it on a worktree branch, run the reviewer loop,
+  report the branch for the user to PR.
 - `.devin/skills/fix-sentry-issue-frontend/` — triage the
-  Sentry queue, fix events on a worktree branch, open a PR,
-  resolve the issue only after merge.
+  Sentry queue, fix events on a worktree branch, report the
+  branch; resolve the issue only after the user merges.
 - `.devin/skills/implement-plan/` — execute a legacy
   `docs/plans/*-plan.md` file with implementer → reviewer → fixer
   subagents (no new plan files — see "OpenSpec").

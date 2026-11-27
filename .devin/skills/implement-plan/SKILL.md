@@ -2,9 +2,10 @@
 name: implement-plan
 description: Implement a legacy docs/plans/*-plan.md file end-to-end
   with subagents — an implementer agent cuts a feature branch and
-  opens a PR, then fresh reviewer agents review it and fixer
-  agents iterate until clean. Invoke when the user asks to
-  implement/execute a plan file using agents.
+  pushes it, then fresh reviewer agents review the diff and fixer
+  agents iterate until clean, and the branch is reported for the
+  user to PR (agents never open PRs or merge). Invoke when the user
+  asks to implement/execute a plan file using agents.
 ---
 
 # Implement a Plan File with Subagents
@@ -68,26 +69,31 @@ agents writing the same worktree concurrently. Prompt template:
     5. Commit only files you edited (never git add -A, never
        commit plan/scratch md). Format: `Type: Capitalized msg`.
        Push: git push -u origin feature/<slug>
-    6. Open a PR (ready for review — never a draft) on the
-       fork following .devin/skills/create-pr/ — write the
-       body to pr-body.md, use --body-file, rm it after. Body must include
-       a UI-verification section (pages/clicks/expected result)
-       and --repo Ted-Rose/nibrastube.
-    7. gh pr checks <N> --repo Ted-Rose/nibrastube --watch; fix
-       failures until green.
-    Return: PR URL, worktree path, files changed, verification
-    results, anything you could not do.
+    6. Push the branch — do NOT open a PR (the user opens and
+       merges PRs, AGENTS.md "Git workflow"). Report the
+       branch name + verification. If the user later asks for
+       a PR: follow .devin/skills/create-pr/ (--base main,
+       body via pr-body.md + --body-file, UI-verification
+       section, --repo Ted-Rose/nibrastube).
+    7. Vercel deploys every pushed branch — check the preview
+       build succeeds; fix failures until green.
+    Return: branch name, worktree path, files changed,
+    verification results, anything you could not do.
 
 ## Phase 2 — Review (fresh reviewer agent)
 
-When the implementation PR exists, launch ONE NEW `subagent_general`
+When the implementation branch is pushed, launch ONE NEW
+`subagent_general`
 reviewer, in background. A new agent — never reuse the implementer.
 Prompt:
 
-    Review PR <url> in nibrastube (fork Ted-Rose/nibrastube). Do NOT
-    modify any files — review only. The PR implements <plan-file>
+    Review branch <branch> in nibrastube (fork Ted-Rose/nibrastube)
+    — diff it against origin/main (`git fetch origin &&
+    git diff origin/main...HEAD` or `gh pr diff` once a PR
+    exists). Do NOT
+    modify any files — review only. The branch implements <plan-file>
     (absolute path); read the plan first.
-    1. gh pr diff <N> --repo Ted-Rose/nibrastube and read
+    1. get the diff (origin/main...HEAD) and read
        surrounding code for context.
     2. Check: correctness vs the plan, edge cases, the whitelist
        invariant (kids can never see unapproved content), auth
@@ -114,9 +120,9 @@ If the reviewer reported blocker/should-fix findings:
    list` to find it; `git worktree remove --force
    ../nibrastube-wt/<name>`), then the fixer adds one on the
    existing branch (`git worktree add ../nibrastube-wt/fix-<slug>
-   feature/<slug>`). Prompt: the PR
-   URL, the numbered findings verbatim, "fix, commit (`Fix: ...`),
-   push, re-watch `gh pr checks`, return what changed". Nits may be
+   feature/<slug>`). Prompt: the branch
+   name, the numbered findings verbatim, "fix, commit (`Fix: ...`),
+   push, return what changed". Nits may be
    batched or skipped — say which.
 2. After fixes land, launch a NEW reviewer agent (fresh round, same
    review prompt + "previous findings: <list> — verify the fixes").
@@ -140,12 +146,14 @@ If the reviewer reported blocker/should-fix findings:
   only when the outcome is `partial` / `in progress` / `reverted`,
   with its status header updated accordingly.
 
-Once a review round is clean AND the PR's checks are green, remove
+Once a review round is clean AND the branch deploy is green, remove
 the worktree immediately — `git worktree remove --force <path>` +
-`git branch -D <type>/<slug>` per AGENTS.md; don't wait for merge.
+`git branch -D <type>/<slug>` per AGENTS.md; the work lives on the
+remote branch for the user to PR.
 
 ## Final report
 
-PR URL, review rounds needed, findings fixed per round, confirmation
-the worktree was removed, and any outstanding items (e.g. a
-migration command the user must run).
+Branch name, review rounds needed, findings fixed per round,
+confirmation the worktree was removed, and any outstanding items
+(e.g. a migration command the user must run). Do NOT open a PR or
+merge — that is the user's call.

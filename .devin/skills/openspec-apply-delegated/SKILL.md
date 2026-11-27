@@ -3,11 +3,13 @@ name: openspec-apply-delegated
 description: >
   Implement an OpenSpec change hands-off via subagents — the
   orchestrator creates a worktree, an implementer agent works
-  the task list,
-  and opens a PR ready for review; once checks are green a
+  the task list
+  and pushes the branch; once it is green a
   fresh reviewer agent reports severity-tagged findings and
   fixer agents
-  iterate until clean. Use when asked to implement an OpenSpec
+  iterate until clean, then the branch is reported for the user
+  to PR (agents never open PRs or merge). Use when asked to
+  implement an OpenSpec
   change end-to-end without driving the task loop interactively.
 ---
 
@@ -63,14 +65,16 @@ stays small and survives `openspec update`.
      `npm run typecheck && npm run lint`,
      and `openspec validate --all --strict` must pass before
      pushing
-   - PR conventions: push the branch, body via temp file +
-     `gh pr create --body-file`, ready-for-review PR (never a
-     draft), mandatory UI verification section (follow
-     `.devin/skills/create-pr/` when that skill exists in the
-     repo).
+   - Branch conventions: push the branch and STOP — never
+     open a PR or merge (the user does that; AGENTS.md "Git
+     workflow"). If the user later asks for a PR: body via
+     temp file + `gh pr create --body-file`, ready-for-review
+     (never a draft), mandatory UI verification section
+     (follow `.devin/skills/create-pr/` when that skill
+     exists in the repo).
    - archive timing: when EVERY tasks.md item is `- [x]`,
      run `openspec archive <name>` on the feature branch
-     BEFORE pushing / opening the PR (check
+     BEFORE pushing (check
      `openspec archive --help` first — it syncs delta specs
      into `openspec/specs/` and moves the change dir to
      `openspec/changes/archive/`); then `openspec validate
@@ -128,18 +132,20 @@ stays small and survives `openspec update`.
 - Background subagents cannot gain permissions — if one stalls
   on a denied call, resume it in the foreground
   (`run_subagent resume=<agent_id>`).
-- The PR is never a draft — a review round returning clean
-  means it's done.
+- A review round returning clean means the branch is done —
+  report it; only the user opens the PR (never a draft when
+  they do).
 - Tasks that cannot be finished stay unchecked (`- [ ]`) — the
   fixer and reviewer must treat an unchecked task as incomplete
   work, not as a defect to review.
-- Once the loop is clean AND the PR's checks are green,
+- Once the loop is clean AND the branch deploy is green,
   remove the worktree immediately (`git worktree remove --force
   ../nibrastube-wt/<name>` + `git branch -D
   feature/<change-name>` from the main checkout) — don't
-  wait for merge; remove every worktree the run created.
-- Final report: PR URL, branch, tasks done/total, review
+  wait for a merge; remove every worktree the run created.
+- Final report: branch name, tasks done/total, review
   rounds, unresolved findings, check status, and whether the
-  archive was included in the PR or deferred (with the
-  reason) — the archive now lands inside the implementing
-  PR, not as a post-merge follow-up.
+  archive was included on the branch or deferred (with the
+  reason) — the archive lands on the implementing
+  branch, not as a post-merge follow-up. Do NOT open a PR or
+  merge — that is the user's call.

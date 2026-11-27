@@ -2,10 +2,10 @@
 name: fix-sentry-issue-frontend
 description: Pull unresolved production errors from the Sentry
   nibrastube-app project, reproduce and fix them on a branch cut
-  from updated main, open a PR against the fork, and mark
-  the Sentry issue resolved only after the PR merges. Invoke
-  when the user asks to fix Sentry issues / triage the Sentry
-  queue in nibrastube.
+  from updated main, push it, and report the branch — the user
+  opens and merges PRs; mark the Sentry issue resolved only
+  after that merge. Invoke when the user asks to fix Sentry
+  issues / triage the Sentry queue in nibrastube.
 ---
 
 # Fix an unresolved Sentry issue (nibrastube-app)
@@ -111,30 +111,28 @@ NOT switch branches in it:
   parser is touched, also `npx tsx scripts/test-song-parser.ts`.
 - Update `AGENTS.md` when behavior changes.
 
-## 5. Open the PR
+## 5. Push the branch and report — the user opens the PR
 
 - Stage only files you edited, by path (never `git add -A` /
   `git add .`). Never commit plan/scratch markdown.
 - Commit format `Type: Capitalized message` (usually `Fix:`).
-- `git push -u origin <branch>`, then a PR (ready for review,
-  never a draft) targeting the fork's `main` per
-  `.devin/skills/create-pr/` — body via `--body-file`, never
-  inline `--body`:
-
-      gh pr create --repo Ted-Rose/nibrastube \
-        --title "Type: Capitalized message" \
-        --base main --head fix/sentry-<issue_short_id> \
-        --body-file pr-body.md
-
-- Body must: link the Sentry issue
-  (`https://nibrastube-a2.sentry.io/issues/<id>/`), quote the top
-  stack frame, and include the UI verification / QC section.
-- `gh pr checks <N> --repo Ted-Rose/nibrastube --watch`; fix
-  until green (the repo may report no checks — note it and
-  continue). Then run the reviewer loop: spawn a fresh
-  reviewer subagent on the diff, fix useful findings, push,
-  repeat until a round finds nothing meaningful. Remove the
-  worktree once the loop is clean and checks are green
+- `git push -u origin <branch>`.
+- **Stop here — never open a pull request or merge to `main`
+  on your own** (AGENTS.md "Git workflow"). Report the branch
+  name and what you verified. Only when the user asks for a
+  PR: follow `.devin/skills/create-pr/` (`--base main`, ready
+  for review, body via `--body-file` — never inline
+  `--body`; the body must link the Sentry issue
+  (`https://nibrastube-a2.sentry.io/issues/<id>/`), quote the
+  top stack frame, and include the UI verification / QC
+  section).
+- Vercel deploys every pushed branch — verify the preview
+  build succeeds; fix until green (a pushed branch may show
+  no workflow runs — that's normal). Then run the reviewer
+  loop: spawn a fresh reviewer subagent on the diff
+  (`git diff origin/main...HEAD`), fix useful findings,
+  push, repeat until a round finds nothing meaningful.
+  Remove the worktree once the loop is clean
   (`git worktree remove --force` + `git branch -D`, per
   AGENTS.md).
 

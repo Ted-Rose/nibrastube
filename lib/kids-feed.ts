@@ -222,13 +222,17 @@ const lenFilter = (
 // YouTube itself doesn't count sub-30s plays as views — so it earns no
 // continue-watching boost and must not mask the impression penalty.
 // NULL duration: the fraction half is NULL (never true), so only the
-// 30s clause can pass. Used by the For-You boost/abandon terms, the
-// penalty mask below, and getContinueWatching. MUST stay parenthesized
-// — bare `A or B` inside an and() would let the B branch escape the
-// caller's other conditions (e.g. the profile filter).
+// 30s clause can pass. duration = 0 (livestream/bad API data) would
+// make `position >= 0.5 * duration` true even at position 0, so the
+// fraction half also requires duration > 0. Used by the For-You
+// boost/abandon terms, the penalty mask below, and
+// getContinueWatching. MUST stay parenthesized — bare `A or B` inside
+// an and() would let the B branch escape the caller's other
+// conditions (e.g. the profile filter).
 const meaningfulProgress = sql`(${watchProgress.positionSeconds} >= 30
-  or ${watchProgress.positionSeconds}
-    >= 0.5 * ${videos.durationSeconds})`;
+  or (${videos.durationSeconds} > 0
+    and ${watchProgress.positionSeconds}
+      >= 0.5 * ${videos.durationSeconds}))`;
 
 // "Shown but ignored" penalty (lib/feed-impressions.ts records a grid
 // card held ≥50% visible for ≥1s, once per kid-local day — tapped
@@ -1031,10 +1035,13 @@ export async function getRecommendedVideos(
          or ${watchProgress.positionSeconds} < ${videos.durationSeconds})`;
 
   // Resume candidates — the unfinished rows ranked by most recent
-  // watch. Only the freshest RESUME_SLOTS get the "+8 keep watching"
-  // slot in For You; the rest of the backlog ranks like never-touched
-  // rows (Picked-for-you is not a resume dump — the Continue-watching
-  // shelf holds the whole list).
+  // watch, scoped to rows this feed could actually show (whitelist,
+  // suitability, the caller's ?type/?min/?max/?q filters, no
+  // dislikes): a slot spent on an invisible video would quietly give
+  // the feed zero boosted rows. Only the freshest RESUME_SLOTS get
+  // the "+8 keep watching" slot in For You; the rest of the backlog
+  // ranks like never-touched rows (Picked-for-you is not a resume
+  // dump — the Continue-watching shelf holds the whole list).
   const resumeRank = db.$with("resume_rank").as(
     db
       .select({
@@ -1044,8 +1051,32 @@ export async function getRecommendedVideos(
                    ${watchProgress.videoId})`.as("rn"),
       })
       .from(watchProgress)
+      .innerJoin(
+        whitelistedVideos,
+        and(
+          eq(whitelistedVideos.videoId, watchProgress.videoId),
+          eq(whitelistedVideos.profileId, watchProgress.profileId)
+        )
+      )
       .innerJoin(videos, eq(videos.id, watchProgress.videoId))
-      .where(and(eq(watchProgress.profileId, profileId), inProgress))
+      .leftJoin(
+        videoReactions,
+        and(
+          eq(videoReactions.profileId, watchProgress.profileId),
+          eq(videoReactions.videoId, watchProgress.videoId)
+        )
+      )
+      .where(
+        and(
+          eq(watchProgress.profileId, profileId),
+          inProgress,
+          suitableVideo,
+          sql`${videoReactions.reaction} is distinct from 'dislike'`,
+          typeFilter(type),
+          lenFilter(minLen, maxLen),
+          q ? ilike(videos.title, `%${q}%`) : undefined
+        )
+      )
   );
 
   // Early abandon — tapped but never meaningfully started: a small

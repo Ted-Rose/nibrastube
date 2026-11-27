@@ -1,7 +1,7 @@
 # Kids recommendation algorithm
 
 How the "For You" ranking works today. One SQL query —
-`getRecommendedVideos` in `lib/kids-feed.ts` (~lines 880-1058) —
+`getRecommendedVideos` in `lib/kids-feed.ts` (~lines 960-1206) —
 reorders the profile's `whitelisted_videos` by predicted interest.
 The whitelist is absolute: the ranking never adds content, it only
 sorts what a parent already approved. All signals come from tables
@@ -120,7 +120,7 @@ How those rows get written:
 
 ## The formula
 
-All inside `getRecommendedVideos` — one query, two CTEs:
+All inside `getRecommendedVideos` — one query, three CTEs:
 
 ```text
 channel_affinity: per watch_history row on a channel, summed —
@@ -129,13 +129,21 @@ channel_affinity: per watch_history row on a channel, summed —
     else 1                     -- history never fully decays
 channel_flags:    bool_or(reaction='like' / 'dislike') per channel
 
-meaningful    = position >= 30s OR position >= 50% of duration
+meaningful    = position >= 30s
+                OR (duration > 0 AND position >= 50% of duration)
                 -- the resume bar: a seconds-long tap/autoplay landing
                 -- is not "started" (YouTube doesn't count sub-30s
-                -- plays as views either)
+                -- plays as views either). NULL duration: only the
+                -- 30s clause can pass.
 resume_rank   = row_number() over in-progress rows
-                (meaningful, not completed, position < duration)
+                (meaningful, not completed,
+                 duration IS NULL or position < duration)
                 ordered by watched_at desc
+                -- feed-scoped: ranked over rows THIS feed could
+                -- show (whitelisted, suitable, matching the ?type/
+                -- ?min/?max/?q filters, not disliked) — otherwise a
+                -- slot could be spent on an invisible video and the
+                -- feed would get zero boosted rows
 
 affinityScore = coalesce(affinity, 0)
 flatScore     = + 8 if resume_rank <= 2   -- RESUME_SLOTS: only the
@@ -200,12 +208,20 @@ In words:
   early-abandon minus instead).
 - **Resume slots, not resume boost.** The +8 "keep watching"
   boost is capped at the RESUME_SLOTS = 2 freshest unfinished
-  videos (most recent `watched_at`). Previously every
-  `position > 0` row got +8 forever — autoplay landings and
-  accidental taps pinned ~100 stale videos at the top of the
-  feed permanently. Older unfinished rows now rank like
-  untouched ones; the Continue-watching shelf still lists them
-  all (with the same meaningful-start bar).
+  videos (most recent `watched_at`) — feed-scoped, so a Shorts
+  view or a ?q= search can't have its slots eaten by
+  long-form/off-topic rows. Previously every `position > 0` row
+  got +8 forever — autoplay landings and accidental taps pinned
+  ~100 stale videos at the top of the feed permanently. Older
+  unfinished rows now rank like untouched ones; the
+  Continue-watching shelf still lists them all (with the same
+  meaningful-start bar).
+- **"Started" is two bars on purpose.** The recommendation path
+  uses `meaningful`; `watch_status` tiers (?sort=status, the
+  card progress bar, `pickNextIndex` autoplay ordering) still
+  use `position > 0` — that's display/resume-position semantics,
+  where "has a resume point" is the honest answer for any
+  touched row. Only the interest signals tightened.
 - **Bounded affinity.** Raw affinity is unbounded — a
   hyper-watched channel would outscore discovery at any depth —
   so `40a/(a+15)` squashes it into 0-40 (a=15 -> 20, a=45 -> 30).
@@ -320,7 +336,7 @@ does not corrupt it.
 ## Changing the algorithm
 
 The whole formula lives in `getRecommendedVideos`
-(`lib/kids-feed.ts`, ~lines 880-1058). Constants:
+(`lib/kids-feed.ts`, ~lines 960-1206). Constants:
 
 | Knob | Value | Effect |
 |---|---|---|

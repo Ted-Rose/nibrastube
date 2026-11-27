@@ -11,16 +11,20 @@ import {
   sql,
 } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { songs, videos } from "@/lib/db/schema";
+import { songReactions, songs, videos } from "@/lib/db/schema";
 import { suitableVideo } from "@/lib/video-suitability";
 
-export type SongsView = "songs" | "compilations" | "mine";
+// "liked" is kid-context only (kid session or activeProfileId lock) —
+// parseSongsFeedParams coerces it to "songs" for everyone else.
+export type SongsView = "songs" | "compilations" | "mine" | "liked";
 export type SongsSort = "recent" | "title" | "length";
 export type SongsDir = "asc" | "desc";
+export type SongReaction = "like" | "dislike";
 
 export interface SongsFeedParams {
-  // "mine" is signed-in only — parseSongsFeedParams coerces it to
-  // "songs" for anonymous visitors so the URL never 404s.
+  // "mine" is signed-in only and "liked" is kid-context only —
+  // parseSongsFeedParams coerces them to "songs" for other visitors
+  // so the URL never 404s.
   view: SongsView;
   // Drill-in: one compilation's songs — only meaningful on "songs".
   video: string | null;
@@ -41,7 +45,8 @@ const defaultDir = (sort: SongsSort): SongsDir =>
 // Validates raw searchParams; bad values fall back to defaults.
 export function parseSongsFeedParams(
   raw: Record<string, string | string[] | undefined>,
-  signedIn: boolean
+  signedIn: boolean,
+  hasProfile: boolean
 ): SongsFeedParams {
   const first = (v: string | string[] | undefined) =>
     (Array.isArray(v) ? v[0] : v) ?? "";
@@ -51,7 +56,9 @@ export function parseSongsFeedParams(
       ? "compilations"
       : rawView === "mine" && signedIn
         ? "mine"
-        : "songs";
+        : rawView === "liked" && hasProfile
+          ? "liked"
+          : "songs";
   const rawVideo = first(raw.video);
   const video =
     view === "songs" && VIDEO_ID_RE.test(rawVideo) ? rawVideo : null;
@@ -120,6 +127,11 @@ export interface FeedSong {
   // "Newly added" shelf, the ?song= queue); only owner-scoped views
   // select it — the card badges it "maybe not a song".
   mightNotBeSong: boolean;
+  // The viewer's own reaction (kid session / locked-device profile),
+  // left-joined per query — null for anonymous visitors, parents
+  // without a lock cookie, and unreacted rows. Drives the card badge
+  // and seeds the player's reaction buttons.
+  reaction: SongReaction | null;
 }
 
 // The subset of FeedSong the ?song= player needs for its queue —
@@ -134,6 +146,7 @@ export type SongQueueEntry = Pick<
   | "videoDuration"
   | "startSeconds"
   | "endSeconds"
+  | "reaction"
 >;
 
 // The raw select row: FeedSong's fields plus the importer's user id,
@@ -160,6 +173,19 @@ const feedSongCols = {
   mightNotBeSong: songs.mightNotBeSong,
 };
 
+// The viewer's reaction, left-joined per query — (profile, song) is
+// unique so the join can't fan out. The nil uuid keeps a missing
+// profile a valid literal: zero rows match, reaction reads null.
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+const reactionCol = sql<
+  SongReaction | null
+>`${songReactions.reaction}`;
+const reactionJoin = (profileId?: string) =>
+  and(
+    eq(songReactions.songId, songs.id),
+    eq(songReactions.profileId, profileId ?? NIL_UUID)
+  );
+
 // Row → client-facing FeedSong: resolves canDelete against the session
 // user and lists the outgoing columns explicitly so importedBy (and
 // any future sensitive column) can't leak into serialized props.
@@ -176,6 +202,7 @@ function toFeedSong(row: SongRow, viewerId?: string): FeedSong {
     channelTitle: row.channelTitle,
     canDelete: viewerId != null && row.importedBy === viewerId,
     mightNotBeSong: row.mightNotBeSong,
+    reaction: row.reaction,
   };
 }
 
@@ -183,8 +210,10 @@ function toFeedSong(row: SongRow, viewerId?: string): FeedSong {
 // kids" compilations (the API's only under-13 signal) hide their
 // songs. The catalog is an unvetted surface, so every query below
 // also ANDs the shared `suitableVideo` 18+ floor — an age-restricted
-// compilation's songs never display or play.
-const visibleVideo = or(
+// compilation's songs never display or play. Exported for
+// /api/song-reactions, which gates reaction writes on the same
+// visibility the player enforces.
+export const visibleVideo = or(
   isNull(videos.madeForKids),
   eq(videos.madeForKids, false)
 );
@@ -201,6 +230,35 @@ const songLength = sql<number | null>`
 // page size. Cursor pagination is a documented seam.
 const SONGS_LIMIT = 240;
 
+// Sort/dir → ORDER BY. "recent" means import time for the catalog and
+// reaction time for the Liked view, so the caller passes the column.
+function feedOrderBy(
+  feed: Pick<SongsFeedParams, "sort" | "dir">,
+  recent: Parameters<typeof asc>[0]
+) {
+  if (feed.sort === "title") {
+    return [
+      feed.dir === "asc" ? asc(songs.title) : desc(songs.title),
+      asc(songs.startSeconds),
+      asc(songs.id),
+    ];
+  }
+  if (feed.sort === "length") {
+    return [
+      feed.dir === "asc"
+        ? sql`${songLength} asc nulls last`
+        : sql`${songLength} desc nulls last`,
+      asc(songs.startSeconds),
+      asc(songs.id),
+    ];
+  }
+  return [
+    feed.dir === "asc" ? asc(recent) : desc(recent),
+    asc(songs.startSeconds),
+    asc(songs.id),
+  ];
+}
+
 // The catalog grid: all imported songs joined to their compilation
 // video, optionally filtered to one compilation (?video=), one
 // importer (view=mine) or a title search (q matches song OR
@@ -209,32 +267,14 @@ const SONGS_LIMIT = 240;
 // makes, so the two share one DB round trip.
 export const getSongs = cache(async function getSongs(
   feed: SongsFeedParams,
-  importedByUserId?: string
+  importedByUserId?: string,
+  profileId?: string
 ): Promise<FeedSong[]> {
-  const orderBy =
-    feed.sort === "title"
-      ? [
-          feed.dir === "asc" ? asc(songs.title) : desc(songs.title),
-          asc(songs.startSeconds),
-        ]
-      : feed.sort === "length"
-        ? [
-            feed.dir === "asc"
-              ? sql`${songLength} asc nulls last`
-              : sql`${songLength} desc nulls last`,
-            asc(songs.startSeconds),
-          ]
-        : [
-            feed.dir === "asc"
-              ? asc(songs.createdAt)
-              : desc(songs.createdAt),
-            asc(songs.startSeconds),
-          ];
-
   const rows = await db
-    .select(feedSongCols)
+    .select({ ...feedSongCols, reaction: reactionCol })
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
+    .leftJoin(songReactions, reactionJoin(profileId))
     .where(
       and(
         visibleVideo,
@@ -250,10 +290,7 @@ export const getSongs = cache(async function getSongs(
         // everyone's songs. The nil uuid keeps it a valid literal so
         // Postgres returns an empty set rather than erroring.
         feed.view === "mine"
-          ? eq(
-              songs.importedBy,
-              importedByUserId ?? "00000000-0000-0000-0000-000000000000"
-            )
+          ? eq(songs.importedBy, importedByUserId ?? NIL_UUID)
           : undefined,
         feed.q
           ? or(
@@ -263,10 +300,46 @@ export const getSongs = cache(async function getSongs(
           : undefined
       )
     )
-    .orderBy(...orderBy)
+    .orderBy(...feedOrderBy(feed, songs.createdAt))
     .limit(SONGS_LIMIT);
 
   return rows.map((row) => toFeedSong(row, importedByUserId));
+});
+
+// Songs the profile tapped 👍 on, newest reaction first — the Liked
+// tab grid, the home shelf and that tab's ?song= queue. Personal like
+// "mine", so mightNotBeSong rows stay visible (badged). The inner
+// joins mean an unplayable compilation's likes hide while its video
+// row stays unsuitable.
+export const getLikedSongs = cache(async function getLikedSongs(
+  profileId: string,
+  feed: Pick<SongsFeedParams, "sort" | "dir" | "q">,
+  viewerId?: string,
+  limit = SONGS_LIMIT
+): Promise<FeedSong[]> {
+  const rows = await db
+    .select({ ...feedSongCols, reaction: reactionCol })
+    .from(songReactions)
+    .innerJoin(songs, eq(songs.id, songReactions.songId))
+    .innerJoin(videos, eq(videos.id, songs.videoId))
+    .where(
+      and(
+        eq(songReactions.profileId, profileId),
+        eq(songReactions.reaction, "like"),
+        visibleVideo,
+        suitableVideo,
+        feed.q
+          ? or(
+              ilike(songs.title, `%${feed.q}%`),
+              ilike(videos.title, `%${feed.q}%`)
+            )
+          : undefined
+      )
+    )
+    .orderBy(...feedOrderBy(feed, songReactions.reactedAt))
+    .limit(limit);
+
+  return rows.map((row) => toFeedSong(row, viewerId));
 });
 
 export interface FeedCompilation {
@@ -312,11 +385,15 @@ export async function getCompilations({
 
 // One song row for the ?song= player overlay — returns null when the
 // id is unknown so the page can silently ignore a stale param.
-export async function getSong(id: string): Promise<FeedSong | null> {
+export async function getSong(
+  id: string,
+  profileId?: string
+): Promise<FeedSong | null> {
   const row = await db
-    .select(feedSongCols)
+    .select({ ...feedSongCols, reaction: reactionCol })
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
+    .leftJoin(songReactions, reactionJoin(profileId))
     .where(and(eq(songs.id, id), visibleVideo, suitableVideo))
     .limit(1)
     .then((rows) => rows[0]);
@@ -326,12 +403,14 @@ export async function getSong(id: string): Promise<FeedSong | null> {
 // Newest imports across all parents — the "Newly added" home shelf.
 export async function getNewSongs(
   limit = 12,
-  viewerId?: string
+  viewerId?: string,
+  profileId?: string
 ): Promise<FeedSong[]> {
   const rows = await db
-    .select(feedSongCols)
+    .select({ ...feedSongCols, reaction: reactionCol })
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
+    .leftJoin(songReactions, reactionJoin(profileId))
     .where(
       and(visibleVideo, suitableVideo, eq(songs.mightNotBeSong, false))
     )
@@ -347,13 +426,17 @@ export async function getNewSongs(
 // preview them via ?song=<id>.
 export async function getUserSongs(
   userId: string,
-  limit = 12
+  limit = 12,
+  profileId?: string
 ): Promise<FeedSong[]> {
   const rows = await db
-    .select(feedSongCols)
+    .select({ ...feedSongCols, reaction: reactionCol })
     .from(songs)
     .innerJoin(videos, eq(videos.id, songs.videoId))
-    .where(and(eq(songs.importedBy, userId), visibleVideo, suitableVideo))
+    .leftJoin(songReactions, reactionJoin(profileId))
+    .where(
+      and(eq(songs.importedBy, userId), visibleVideo, suitableVideo)
+    )
     .orderBy(desc(songs.createdAt))
     .limit(limit);
   return rows.map((row) => toFeedSong(row, userId));

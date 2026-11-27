@@ -216,9 +216,11 @@ app/
                                 + native-only "Check for updates" row
                                 (update-check-row.tsx)
   songs/                        Public song catalog — no sign-in
-                                required; session only adds the
+                                required; a parent session adds the
                                 "Yours" tab, "Your imports" shelf,
-                                owner-only delete
+                                owner-only delete; a kid profile adds
+                                the "Liked" tab/shelf + player
+                                reactions
     _components/                Route-private view code mirroring the
                                 kids feed: SONGS_VIEWS table, per-view
                                 server components, catalog-header
@@ -234,6 +236,8 @@ app/
                                 dedup'd by daily_syncs)
   api/watch-progress/           POST upsert for resume position
   api/video-reactions/          POST like/dislike per profile+video
+  api/song-reactions/           POST like/dislike per profile+song
+                                (silent writes)
   api/video-errors/             POST IFrame onError 100/101/150 →
                                 videos.playback_blocked flag
   api/impressions/              POST batched "shown but ignored"
@@ -463,6 +467,8 @@ docs/reviews/                   Committed Oct 2026 code audit —
   `completed`
 - `watch_history` — per-profile watch events grouped by day
 - `video_reactions` — per-(profile, video) like/dislike
+- `song_reactions` — per-(profile, song) like/dislike; `like` feeds
+  the /songs Liked tab + shelf, `dislike` is a badge only
 - `video_impressions` — per-(profile, video) "shown but ignored"
   counter: `seenDays` (+1 at most once per kid-local `lastSeenOn`,
   capped at 30) feeds the `impressionPenalty` downrank in
@@ -737,7 +743,20 @@ docs/reviews/                   Committed Oct 2026 code audit —
   feed's song queue in place (the ?song= URL follows via
   replaceState; last song or Escape → close; rogue suggested-video
   loads snap back to the segment); `?song=` is not a feed param, so
-  tab/sort/search navigation closes the overlay.
+  tab/sort/search navigation closes the overlay. Song reactions are
+  per-profile kid data like `video_reactions`: the reacting profile
+  resolves to the kid session's `profileId` or the `activeProfileId`
+  lock cookie (a parent without a lock and anonymous visitors get no
+  reaction UI). With a profile, the overlay shows like/dislike
+  buttons inside `FullscreenPlayer` (native fullscreen paints only
+  descendants), cards carry a corner badge, and the "Liked" tab +
+  home shelf list liked songs newest-first via `getLikedSongs`.
+  Writes go through `/api/song-reactions` — same zod envelope and
+  auth gate as `/api/video-reactions`, but gated on the song being
+  catalog-visible (`visibleVideo` + `suitableVideo`) instead of
+  whitelisted, and silent: no feed-cache tag covers /songs and no
+  PusherListener mounts there, so no invalidate/trigger — just
+  `revalidatePath("/songs")`.
 
 ## Commands
 

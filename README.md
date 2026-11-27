@@ -39,7 +39,7 @@ Create a `.env` file in the root directory:
 ```env
 DATABASE_URL=postgresql://user:pass@host:port/dbname
 DATABASE_URL_UNPOOLED=postgresql://user:pass@host:port/dbname
-# staging deploys (Vercel previews + `staging` branch) —
+# Vercel preview deploys (staging Neon DB) —
 # local only; Vercel Preview scope needs just the pooled URL
 STAGING_DATABASE_URL=postgresql://user:pass@host:port/dbname
 STAGING_DATABASE_URL_UNPOOLED=postgresql://user:pass@host:port/dbname

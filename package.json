@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "vercel-build": "node scripts/vercel-build.mjs",
     "db:migrate:staging": "DB_TARGET=staging drizzle-kit migrate",
     "videos:refresh": "tsx --env-file=.env scripts/refresh-videos.ts",
     "songs:backfill-artists":

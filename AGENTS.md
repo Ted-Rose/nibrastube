@@ -78,7 +78,16 @@ schema changes to it with `npm run db:migrate:staging`.
 `main` to production, everything else (including PR head
 branches) as a preview, so per-PR UI verification can use
 the branch preview URL before merging. `deploy.yml` stays
-`main`-only — Cloud Run tracks production.
+`main`-only — Cloud Run tracks production. Vercel's build
+command is `vercel-build` (`scripts/vercel-build.mjs`):
+`drizzle-kit migrate` runs BEFORE `next build` —
+production builds against `DATABASE_URL_UNPOOLED`,
+preview builds with `DB_TARGET=staging` against
+`STAGING_DATABASE_URL_UNPOOLED` (fails loudly if unset —
+never falls back to prod). Merging a migration to `main`
+therefore applies it on that deploy; the Cloud Run
+standby does NOT migrate (it shares prod's already-
+migrated DB).
 
 ## Layout
 
@@ -739,7 +748,10 @@ npx tsx scripts/test-song-parser.ts   # ad-hoc checks for the song
 DB schema changes: edit `lib/db/schema.ts`, then `npm run
 db:generate` (commit the generated `drizzle/` files); applying
 via `npm run db:migrate` is user-run only — agents hand the
-command off (see "Dangerous commands").
+command off (see "Dangerous commands"). Vercel builds apply
+merged migrations automatically (`vercel-build` — see
+"Deployments"), so do not edit a migration `.sql` after it
+has merged.
 
 ## Android APK
 

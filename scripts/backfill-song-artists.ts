@@ -9,7 +9,9 @@
  * Defaults to every video that has imported songs. Reads the cached
  * videos.description; rows missing one are healed with a batched
  * videos.list call (~1 quota unit per 50) and an upsert — the same
- * refresh path scripts/refresh-videos.ts uses.
+ * refresh path scripts/refresh-videos.ts uses. Unlike videos:refresh,
+ * --dry-run still makes that read-only fetch when needed — previewing
+ * the parse requires the descriptions — but it writes nothing.
  *
  * Only non-empty parses are written: a video with no credit line
  * leaves artists NULL ("unknown"), and a re-run can't erase artists

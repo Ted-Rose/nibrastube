@@ -236,6 +236,19 @@ const songLength = sql<number | null>`
 // page size. Cursor pagination is a documented seam.
 const SONGS_LIMIT = 240;
 
+// Search matches a song's title, its compilation's title, or any
+// credited singer — artists is NULL when no credit line parsed, and
+// unnest(NULL) yields zero rows, so the EXISTS just misses there.
+const songSearch = (q: string) =>
+  or(
+    ilike(songs.title, `%${q}%`),
+    ilike(videos.title, `%${q}%`),
+    sql`exists (
+      select 1 from unnest(${songs.artists}) a
+      where a ilike ${`%${q}%`}
+    )`
+  );
+
 // Sort/dir → ORDER BY. "recent" means import time for the catalog and
 // reaction time for the Liked view, so the caller passes the column.
 function feedOrderBy(
@@ -267,8 +280,9 @@ function feedOrderBy(
 
 // The catalog grid: all imported songs joined to their compilation
 // video, optionally filtered to one compilation (?video=), one
-// importer (view=mine) or a title search (q matches song OR
-// compilation title), ordered per sort/dir. Cached per request: the
+// importer (view=mine) or a search (q matches song title,
+// compilation title, or a credited singer), ordered per sort/dir.
+// Cached per request: the
 // ?song= overlay builds its play queue from the same call the grid
 // makes, so the two share one DB round trip.
 export const getSongs = cache(async function getSongs(
@@ -298,12 +312,7 @@ export const getSongs = cache(async function getSongs(
         feed.view === "mine"
           ? eq(songs.importedBy, importedByUserId ?? NIL_UUID)
           : undefined,
-        feed.q
-          ? or(
-              ilike(songs.title, `%${feed.q}%`),
-              ilike(videos.title, `%${feed.q}%`)
-            )
-          : undefined
+        feed.q ? songSearch(feed.q) : undefined
       )
     )
     .orderBy(...feedOrderBy(feed, songs.createdAt))
@@ -334,12 +343,7 @@ export const getLikedSongs = cache(async function getLikedSongs(
         eq(songReactions.reaction, "like"),
         visibleVideo,
         suitableVideo,
-        feed.q
-          ? or(
-              ilike(songs.title, `%${feed.q}%`),
-              ilike(videos.title, `%${feed.q}%`)
-            )
-          : undefined
+        feed.q ? songSearch(feed.q) : undefined
       )
     )
     .orderBy(...feedOrderBy(feed, songReactions.reactedAt))

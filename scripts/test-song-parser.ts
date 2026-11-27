@@ -251,6 +251,32 @@ check(
 );
 
 check(
+  "artists: bullet-prefixed + diacritic-less label",
+  parseSongArtists("🎵 Slavesanu vada: Jānis Kalns"),
+  ["Jānis Kalns"]
+);
+
+check(
+  "artists: inline second credit cut off",
+  parseSongArtists("Slavēšanu vada: Anna | Sludina: Kristaps"),
+  ["Anna"]
+);
+
+check(
+  "artists: empty first line, valid second wins",
+  parseSongArtists(
+    "Slavēšanu vada:\nSlavēšanu vada: Ilze Ozola"
+  ),
+  ["Ilze Ozola"]
+);
+
+check(
+  "artists: parens + dangling conjunction stripped",
+  parseSongArtists("Slavēšanu vada: (Anna Bērziņa) un"),
+  ["Anna Bērziņa"]
+);
+
+check(
   "normalizeHandle",
   [
     normalizeHandle("@TedisRozenfelds7630"),

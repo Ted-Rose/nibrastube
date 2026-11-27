@@ -10,35 +10,55 @@
 // credit line parses — callers store NULL, meaning "unknown", not
 // "none". The preacher's line is deliberately not matched.
 
-// Recognized label prefixes for the singers credit line. Latvian
-// "slavēšanu vada" = "worship led by"; the English spellings cover
-// non-Latvian uploads using the same template.
+// Recognized label for the singers credit line. Latvian "slavēšanu
+// vada" = "worship led by" — [eē][sš] also accepts the
+// diacritic-less "slavesanu" some uploaders type; the English
+// spellings cover non-Latvian uploads using the same template. The
+// line may lead with whitespace, bullets or emoji, but no
+// letters/digits.
 const LEADER_LINE = new RegExp(
-  "^\\s*(?:slavēšanu\\s+vada|worship\\s+(?:led\\s+by|leaders?))" +
+  "^[^\\p{L}\\p{N}]*" +
+    "(?:slav[eē][sš]anu\\s+vada|worship\\s+(?:led\\s+by|leaders?))" +
     "\\s*[:：\\-–—]\\s*(.+?)\\s*$",
-  "i"
+  "iu"
 );
 
 // Name separators inside the credit value: commas, ampersands, plus
-// signs and the conjunctions — Latvian "un" and English "and", both
-// requiring surrounding spaces so they can't split inside a name.
-const NAME_SEP = /\s*(?:,|&|\+|\s+un\s+|\s+and\s+)\s*/;
+// signs, pipes/semicolons (occasional inline field separators) and
+// the conjunctions — Latvian "un" and English "and", both requiring
+// surrounding spaces so they can't split inside a name. A "/" is
+// deliberately not a separator — act names like "A/B" exist.
+const NAME_SEP = /\s*(?:,|&|\+|\||;|\s+un\s+|\s+and\s+)\s*/;
 
 // A name shouldn't run a whole paragraph — a longer segment means the
-// credit line bled into prose, not a longer name.
+// credit line bled into prose, not a longer name. Segments carrying
+// a colon are a second credit line inlined by a separator
+// ("A | Sludina: B"), not a person.
 const MAX_NAME_LEN = 60;
 
 export function parseSongArtists(description: string): string[] {
+  const seen = new Set<string>();
   for (const raw of description.split(/\r?\n/)) {
     const match = LEADER_LINE.exec(raw);
     if (!match) continue;
 
-    const seen = new Set<string>();
-    return match[1]
+    const artists = match[1]
       .split(NAME_SEP)
-      .map((name) => name.replace(/^[\s•·*]+|[\s.,;:!?]+$/g, ""))
+      .map((name) =>
+        name
+          // Punctuation → dangling conjunction → punctuation again:
+          // "(Anna) un" needs all three passes to land on "Anna".
+          .replace(/^[\s•·*(]+|[\s.,;:!?()]+$/g, "")
+          .replace(/\s+(?:un|and)$/i, "")
+          .replace(/^[\s•·*(]+|[\s.,;:!?()]+$/g, "")
+          .trim()
+      )
       .filter((name) => {
-        if (name.length === 0 || name.length > MAX_NAME_LEN) {
+        if (
+          name.length === 0 ||
+          name.length > MAX_NAME_LEN ||
+          name.includes(":")
+        ) {
           return false;
         }
         const key = name.toLowerCase();
@@ -46,6 +66,9 @@ export function parseSongArtists(description: string): string[] {
         seen.add(key);
         return true;
       });
+    // A matched-but-empty credit line keeps the scan going — a
+    // second, well-formed one later in the description still wins.
+    if (artists.length > 0) return artists;
   }
   return [];
 }
